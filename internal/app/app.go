@@ -161,8 +161,7 @@ func (a *App) logCall(s *Snapshot, caller Caller, tool string, trace *core.Trace
 	entry.Source = caller.Source
 	entry.APIKeyID, entry.APIKeyName = caller.KeyID, caller.KeyName
 	entry.DurationMs = time.Since(trace.Start).Milliseconds()
-	usage := trace.Usage()
-	entry.InputTokens, entry.OutputTokens = usage.InputTokens, usage.OutputTokens
+	entry.Usage = trace.Usage()
 	entry.Attempts, _ = json.Marshal(trace.Attempts())
 	entry.Request = capture(request, 8<<10)
 	if s.Config.Logs.CaptureBody {

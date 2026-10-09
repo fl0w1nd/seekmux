@@ -28,10 +28,21 @@ const (
 	AttemptSkipped = "skipped"
 )
 
-// Usage is the token usage of the LLM calls made for a tool call.
+// Usage is the token usage of the LLM calls made for a tool call. InputTokens
+// is everything the model was sent; CacheReadTokens and CacheWriteTokens are
+// the parts of it served from, and written to, the provider's prompt cache.
 type Usage struct {
-	InputTokens  int64 `json:"input_tokens"`
-	OutputTokens int64 `json:"output_tokens"`
+	InputTokens      int64 `json:"input_tokens"`
+	OutputTokens     int64 `json:"output_tokens"`
+	CacheReadTokens  int64 `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int64 `json:"cache_write_tokens,omitempty"`
+}
+
+func (u Usage) Add(o Usage) Usage {
+	return Usage{
+		InputTokens: u.InputTokens + o.InputTokens, OutputTokens: u.OutputTokens + o.OutputTokens,
+		CacheReadTokens: u.CacheReadTokens + o.CacheReadTokens, CacheWriteTokens: u.CacheWriteTokens + o.CacheWriteTokens,
+	}
 }
 
 // Trace collects the attempts and token usage of one tool call so the request
@@ -106,13 +117,12 @@ func (t *Trace) add(a Attempt) {
 	t.mu.Unlock()
 }
 
-func (t *Trace) AddUsage(input, output int64) {
+func (t *Trace) AddUsage(u Usage) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
-	t.usage.InputTokens += input
-	t.usage.OutputTokens += output
+	t.usage = t.usage.Add(u)
 	t.mu.Unlock()
 }
 

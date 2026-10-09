@@ -50,7 +50,7 @@ export function FetchPage() {
               </div>
               <Switch checked={extract.raw_on_failure} onCheckedChange={(v) => update((d) => void (d.fetch.extract.raw_on_failure = v))} aria-label="全部不可用时退回原文" />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <Field label="单次输入上限" hint="超出的页面分段作答">
                 <NumberInput min={1} suffix="字符" value={extract.max_input_length} onChange={(v) => update((d) => void (d.fetch.extract.max_input_length = Math.round(v)))} />
               </Field>
@@ -59,6 +59,9 @@ export function FetchPage() {
               </Field>
               <Field label="首包重试次数">
                 <NumberInput min={1} value={extract.max_retries} onChange={(v) => update((d) => void (d.fetch.extract.max_retries = Math.round(v)))} />
+              </Field>
+              <Field label="最大输出 token" hint="0 为跟随模型自己的上限">
+                <NumberInput min={0} suffix="token" value={extract.max_output_tokens ?? 0} onChange={(v) => update((d) => void (d.fetch.extract.max_output_tokens = Math.round(v) || undefined))} />
               </Field>
               <Field label="流总超时" hint="超时返回已生成部分">
                 <NumberInput min={1} suffix="ms" value={extract.stream_total_timeout_ms} onChange={(v) => update((d) => void (d.fetch.extract.stream_total_timeout_ms = Math.round(v)))} />

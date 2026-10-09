@@ -236,7 +236,7 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 	end := weightedSliceEnd(content, offset, cfg.MaxInputLength)
 	excerpt := offset > 0 || end < len(content)
 
-	keyData, _ := json.Marshal([]any{args.URL, offset, end, args.Prompt, cfg.Models, cfg.SystemPrompt})
+	keyData, _ := json.Marshal([]any{args.URL, offset, end, args.Prompt, cfg.Models, cfg.SystemPrompt, cfg.MaxOutputTokens})
 	key := string(keyData)
 	chat, cached := s.answers.Get(key)
 	if !cached {
@@ -248,6 +248,7 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 			FirstChunkTimeout: time.Duration(cfg.FirstChunkTimeoutMs) * time.Millisecond,
 			TotalTimeout:      time.Duration(cfg.StreamTotalTimeoutMs) * time.Millisecond,
 			MaxRetries:        cfg.MaxRetries,
+			MaxOutputTokens:   cfg.MaxOutputTokens,
 		}
 		// The models form a failover chain: one that fails, or has no
 		// rate-limit slot left, hands the question to the next.

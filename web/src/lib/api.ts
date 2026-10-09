@@ -43,6 +43,7 @@ export interface Extract {
   raw_on_failure: boolean;
   system_prompt?: string;
   max_input_length: number;
+  max_output_tokens?: number;
   first_chunk_timeout_ms: number;
   max_retries: number;
   stream_total_timeout_ms: number;
@@ -69,6 +70,7 @@ export interface Research {
   max_steps: number;
   max_duration_seconds: number;
   max_tokens: number;
+  max_context_tokens: number;
 }
 
 export interface Config {
@@ -154,8 +156,11 @@ export interface LogEntry {
   provider?: string;
   summary: string;
   error?: string;
-  input_tokens?: number;
-  output_tokens?: number;
+  input_tokens: number;
+  output_tokens: number;
+  /** The parts of input_tokens read from, and written to, the prompt cache. */
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
   attempts?: Attempt[];
   /** The route of a call that did not go straight through; absent otherwise. */
   hops?: Hop[];
@@ -227,6 +232,8 @@ export interface Overview {
     buckets: { ts: number; calls: number; errors: number }[];
     input_tokens: number;
     output_tokens: number;
+    cache_read_tokens?: number;
+    cache_write_tokens?: number;
   };
   routes: RouteStatus[];
   models: ModelStatus[];
@@ -273,6 +280,8 @@ export interface ResearchResult {
   fetches: number;
   input_tokens: number;
   output_tokens: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
 }
 
 export interface ResearchTask {

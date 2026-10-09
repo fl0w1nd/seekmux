@@ -56,7 +56,9 @@ CREATE TABLE IF NOT EXISTS request_logs (
 	error         TEXT NOT NULL DEFAULT '',
 	attempts      TEXT NOT NULL DEFAULT '[]',
 	input_tokens  INTEGER NOT NULL DEFAULT 0,
-	output_tokens INTEGER NOT NULL DEFAULT 0
+	output_tokens INTEGER NOT NULL DEFAULT 0,
+	cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+	cache_write_tokens INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS request_logs_ts ON request_logs (ts);
 CREATE TABLE IF NOT EXISTS research_tasks (
@@ -93,6 +95,16 @@ func Open(dir string) (*Store, error) {
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("init database %s: %w", path, err)
+	}
+	// A database created before the cache columns existed gains them here.
+	for _, column := range []string{"cache_read_tokens", "cache_write_tokens"} {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('request_logs') WHERE name = ?`, column).Scan(&n); err == nil && n == 0 {
+			if _, err := db.Exec(`ALTER TABLE request_logs ADD COLUMN ` + column + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
+				db.Close()
+				return nil, fmt.Errorf("init database %s: %w", path, err)
+			}
+		}
 	}
 	// The database holds API keys in plain text.
 	_ = os.Chmod(path, 0o600)

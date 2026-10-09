@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Waterfall } from "../components/Waterfall";
 import { api, type Hop, type LogEntry } from "../lib/api";
 import { useConfig } from "../lib/config";
-import { compact, dateTime, duration, logTime, toolLabel } from "../lib/format";
+import { compact, dateTime, duration, logTime, percent, toolLabel } from "../lib/format";
 import { PageHeader } from "../Shell";
 import { Drawer, useConfirm, useToast } from "../ui/overlays";
 import { Badge, Button, CodeBlock, cx, Dot, Empty, Input, Panel, Segmented, Select, Spinner, Table, Td, Th } from "../ui/primitives";
@@ -154,7 +154,7 @@ export function LogsPage() {
                       <StatusBadge status={entry.status} />
                     </Td>
                     <Td className="num text-right text-xs whitespace-nowrap">{duration(entry.duration_ms)}</Td>
-                    <Td className="num text-right text-xs whitespace-nowrap text-ink-3">{entry.input_tokens ? compact(entry.input_tokens + (entry.output_tokens ?? 0)) : "—"}</Td>
+                    <Td className="num text-right text-xs whitespace-nowrap text-ink-3">{entry.input_tokens ? compact(entry.input_tokens + entry.output_tokens) : "—"}</Td>
                     <Td className="text-xs whitespace-nowrap text-ink-3">{entry.source === "webui" ? "调试台" : entry.api_key_name || "—"}</Td>
                   </tr>
                 ))}
@@ -248,12 +248,22 @@ function LogDrawer({ id, onClose }: { id: number | null; onClose: () => void }) 
               <span className="num">{entry.provider || "—"}</span>
             </Fact>
             <Fact label="调用方">{entry.source === "webui" ? "调试台" : entry.api_key_name || "—"}</Fact>
-            {Boolean(entry.input_tokens) && (
-              <Fact label="Token（输入 / 输出）" className="col-span-2">
-                <span className="num">
-                  {entry.input_tokens?.toLocaleString()} / {entry.output_tokens?.toLocaleString()}
-                </span>
-              </Fact>
+            {entry.input_tokens > 0 && (
+              <>
+                <Fact label="Token（输入 / 输出）" className="col-span-2">
+                  <span className="num">
+                    {entry.input_tokens.toLocaleString()} / {entry.output_tokens.toLocaleString()}
+                  </span>
+                </Fact>
+                <Fact label="缓存（读取 / 写入）">
+                  <span className="num">
+                    {(entry.cache_read_tokens ?? 0).toLocaleString()} / {(entry.cache_write_tokens ?? 0).toLocaleString()}
+                  </span>
+                </Fact>
+                <Fact label="缓存命中率">
+                  <span className="num">{percent(entry.cache_read_tokens ?? 0, entry.input_tokens)}</span>
+                </Fact>
+              </>
             )}
           </div>
 

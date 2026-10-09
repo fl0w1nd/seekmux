@@ -58,8 +58,11 @@ export function ResearchPage() {
           <Row label="最长用时" hint="到达 80% 时开始收尾写报告">
             <NumberInput className="w-24" min={30} suffix="秒" value={research.max_duration_seconds} onChange={(v) => update((d) => void (d.research.max_duration_seconds = Math.round(v)))} />
           </Row>
-          <Row label="token 上限" hint="各步输入加输出 token 的累计值">
+          <Row label="token 上限" hint="各步输入加输出 token 的累计值，约束的是总花费">
             <NumberInput className="w-32" min={1000} suffix="token" value={research.max_tokens} onChange={(v) => update((d) => void (d.research.max_tokens = Math.round(v)))} />
+          </Row>
+          <Row label="上下文上限" hint="单次请求的输入规模；应低于模型的上下文窗口并留出余量，超出后上游会直接拒绝">
+            <NumberInput className="w-32" min={1000} suffix="token" value={research.max_context_tokens} onChange={(v) => update((d) => void (d.research.max_context_tokens = Math.round(v)))} />
           </Row>
         </Panel>
 

@@ -82,12 +82,15 @@ type Extract struct {
 	Models []string `json:"models"`
 	// RawOnFailure returns the page text when no model can answer, without
 	// waiting for a rate-limit slot, instead of an error.
-	RawOnFailure         bool   `json:"raw_on_failure"`
-	SystemPrompt         string `json:"system_prompt,omitempty"`
-	MaxInputLength       int    `json:"max_input_length"`
-	FirstChunkTimeoutMs  int    `json:"first_chunk_timeout_ms"`
-	MaxRetries           int    `json:"max_retries"`
-	StreamTotalTimeoutMs int    `json:"stream_total_timeout_ms"`
+	RawOnFailure   bool   `json:"raw_on_failure"`
+	SystemPrompt   string `json:"system_prompt,omitempty"`
+	MaxInputLength int    `json:"max_input_length"`
+	// MaxOutputTokens caps an answer below the model's own limit; 0 leaves
+	// the model's.
+	MaxOutputTokens      int64 `json:"max_output_tokens,omitempty"`
+	FirstChunkTimeoutMs  int   `json:"first_chunk_timeout_ms"`
+	MaxRetries           int   `json:"max_retries"`
+	StreamTotalTimeoutMs int   `json:"stream_total_timeout_ms"`
 }
 
 func (e Extract) Configured() bool { return len(e.Models) > 0 }
@@ -180,6 +183,9 @@ type Research struct {
 	MaxSteps           int    `json:"max_steps"`
 	MaxDurationSeconds int    `json:"max_duration_seconds"`
 	MaxTokens          int64  `json:"max_tokens"`
+	// MaxContextTokens bounds a single request to the model, where MaxTokens
+	// bounds the sum over all steps.
+	MaxContextTokens int64 `json:"max_context_tokens"`
 }
 
 const (
@@ -294,7 +300,7 @@ func Default() *Config {
 				StreamTotalTimeoutMs: 60000,
 			},
 		},
-		Research: Research{Reading: ReadingRaw, MaxSteps: 24, MaxDurationSeconds: 420, MaxTokens: 600000},
+		Research: Research{Reading: ReadingRaw, MaxSteps: 24, MaxDurationSeconds: 420, MaxTokens: 600000, MaxContextTokens: 150000},
 		Breaker:  Breaker{Enabled: true, Failures: 3, WindowSeconds: 60, CooldownSeconds: 60},
 		Logs:     Logs{RetentionDays: 14, MaxRows: 20000, CaptureBody: true},
 	}
@@ -339,6 +345,7 @@ func (c *Config) Normalize() {
 	positive(&c.Fetch.PassthroughLength, 4000)
 	positive(&c.Fetch.RawPageLength, 40000)
 	positive(&c.Fetch.Extract.MaxInputLength, 150000)
+	c.Fetch.Extract.MaxOutputTokens = max(c.Fetch.Extract.MaxOutputTokens, 0)
 	positive(&c.Fetch.Extract.FirstChunkTimeoutMs, 10000)
 	positive(&c.Fetch.Extract.MaxRetries, 3)
 	positive(&c.Fetch.Extract.StreamTotalTimeoutMs, 60000)
@@ -349,6 +356,9 @@ func (c *Config) Normalize() {
 	positive(&c.Research.MaxDurationSeconds, 420)
 	if c.Research.MaxTokens <= 0 {
 		c.Research.MaxTokens = 600000
+	}
+	if c.Research.MaxContextTokens <= 0 {
+		c.Research.MaxContextTokens = 150000
 	}
 	positive(&c.Breaker.Failures, 3)
 	positive(&c.Breaker.WindowSeconds, 60)

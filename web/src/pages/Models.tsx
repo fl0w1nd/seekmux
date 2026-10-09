@@ -409,7 +409,7 @@ function ModelDialog({
 
         <ReasoningEditor type={provider.type} value={form.reasoning} onChange={(reasoning) => set({ reasoning })} />
 
-        <Field label="最大输出 token" hint="0 为使用接口默认值" className="max-w-48">
+        <Field label="最大输出 token" hint={provider.type === "anthropic" ? "模型的输出上限，研究与抓取都受它约束。0 按 32000 发送（该接口必须带上限）；抓取可在抓取页另设更小的值" : "模型的输出上限，研究与抓取都受它约束。0 为不限制；抓取可在抓取页另设更小的值"} className="max-w-md">
           <NumberInput value={form.max_output_tokens ?? 0} onChange={(n) => set({ max_output_tokens: Math.round(n) || undefined })} />
         </Field>
         <Field label="附加请求字段" hint="原样合并进请求体的 JSON，最后合并，会覆盖上面的同名设置。用于界面没有覆盖到的参数">

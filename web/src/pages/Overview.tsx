@@ -65,7 +65,7 @@ function Kpis({ data }: { data: Overview }) {
         unit="搜索"
         detail={`抓取 ${by("fetch") ? duration(by("fetch")!.p50_ms) : "—"} · P95 ${by("search") ? duration(by("search")!.p95_ms) : "—"} / ${by("fetch") ? duration(by("fetch")!.p95_ms) : "—"}`}
       />
-      <Kpi label="模型 Token" value={compact(data.stats.input_tokens + data.stats.output_tokens)} detail={`输入 ${compact(data.stats.input_tokens)} · 输出 ${compact(data.stats.output_tokens)}`} />
+      <Kpi label="模型 Token" value={compact(data.stats.input_tokens + data.stats.output_tokens)} detail={`输入 ${compact(data.stats.input_tokens)} · 输出 ${compact(data.stats.output_tokens)} · 缓存命中 ${percent(data.stats.cache_read_tokens ?? 0, data.stats.input_tokens)}`} />
     </div>
   );
 }

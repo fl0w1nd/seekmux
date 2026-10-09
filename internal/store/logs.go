@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/fl0w1nd/seekmux/internal/core"
 )
 
 // LogEntry is one served tool call.
@@ -24,11 +26,10 @@ type LogEntry struct {
 	// Provider is the provider that produced the answer, when there is one.
 	Provider string `json:"provider,omitempty"`
 	// Summary is the query or URL shown in the list.
-	Summary      string          `json:"summary"`
-	Error        string          `json:"error,omitempty"`
-	InputTokens  int64           `json:"input_tokens,omitempty"`
-	OutputTokens int64           `json:"output_tokens,omitempty"`
-	Attempts     json.RawMessage `json:"attempts,omitempty"`
+	Summary string `json:"summary"`
+	Error   string `json:"error,omitempty"`
+	core.Usage
+	Attempts json.RawMessage `json:"attempts,omitempty"`
 	// Hops is set on listed entries whose call did not go straight through:
 	// the providers and models it passed, in order.
 	Hops []Hop `json:"hops,omitempty"`
@@ -151,10 +152,10 @@ func (s *Store) insertLogs(batch []LogEntry) []LogEntry {
 			attempts = "[]"
 		}
 		res, err := tx.Exec(`INSERT INTO request_logs
-			(ts, tool, source, api_key_id, api_key_name, status, duration_ms, provider, summary, request, response, error, attempts, input_tokens, output_tokens)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			(ts, tool, source, api_key_id, api_key_name, status, duration_ms, provider, summary, request, response, error, attempts, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			e.TS, e.Tool, e.Source, e.APIKeyID, e.APIKeyName, e.Status, e.DurationMs, e.Provider, e.Summary,
-			e.Request, e.Response, e.Error, attempts, e.InputTokens, e.OutputTokens)
+			e.Request, e.Response, e.Error, attempts, e.InputTokens, e.OutputTokens, e.CacheReadTokens, e.CacheWriteTokens)
 		if err != nil {
 			continue
 		}
@@ -212,7 +213,7 @@ func hops(attempts string) []Hop {
 	return out
 }
 
-const logListColumns = `id, ts, tool, source, api_key_id, api_key_name, status, duration_ms, provider, summary, error, input_tokens, output_tokens`
+const logListColumns = `id, ts, tool, source, api_key_id, api_key_name, status, duration_ms, provider, summary, error, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens`
 
 func (s *Store) ListLogs(ctx context.Context, f LogFilter) ([]LogEntry, error) {
 	var where []string
@@ -267,7 +268,7 @@ func (s *Store) ListLogs(ctx context.Context, f LogFilter) ([]LogEntry, error) {
 		var e LogEntry
 		var attempts string
 		if err := rows.Scan(&e.ID, &e.TS, &e.Tool, &e.Source, &e.APIKeyID, &e.APIKeyName, &e.Status, &e.DurationMs,
-			&e.Provider, &e.Summary, &e.Error, &e.InputTokens, &e.OutputTokens, &attempts); err != nil {
+			&e.Provider, &e.Summary, &e.Error, &e.InputTokens, &e.OutputTokens, &e.CacheReadTokens, &e.CacheWriteTokens, &attempts); err != nil {
 			return nil, err
 		}
 		// A research run makes dozens of calls of its own; its route is in the detail view.
@@ -284,7 +285,7 @@ func (s *Store) GetLog(ctx context.Context, id int64) (LogEntry, bool, error) {
 	var attempts string
 	err := s.db.QueryRowContext(ctx, `SELECT `+logListColumns+`, attempts, request, response FROM request_logs WHERE id = ?`, id).
 		Scan(&e.ID, &e.TS, &e.Tool, &e.Source, &e.APIKeyID, &e.APIKeyName, &e.Status, &e.DurationMs,
-			&e.Provider, &e.Summary, &e.Error, &e.InputTokens, &e.OutputTokens, &attempts, &e.Request, &e.Response)
+			&e.Provider, &e.Summary, &e.Error, &e.InputTokens, &e.OutputTokens, &e.CacheReadTokens, &e.CacheWriteTokens, &attempts, &e.Request, &e.Response)
 	if errors.Is(err, sql.ErrNoRows) {
 		return LogEntry{}, false, nil
 	}
@@ -337,12 +338,11 @@ type Bucket struct {
 }
 
 type Stats struct {
-	Since        int64           `json:"since"`
-	Tools        []ToolStats     `json:"tools"`
-	Providers    []ProviderStats `json:"providers"`
-	Buckets      []Bucket        `json:"buckets"`
-	InputTokens  int64           `json:"input_tokens"`
-	OutputTokens int64           `json:"output_tokens"`
+	Since     int64           `json:"since"`
+	Tools     []ToolStats     `json:"tools"`
+	Providers []ProviderStats `json:"providers"`
+	Buckets   []Bucket        `json:"buckets"`
+	core.Usage
 }
 
 func percentile(sorted []int64, p float64) int64 {
@@ -358,7 +358,7 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 	stats := Stats{Since: since, Tools: []ToolStats{}, Providers: []ProviderStats{}, Buckets: []Bucket{}}
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT ts, tool, status, duration_ms, input_tokens, output_tokens FROM request_logs WHERE ts >= ? ORDER BY ts`, since)
+		`SELECT ts, tool, status, duration_ms, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens FROM request_logs WHERE ts >= ? ORDER BY ts`, since)
 	if err != nil {
 		return stats, err
 	}
@@ -374,9 +374,10 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 	tools := map[string]*ToolStats{}
 	toolDurations := map[string][]int64{}
 	for rows.Next() {
-		var ts, duration, in, out int64
+		var ts, duration int64
 		var tool, status string
-		if err := rows.Scan(&ts, &tool, &status, &duration, &in, &out); err != nil {
+		var usage core.Usage
+		if err := rows.Scan(&ts, &tool, &status, &duration, &usage.InputTokens, &usage.OutputTokens, &usage.CacheReadTokens, &usage.CacheWriteTokens); err != nil {
 			return stats, err
 		}
 		t := tools[tool]
@@ -392,8 +393,7 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 			t.Errors++
 			b.Errors++
 		}
-		stats.InputTokens += in
-		stats.OutputTokens += out
+		stats.Usage = stats.Usage.Add(usage)
 	}
 	if err := rows.Err(); err != nil {
 		return stats, err

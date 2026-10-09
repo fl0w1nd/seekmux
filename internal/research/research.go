@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"charm.land/fantasy"
@@ -53,11 +54,10 @@ type Result struct {
 	Report string `json:"report"`
 	Steps  int    `json:"steps"`
 	// BudgetExhausted is set when the agent was made to stop and report.
-	BudgetExhausted bool  `json:"budget_exhausted,omitempty"`
-	Searches        int   `json:"searches"`
-	Fetches         int   `json:"fetches"`
-	InputTokens     int64 `json:"input_tokens"`
-	OutputTokens    int64 `json:"output_tokens"`
+	BudgetExhausted bool `json:"budget_exhausted,omitempty"`
+	Searches        int  `json:"searches"`
+	Fetches         int  `json:"fetches"`
+	core.Usage
 }
 
 type searchInput struct {
@@ -91,6 +91,16 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	defer cancel()
 
 	var result Result
+	// gathered counts the bytes of tool output the model has not been sent yet.
+	var gathered atomic.Int64
+	jsonResponse := func(v any) fantasy.ToolResponse {
+		data, err := json.Marshal(v)
+		if err != nil {
+			return fantasy.NewTextErrorResponse(err.Error())
+		}
+		gathered.Add(int64(len(data)))
+		return fantasy.NewTextResponse(string(data))
+	}
 	searchTool := fantasy.NewParallelAgentTool("search", "Search the web and return relevant results.",
 		func(ctx context.Context, in searchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			progress("search: " + strings.Join(in.Queries, " | "))
@@ -136,12 +146,17 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 		// One step past the budget is reserved for the report.
 		StopWhen: []fantasy.StopCondition{fantasy.StepCountIs(cfg.MaxSteps + 1)},
 		PrepareStep: func(ctx context.Context, opt fantasy.PrepareStepFunctionOptions) (context.Context, fantasy.PrepareStepResult, error) {
-			var tokens int64
+			// The next request carries the last one, its answer and the tool
+			// output since, taken as three bytes to the token.
+			var tokens, context int64
 			for _, step := range opt.Steps {
-				tokens += step.Usage.InputTokens + step.Usage.OutputTokens
+				usage := llm.Usage(step.Usage)
+				tokens += usage.InputTokens + usage.OutputTokens
+				context = usage.InputTokens + usage.OutputTokens
 			}
-			if opt.StepNumber < cfg.MaxSteps && time.Now().Before(wrapUpAt) && tokens < cfg.MaxTokens {
-				return ctx, fantasy.PrepareStepResult{}, nil
+			context += gathered.Swap(0) / 3
+			if opt.StepNumber < cfg.MaxSteps && time.Now().Before(wrapUpAt) && tokens < cfg.MaxTokens && context < cfg.MaxContextTokens {
+				return ctx, fantasy.PrepareStepResult{Messages: model.CachePrefix(opt.Messages)}, nil
 			}
 			result.BudgetExhausted = true
 			progress("budget used up, writing the report")
@@ -169,19 +184,11 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	done(nil)
 
 	result.Steps = len(out.Steps)
-	result.InputTokens, result.OutputTokens = out.TotalUsage.InputTokens, out.TotalUsage.OutputTokens
-	trace.AddUsage(result.InputTokens, result.OutputTokens)
+	result.Usage = llm.Usage(out.TotalUsage)
+	trace.AddUsage(result.Usage)
 	result.Report = strings.TrimSpace(out.Response.Content.Text())
 	if result.Report == "" {
 		return result, errors.New("the research model finished without writing a report")
 	}
 	return result, nil
-}
-
-func jsonResponse(v any) fantasy.ToolResponse {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return fantasy.NewTextErrorResponse(err.Error())
-	}
-	return fantasy.NewTextResponse(string(data))
 }

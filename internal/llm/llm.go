@@ -33,7 +33,14 @@ type Model struct {
 	Key         string
 	RateLimit   config.RateLimit
 	Concurrency int
+	// promptCache is set for APIs that only cache a prompt when asked to.
+	promptCache bool
 }
+
+// anthropicMaxOutput is sent to Anthropic-format models that set no limit of
+// their own: that API requires one, and the runtime's fallback of 4096 would
+// cut a research report short.
+const anthropicMaxOutput int64 = 32000
 
 // LimitKey identifies a model's rate and concurrency limits.
 func LimitKey(id string) string { return "llm:" + id }
@@ -54,6 +61,7 @@ func NewModel(ctx context.Context, cfg *config.Config, id string, client *http.C
 
 	var provider fantasy.Provider
 	var options fantasy.ProviderOptions
+	maxOutput := ref.MaxOutputTokens
 	switch p.Type {
 	case config.LLMAnthropic:
 		opts := []anthropic.Option{anthropic.WithAPIKey(p.APIKey), anthropic.WithHTTPClient(client)}
@@ -66,6 +74,9 @@ func NewModel(ctx context.Context, cfg *config.Config, id string, client *http.C
 		}
 		provider, err = anthropic.New(opts...)
 		options = anthropicOptions(ref)
+		if maxOutput <= 0 {
+			maxOutput = anthropicMaxOutput
+		}
 	default:
 		opts := []openaicompat.Option{
 			openaicompat.WithAPIKey(p.APIKey),
@@ -89,11 +100,45 @@ func NewModel(ctx context.Context, cfg *config.Config, id string, client *http.C
 	m := &Model{
 		Label: id, Language: language, Options: options,
 		Key: LimitKey(id), RateLimit: limit, Concurrency: ref.Concurrency,
+		promptCache: p.Type == config.LLMAnthropic,
 	}
-	if ref.MaxOutputTokens > 0 {
-		m.MaxOutputTokens = &ref.MaxOutputTokens
+	if maxOutput > 0 {
+		m.MaxOutputTokens = &maxOutput
 	}
 	return m, nil
+}
+
+// Usage converts the runtime's usage, which counts cached input apart from
+// the rest, into the gateway's.
+func Usage(u fantasy.Usage) core.Usage {
+	return core.Usage{
+		InputTokens:      u.InputTokens + u.CacheReadTokens + u.CacheCreationTokens,
+		OutputTokens:     u.OutputTokens,
+		CacheReadTokens:  u.CacheReadTokens,
+		CacheWriteTokens: u.CacheCreationTokens,
+	}
+}
+
+// CachePrefix marks the end of messages as a prompt cache breakpoint, so the
+// next step of an agent loop reads everything before it from the cache. It
+// returns nil for models whose API caches prompts by itself.
+func (m *Model) CachePrefix(messages []fantasy.Message) []fantasy.Message {
+	if !m.promptCache || len(messages) == 0 {
+		return nil
+	}
+	marked := append([]fantasy.Message(nil), messages...)
+	marked[len(marked)-1].ProviderOptions = anthropic.NewProviderCacheControlOptions(&anthropic.ProviderCacheControlOptions{
+		CacheControl: anthropic.CacheControl{Type: "ephemeral"},
+	})
+	return marked
+}
+
+// outputLimit is the tighter of the model's output limit and the caller's.
+func (m *Model) outputLimit(limit int64) *int64 {
+	if limit <= 0 || (m.MaxOutputTokens != nil && *m.MaxOutputTokens < limit) {
+		return m.MaxOutputTokens
+	}
+	return &limit
 }
 
 func anthropicOptions(m config.Model) fantasy.ProviderOptions {
@@ -140,6 +185,8 @@ type ChatOptions struct {
 	// as a truncated answer.
 	TotalTimeout time.Duration
 	MaxRetries   int
+	// MaxOutputTokens tightens the model's own output limit; 0 leaves it.
+	MaxOutputTokens int64
 }
 
 // Chat runs one streamed turn without tools.
@@ -159,7 +206,7 @@ func (m *Model) Chat(ctx context.Context, system, user string, opt ChatOptions) 
 		result, err := agent.Stream(runCtx, fantasy.AgentStreamCall{
 			Prompt:          user,
 			ProviderOptions: m.Options,
-			MaxOutputTokens: m.MaxOutputTokens,
+			MaxOutputTokens: m.outputLimit(opt.MaxOutputTokens),
 			MaxRetries:      &noRetries,
 			// Any part, reasoning included, shows the stream is alive.
 			OnChunk: func(fantasy.StreamPart) error {
@@ -189,7 +236,7 @@ func (m *Model) Chat(ctx context.Context, system, user string, opt ChatOptions) 
 
 		if err == nil {
 			done(nil)
-			trace.AddUsage(result.TotalUsage.InputTokens, result.TotalUsage.OutputTokens)
+			trace.AddUsage(Usage(result.TotalUsage))
 			hitLimit := result.Response.FinishReason == fantasy.FinishReasonLength
 			if answer == "" {
 				if hitLimit {
