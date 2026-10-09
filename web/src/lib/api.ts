@@ -63,6 +63,8 @@ export interface Research {
   enabled: boolean;
   /** The id of the single model research runs on. */
   model: string;
+  /** Whether the agent reads page text itself or has the extract models answer per page. */
+  reading: "raw" | "extract";
   system_prompt?: string;
   max_steps: number;
   max_duration_seconds: number;

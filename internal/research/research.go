@@ -26,7 +26,7 @@ const DefaultSystemPrompt = `You are a research agent. Another AI model handed y
 
 How to work:
 - Start by searching. Run several differently worded queries at once rather than one at a time, and use time_range when the question is about recent events.
-- Search results are leads, not evidence. Open the pages that matter with fetch and ask each one a precise question. Fetch several pages in the same step when you can.
+- Search results are leads, not evidence. Open the pages that matter with fetch and go by what they actually say. Fetch several pages in the same step when you can.
 - Prefer primary sources: official documentation, source code, standards, papers, first-party announcements. Check a claim that matters against a second independent source.
 - Follow up on what you learn: new terms, version numbers, names and dates are better queries than your first guesses.
 - Stop when further searching would no longer change the report. You have a limited budget of steps; when told it is used up, write the report from what you have.
@@ -65,6 +65,11 @@ type searchInput struct {
 	TimeRange string   `json:"time_range,omitempty" enum:"day,week,month,year" description:"Limit results to a recent publication window. Omit unless freshness matters."`
 }
 
+type readInput struct {
+	URL    string `json:"url" description:"URL of the page to read."`
+	Offset int    `json:"offset,omitempty" description:"Where to continue a long page: the next_offset of the previous part. Omit to start at the top."`
+}
+
 type fetchInput struct {
 	URL    string `json:"url" description:"URL of the page to read."`
 	Prompt string `json:"prompt" description:"What you want from the page: a question or an extraction instruction, with the scope and level of detail you need."`
@@ -95,15 +100,26 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 			}
 			return jsonResponse(out), nil
 		})
-	fetchTool := fantasy.NewParallelAgentTool("fetch", "Read a web page and get the answer to your prompt from its content.",
-		func(ctx context.Context, in fetchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
-			progress("fetch: " + in.URL)
-			out, err := tools.Fetch(ctx, fetch.Args{URL: in.URL, Prompt: in.Prompt})
-			if err != nil {
-				return fantasy.NewTextErrorResponse(err.Error()), nil
-			}
-			return jsonResponse(out), nil
+	read := func(ctx context.Context, args fetch.Args) (fantasy.ToolResponse, error) {
+		progress("fetch: " + args.URL)
+		out, err := tools.Fetch(ctx, args)
+		if err != nil {
+			return fantasy.NewTextErrorResponse(err.Error()), nil
+		}
+		return jsonResponse(out), nil
+	}
+	// Reading the text itself keeps the agent on primary material; having the
+	// extract models answer per page costs it far less context.
+	fetchTool := fantasy.NewParallelAgentTool("fetch", "Read the text of a web page. A long page comes in parts: when the result has next_offset, call again with it to read on.",
+		func(ctx context.Context, in readInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
+			return read(ctx, fetch.Args{URL: in.URL, Raw: true, Offset: in.Offset})
 		})
+	if cfg.Reading == config.ReadingExtract {
+		fetchTool = fantasy.NewParallelAgentTool("fetch", "Read a web page and get the answer to your prompt from its content.",
+			func(ctx context.Context, in fetchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
+				return read(ctx, fetch.Args{URL: in.URL, Prompt: in.Prompt})
+			})
+	}
 
 	system := cfg.SystemPrompt
 	if strings.TrimSpace(system) == "" {

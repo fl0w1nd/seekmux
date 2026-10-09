@@ -171,13 +171,21 @@ func (r Reasoning) validate(apiType string) error {
 // Research configures the research agent. It runs on a single model: a run
 // builds on the provider's prompt cache, so it does not fail over.
 type Research struct {
-	Enabled            bool   `json:"enabled"`
-	Model              string `json:"model"`
+	Enabled bool   `json:"enabled"`
+	Model   string `json:"model"`
+	// Reading is how the agent reads pages: ReadingRaw gives it the page text,
+	// ReadingExtract has the extract models answer its question about the page.
+	Reading            string `json:"reading"`
 	SystemPrompt       string `json:"system_prompt,omitempty"`
 	MaxSteps           int    `json:"max_steps"`
 	MaxDurationSeconds int    `json:"max_duration_seconds"`
 	MaxTokens          int64  `json:"max_tokens"`
 }
+
+const (
+	ReadingRaw     = "raw"
+	ReadingExtract = "extract"
+)
 
 func (r Research) Configured() bool { return r.Model != "" }
 
@@ -286,7 +294,7 @@ func Default() *Config {
 				StreamTotalTimeoutMs: 60000,
 			},
 		},
-		Research: Research{MaxSteps: 24, MaxDurationSeconds: 420, MaxTokens: 600000},
+		Research: Research{Reading: ReadingRaw, MaxSteps: 24, MaxDurationSeconds: 420, MaxTokens: 600000},
 		Breaker:  Breaker{Enabled: true, Failures: 3, WindowSeconds: 60, CooldownSeconds: 60},
 		Logs:     Logs{RetentionDays: 14, MaxRows: 20000, CaptureBody: true},
 	}
@@ -334,6 +342,9 @@ func (c *Config) Normalize() {
 	positive(&c.Fetch.Extract.FirstChunkTimeoutMs, 10000)
 	positive(&c.Fetch.Extract.MaxRetries, 3)
 	positive(&c.Fetch.Extract.StreamTotalTimeoutMs, 60000)
+	if c.Research.Reading != ReadingExtract {
+		c.Research.Reading = ReadingRaw
+	}
 	positive(&c.Research.MaxSteps, 24)
 	positive(&c.Research.MaxDurationSeconds, 420)
 	if c.Research.MaxTokens <= 0 {
