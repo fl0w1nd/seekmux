@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -26,6 +27,9 @@ const (
 	AttemptCached   = "cached"
 	// AttemptSkipped is a provider the circuit breaker had switched off.
 	AttemptSkipped = "skipped"
+	// AttemptLimited is a provider passed over because its own rate limit
+	// had no free slot; it may still serve the call once a slot frees.
+	AttemptLimited = "limited"
 )
 
 // Usage is the token usage of the LLM calls made for a tool call. InputTokens
@@ -109,6 +113,16 @@ func (t *Trace) Skip(kind, provider, target, reason string) {
 		return
 	}
 	t.add(Attempt{Kind: kind, Provider: provider, Target: target, Status: AttemptSkipped, Error: reason, StartMs: time.Since(t.Start).Milliseconds()})
+}
+
+// Limited records a provider passed over for its rate limit, whose next
+// slot frees after wait.
+func (t *Trace) Limited(kind, provider, target string, wait time.Duration) {
+	if t == nil {
+		return
+	}
+	reason := fmt.Sprintf("rate limit reached, next slot in %s", wait.Round(time.Millisecond))
+	t.add(Attempt{Kind: kind, Provider: provider, Target: target, Status: AttemptLimited, Error: reason, StartMs: time.Since(t.Start).Milliseconds()})
 }
 
 func (t *Trace) add(a Attempt) {

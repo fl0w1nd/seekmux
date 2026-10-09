@@ -181,9 +181,10 @@ const hopClass: Record<Hop["status"], string> = {
   cached: "text-ink-2",
   error: "text-err line-through decoration-err/60",
   skipped: "text-warn line-through decoration-warn/60",
+  limited: "text-warn line-through decoration-warn/60",
   canceled: "text-ink-3",
 };
-const hopTitle: Record<Hop["status"], string> = { ok: "成功", cached: "缓存", error: "失败", skipped: "已熔断，跳过", canceled: "竞速中被取消" };
+const hopTitle: Record<Hop["status"], string> = { ok: "成功", cached: "缓存", error: "失败", skipped: "已熔断，跳过", limited: "限流，跳过", canceled: "竞速中被取消" };
 
 /**
  * The way a call took when it did not go straight through: each provider or

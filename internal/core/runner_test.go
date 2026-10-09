@@ -106,12 +106,18 @@ func TestRunFallbackSkipsRateLimitedProvider(t *testing.T) {
 	lim := NewLimits()
 	limit := config.RateLimit{Requests: 1, Window: time.Minute}
 	lim.Rate.TryAcquire("a", limit)
-	_, name, err := RunFallback(context.Background(), lim, []Provider[string, string]{
+	trace := NewTrace()
+	_, name, err := RunFallback(WithTrace(context.Background(), trace), lim, []Provider[string, string]{
 		provider("a", limit, ok("A")),
 		provider("b", config.RateLimit{}, ok("B")),
 	}, "", RunOptions{Timeout: time.Second, Strategy: StrategyFallback})
 	if err != nil || name != "b" {
 		t.Fatalf("name=%q err=%v", name, err)
+	}
+	// The trace says why the first provider was not called.
+	attempts := trace.Attempts()
+	if len(attempts) != 2 || attempts[0].Provider != "a" || attempts[0].Status != AttemptLimited || attempts[1].Status != AttemptOK {
+		t.Fatalf("attempts = %+v", attempts)
 	}
 }
 
@@ -213,12 +219,21 @@ func TestRunHedgedWaitsForRateLimitedProvider(t *testing.T) {
 	lim := NewLimits()
 	limit := config.RateLimit{Requests: 1, Window: 60 * time.Millisecond}
 	lim.Rate.TryAcquire("b", limit)
-	_, name, err := RunHedged(context.Background(), lim, []Provider[string, string]{
+	trace := NewTrace()
+	_, name, err := RunHedged(WithTrace(context.Background(), trace), lim, []Provider[string, string]{
 		provider("a", config.RateLimit{}, fail(errors.New("boom"))),
 		provider("b", limit, ok("B")),
 	}, "", RunOptions{Timeout: time.Second, SlowThreshold: 500 * time.Millisecond})
 	if err != nil || name != "b" {
 		t.Fatalf("name=%q err=%v", name, err)
+	}
+	var statuses []string
+	for _, a := range trace.Attempts() {
+		statuses = append(statuses, a.Provider+":"+a.Status)
+	}
+	// b gets its turn when a fails, finds no slot, and runs once one frees.
+	if got := strings.Join(statuses, " "); got != "a:error b:limited b:ok" {
+		t.Fatalf("attempts = %s", got)
 	}
 }
 

@@ -193,6 +193,8 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 	}
 
 	failed := map[string]bool{}
+	// A provider passed over for its rate limit is noted once, not on every round.
+	limited := map[string]bool{}
 	var errs []providerError
 	for len(failed) < len(avail) {
 		earliest := time.Duration(-1)
@@ -211,6 +213,10 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 			if opt.Strategy == StrategyFallback {
 				ok, wait := lim.Rate.TryAcquire(p.Key, p.RateLimit)
 				if !ok {
+					if !limited[p.Name] {
+						limited[p.Name] = true
+						TraceFrom(ctx).Limited(opt.Kind, p.Name, opt.Target, wait)
+					}
 					if earliest < 0 || wait < earliest {
 						earliest = wait
 					}
@@ -311,6 +317,7 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 	slow := make(chan struct{}, len(avail))
 	started := map[string]time.Time{}
 	running := map[string]bool{}
+	limited := map[string]bool{}
 	var errs []providerError
 	var retry *time.Timer
 	var retryC <-chan time.Time
@@ -345,6 +352,10 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 			}
 			ok, wait := lim.Rate.TryAcquire(p.Key, p.RateLimit)
 			if !ok {
+				if !limited[p.Name] {
+					limited[p.Name] = true
+					trace.Limited(opt.Kind, p.Name, opt.Target, wait)
+				}
 				note(wait)
 				continue
 			}

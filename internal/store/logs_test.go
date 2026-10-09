@@ -23,4 +23,9 @@ func TestHopsCondenseTheRoute(t *testing.T) {
 	if got := hops(detour); !reflect.DeepEqual(got, want) {
 		t.Fatalf("hops = %+v", got)
 	}
+
+	limited := `[{"kind":"search","provider":"brave","status":"limited"},{"kind":"search","provider":"exa","status":"ok"}]`
+	if got := hops(limited); !reflect.DeepEqual(got, []Hop{{"search", "brave", "limited", 1}, {"search", "exa", "ok", 1}}) {
+		t.Fatalf("a rate-limited provider changes the route, got %+v", got)
+	}
 }

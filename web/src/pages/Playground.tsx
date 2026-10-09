@@ -211,7 +211,7 @@ function Failure({ error }: { error: Error }) {
 /* ---------- Upstream calls and code ---------- */
 
 /** Attempts that did not serve the call. A canceled attempt lost a race, which is normal. */
-const failures = (attempts: Attempt[]) => attempts.filter((a) => a.status === "error" || a.status === "skipped").length;
+const failures = (attempts: Attempt[]) => attempts.filter((a) => a.status === "error" || a.status === "skipped" || a.status === "limited").length;
 
 function traceLabel(attempts: Attempt[] | null | undefined): ReactNode {
   return (

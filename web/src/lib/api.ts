@@ -147,7 +147,8 @@ export interface Attempt {
   kind: string;
   provider: string;
   target?: string;
-  status: "ok" | "error" | "canceled" | "cached" | "skipped";
+  /** `skipped`: switched off by the breaker; `limited`: no free rate-limit slot at the time. */
+  status: "ok" | "error" | "canceled" | "cached" | "skipped" | "limited";
   start_ms: number;
   duration_ms: number;
   http_status?: number;

@@ -2,9 +2,11 @@ import type { Attempt } from "../lib/api";
 import { duration, toolLabel } from "../lib/format";
 import { cx, type Tone } from "../ui/primitives";
 
-const statusTone: Record<Attempt["status"], Tone> = { ok: "ok", error: "err", canceled: "neutral", cached: "info", skipped: "warn" };
-const statusLabel: Record<Attempt["status"], string> = { ok: "成功", error: "失败", canceled: "已取消", cached: "缓存命中", skipped: "已熔断，跳过" };
-const bar: Record<Attempt["status"], string> = { ok: "bg-ok", error: "bg-err", canceled: "bg-ink-3", cached: "bg-info", skipped: "bg-warn" };
+const statusTone: Record<Attempt["status"], Tone> = { ok: "ok", error: "err", canceled: "neutral", cached: "info", skipped: "warn", limited: "warn" };
+const statusLabel: Record<Attempt["status"], string> = { ok: "成功", error: "失败", canceled: "已取消", cached: "缓存命中", skipped: "已熔断，跳过", limited: "限流，跳过" };
+const bar: Record<Attempt["status"], string> = { ok: "bg-ok", error: "bg-err", canceled: "bg-ink-3", cached: "bg-info", skipped: "bg-warn", limited: "bg-warn" };
+/** Notes about a provider that was not called: they have no duration. */
+const note = (status: Attempt["status"]) => status === "cached" || status === "skipped" || status === "limited";
 const text: Record<Tone, string> = { ok: "text-ok", err: "text-err", neutral: "text-ink-3", info: "text-info", warn: "text-warn", signal: "text-signal-text" };
 
 /**
@@ -32,7 +34,7 @@ export function Waterfall({ attempts, total }: { attempts: Attempt[]; total: num
               <span className={cx("num shrink-0", text[statusTone[a.status]])}>
                 {statusLabel[a.status]}
                 {a.http_status ? ` ${a.http_status}` : ""}
-                {a.status !== "cached" && a.status !== "skipped" && ` · ${duration(a.duration_ms)}`}
+                {!note(a.status) && ` · ${duration(a.duration_ms)}`}
               </span>
             </div>
             <div className="relative mt-1.5 h-1.5 rounded-full bg-sunken">
@@ -42,7 +44,7 @@ export function Waterfall({ attempts, total }: { attempts: Attempt[]; total: num
               />
             </div>
             {a.error && a.status === "error" && <div className="num mt-1.5 text-xs break-words text-err">{a.error}</div>}
-            {a.error && a.status === "skipped" && <div className="num mt-1.5 text-xs break-words text-ink-3">{a.error}</div>}
+            {a.error && (a.status === "skipped" || a.status === "limited") && <div className="num mt-1.5 text-xs break-words text-ink-3">{a.error}</div>}
           </li>
         ))}
       </ol>

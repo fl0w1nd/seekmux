@@ -171,7 +171,8 @@ func (s *Store) insertLogs(batch []LogEntry) []LogEntry {
 // LogFilter narrows ListLogs. Before pages backwards from a log id.
 type LogFilter struct {
 	Tool, Status, Provider, Source, Query string
-	// Fallback keeps only calls in which a provider or model failed or was skipped.
+	// Fallback keeps only calls in which a provider or model failed or was
+	// skipped, for the breaker or its rate limit.
 	Fallback bool
 	Before   int64
 	Limit    int
@@ -199,7 +200,7 @@ func hops(attempts string) []Hop {
 		if a.Status == "cached" {
 			continue
 		}
-		detour = detour || a.Status == "error" || a.Status == "skipped"
+		detour = detour || a.Status == "error" || a.Status == "skipped" || a.Status == "limited"
 		if n := len(out); n > 0 && out[n-1].Kind == a.Kind && out[n-1].Provider == a.Provider && out[n-1].Status == a.Status {
 			out[n-1].Count++
 			continue
@@ -242,7 +243,7 @@ func (s *Store) ListLogs(ctx context.Context, f LogFilter) ([]LogEntry, error) {
 		args = append(args, pattern, pattern)
 	}
 	if f.Fallback {
-		where = append(where, `EXISTS (SELECT 1 FROM json_each(request_logs.attempts) a WHERE json_extract(a.value, '$.status') IN ('error', 'skipped'))`)
+		where = append(where, `EXISTS (SELECT 1 FROM json_each(request_logs.attempts) a WHERE json_extract(a.value, '$.status') IN ('error', 'skipped', 'limited'))`)
 	}
 	if f.Before > 0 {
 		add("id < ?", f.Before)
@@ -423,7 +424,8 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 		if err := attempts.Scan(&kind, &provider, &status, &duration); err != nil {
 			return stats, err
 		}
-		if status.String == "cached" || status.String == "skipped" {
+		// These are notes about a provider, not calls to it.
+		if status.String == "cached" || status.String == "skipped" || status.String == "limited" {
 			continue
 		}
 		key := [2]string{kind.String, provider.String}
