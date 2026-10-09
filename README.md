@@ -1,130 +1,130 @@
 # SeekMux
 
-A search / fetch / research gateway for AI agents. One small Go binary that
-speaks MCP over Streamable HTTP, routes every call across several providers
-with rate limiting and failover, and ships a web console to configure and
-observe it.
+A self-hosted search, fetch and research gateway for AI agents.
 
-- **search** — Exa, Brave, Tavily. Tried in priority order; a provider that is
-  rate limited or failing is skipped.
-- **fetch** — Firecrawl, Jina Reader, Tavily. A slow provider is raced by the
-  next one. With a prompt, an extraction model answers from the page instead
-  of returning all of it.
-- **Models** — each model is defined once under its endpoint, with its own
-  parameters, rate limit and concurrency. Extraction takes an ordered chain of
-  models and fails over along it; research runs on a single model.
-- **Circuit breaker** — a provider or extract model that keeps failing is
-  skipped for a while, so calls go straight to the next one. One global policy,
-  set on the System page.
-- **research** — hands a whole question to an agent that searches and reads on
-  its own and returns a sourced report. Off until you pick a model.
-- **Console** — providers, routes and limits, model endpoints
-  (OpenAI-compatible and Anthropic), API keys, request logs with the full
-  upstream call chain, and a playground.
+SeekMux puts several search and page-reading services behind one MCP endpoint.
+Your agent gets three tools; SeekMux decides which provider serves each call,
+keeps every provider inside its rate limit, and moves on to the next one when
+a provider is slow, failing or out of credits. Everything is configured in a
+web console and applies without a restart.
 
-Everything is stored in one SQLite file. Configuration changes apply
-immediately, without a restart.
+It is one small Go binary with a single SQLite file, meant for a cheap server.
 
-## Run with Docker
+## What it does
+
+| Tool | Providers | Behaviour |
+| --- | --- | --- |
+| `search` | Brave, Exa, Tavily | Tried in your priority order; a provider that is rate limited or failing is skipped. |
+| `fetch` | Firecrawl, Jina Reader, Tavily | A slow provider is raced by the next one. Given a prompt, a model answers from the page instead of returning all of it. |
+| `research` | any configured model | An agent searches and reads on its own and returns a sourced report. Also available as `research_start` / `research_result` for clients with short timeouts. |
+
+Around the tools:
+
+- **Rate limits and concurrency** per provider and per model, shared by
+  everything that uses them.
+- **Failover** between providers, and along a chain of models for extraction.
+- **Circuit breaker**: something that keeps failing is skipped for a while.
+  A rejected API key or exhausted credits switch a provider off until you
+  re-enable it, and the console shows what the provider answered.
+- **Models** from OpenAI-compatible and Anthropic endpoints, each with its own
+  parameters, reasoning setting and limits.
+- **Access keys** for agents, limited to specific tools and with their own
+  rate limit.
+- **Request logs** with the full upstream call chain of every request, live.
+- **Playground** to try each tool from the browser.
+
+## Quick start
 
 ```bash
 curl -O https://raw.githubusercontent.com/fl0w1nd/seekmux/main/docker-compose.yml
 docker compose up -d
-docker compose logs seekmux     # prints a one-time setup token
+docker compose logs seekmux
 ```
 
-Open `http://127.0.0.1:8787` and use the token to set the admin password.
-Images for `linux/amd64` and `linux/arm64` are at `ghcr.io/fl0w1nd/seekmux`;
-everything the gateway stores is in the `./data` volume.
+The log prints a one-time setup token. Open `http://127.0.0.1:8787`, use the
+token to set the admin password, then:
 
-## Build
+1. **Providers** — paste the API keys of the services you use.
+2. **Search / Fetch** — order the providers and adjust their limits.
+3. **Models** (optional) — add a model endpoint to enable prompt-based
+   extraction and research.
+4. **Access keys** — create a key for your agent.
 
-Needs Go 1.27+ and pnpm.
+Images for `linux/amd64` and `linux/arm64` are published at
+`ghcr.io/fl0w1nd/seekmux`. All state lives in the `./data` volume.
 
-```bash
-make build          # web UI + bin/seekmux
-make linux          # static linux/amd64 and linux/arm64 binaries
-make test
-```
-
-## Run
-
-```bash
-./bin/seekmux serve --addr :8787 --data ./data
-```
-
-On first start the log prints a one-time setup token; open the console and
-use it to set the admin password. Alternatively set `SEEKMUX_ADMIN_PASSWORD`
-(10+ characters) before the first start.
-
-| Flag | Environment | Default |
-| --- | --- | --- |
-| `--addr` | `SEEKMUX_ADDR` | `:8787` |
-| `--data` | `SEEKMUX_DATA_DIR` | `./data` |
-
-Other commands:
-
-```bash
-seekmux export > seekmux.yaml     # configuration as YAML (contains API keys)
-seekmux import seekmux.yaml       # replace the configuration
-seekmux import-env old/.env       # migrate the settings of the old stdio tool
-seekmux reset-password            # forget the admin password, print a new setup token
-seekmux healthcheck               # exit 0 when the gateway answers (used by the image)
-```
+To skip the setup token, set `SEEKMUX_ADMIN_PASSWORD` (10+ characters) in a
+`.env` file next to `docker-compose.yml` before the first start.
 
 ## Connect an agent
 
-Create an API key in the console (Access keys), then:
+The MCP endpoint is `/mcp` (Streamable HTTP). Send the access key as a bearer
+token:
 
 ```bash
 claude mcp add --transport http seekmux https://your-host/mcp --header "Authorization: Bearer smx_..."
 ```
 
-Keys can be limited to specific tools and given their own rate limit.
+Any MCP client that supports Streamable HTTP and custom headers works the same
+way; `X-API-Key: smx_...` is accepted as well.
 
-## Deploy
+## Deploying
 
-Run it behind a TLS-terminating reverse proxy. Two things to set there:
+Put a TLS-terminating reverse proxy in front of it. The compose file binds to
+`127.0.0.1:8787` for a proxy on the same host. Two proxy settings matter:
 
-- no response buffering for `/mcp` and `/api/logs/stream` (both stream);
-- a read timeout longer than your research time budget (default 5 minutes),
-  or have agents use `research_start` / `research_result` instead.
+- **No response buffering** for `/mcp` and `/api/logs/stream`; both stream.
+- **A read timeout longer than your research time budget** (5 minutes by
+  default), or have agents use `research_start` / `research_result`.
 
-```
-[Unit]
-Description=SeekMux
-After=network-online.target
+The proxy should send `X-Forwarded-For` and `X-Forwarded-Proto`, as most do by
+default: the first keeps login throttling per client, the second marks the
+session cookie as secure.
 
-[Service]
-ExecStart=/opt/seekmux/seekmux serve --addr 127.0.0.1:8787 --data /var/lib/seekmux
-Restart=on-failure
-DynamicUser=yes
-StateDirectory=seekmux
+### Without Docker
 
-[Install]
-WantedBy=multi-user.target
-```
+Download or build the binary and run it under your service manager:
 
-## Layout
-
-```
-cmd/seekmux        entry point and CLI
-internal/config    configuration model, validation, YAML
-internal/core      rate limiter, fallback and hedged runners, tracing, cache
-internal/search    search providers
-internal/fetch     fetch providers, extraction, paging
-internal/llm       model access through charm.land/fantasy
-internal/research  the research agent
-internal/store     SQLite: config, keys, sessions, logs, tasks
-internal/app       wiring; applies configuration snapshots
-internal/mcpsrv    MCP server
-internal/admin     console API and auth
-web                console (React); design system in web/DESIGN.md
+```bash
+seekmux serve --addr 127.0.0.1:8787 --data /var/lib/seekmux
 ```
 
-## Releases
+| Flag | Environment | Default |
+| --- | --- | --- |
+| `--addr` | `SEEKMUX_ADDR` | `:8787` |
+| `--data` | `SEEKMUX_DATA_DIR` | `./data` |
+| | `SEEKMUX_ADMIN_PASSWORD` | unset; when set it is applied on every start |
 
-Pushing a tag `vX.Y.Z` builds the multi-architecture image, publishes it to
-GHCR and creates a GitHub release whose notes are the commit subjects since
-the previous tag. Commits follow Conventional Commits (`feat:`, `fix:`, ...);
-`ci`, `build`, `chore`, `docs`, `test` and `style` commits stay out of the notes.
+### Backup and moving
+
+Everything is in the data directory. To move only the configuration:
+
+```bash
+seekmux export > seekmux.yaml     # contains your API keys in plain text
+seekmux import seekmux.yaml
+```
+
+Lost the admin password? `seekmux reset-password` removes it, and the next
+start prints a new setup token.
+
+## Development
+
+Requires Go 1.27+ and pnpm.
+
+```bash
+make dev      # backend on :8787, console with hot reload on :5173
+make test     # go vet, go test, TypeScript check
+make build    # console + bin/seekmux
+```
+
+The backend is in `internal/`, the console (React, TypeScript, Tailwind) in
+`web/`; its design system is described in [web/DESIGN.md](web/DESIGN.md). The
+console is embedded in the binary, so build it before `go build` if you want
+it served.
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org);
+release notes are generated from them. Issues and pull requests are welcome.
+
+## License
+
+[MIT](LICENSE)
