@@ -1,5 +1,5 @@
 import { clsx, type ClassValue } from "clsx";
-import { Check, Copy, LoaderCircle } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { Switch as RadixSwitch, Tooltip as RadixTooltip } from "radix-ui";
 import {
   useState,
@@ -63,6 +63,28 @@ const control =
 
 export function Input({ className, mono, ...rest }: InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }) {
   return <input className={cx(control, fill(className), "h-8", mono && "num", className)} spellCheck={false} autoComplete="off" {...rest} />;
+}
+
+/** A secret field with a toggle to show what was typed or pasted. */
+export function PasswordInput({ className, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { mono?: boolean }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <div className={cx("relative", fill(className), className)}>
+      <Input {...rest} type={shown ? "text" : "password"} className="pr-8" />
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label={shown ? "隐藏" : "显示"}
+        aria-pressed={shown}
+        // Keep the focus, and with it the caret, in the field.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setShown((s) => !s)}
+        className="absolute inset-y-0 right-0 grid w-8 place-items-center text-ink-3 hover:text-ink [&>svg]:size-3.5"
+      >
+        {shown ? <EyeOff /> : <Eye />}
+      </button>
+    </div>
+  );
 }
 
 export function Textarea({ className, mono, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { mono?: boolean }) {

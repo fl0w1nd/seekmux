@@ -91,7 +91,7 @@ function useTheme(): [Theme, (theme: Theme) => void] {
 
 export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { meta, dirty, saving, save, discard } = useConfig();
+  const { meta, saving, error, retry, discard } = useConfig();
   const client = useQueryClient();
   const [theme, setTheme] = useTheme();
 
@@ -102,7 +102,7 @@ export function Shell({ children }: { children: ReactNode }) {
           <Logo className="size-7" />
           <div className="leading-tight max-md:hidden">
             <div className="font-medium">SeekMux</div>
-            <div className="tag normal-case">{meta.version}</div>
+            <div className="tag normal-case">{saving ? "保存中…" : meta.version}</div>
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto px-2 pb-4">
@@ -160,22 +160,22 @@ export function Shell({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="min-w-0 flex-1">
-        <div className={cx("mx-auto w-full max-w-6xl px-6 py-6 max-md:px-4", dirty && "pb-24")}>{children}</div>
+        <div className={cx("mx-auto w-full max-w-6xl px-6 py-6 max-md:px-4", error && "pb-24")}>{children}</div>
       </main>
 
-      {dirty && (
+      {error && (
         <div className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4 pl-60 max-md:pl-18">
-          <div className="flex animate-in items-center gap-4 rounded-panel border border-line-strong bg-overlay py-2 pr-2 pl-4 shadow-overlay">
-            <span className="flex items-center gap-2.5 text-sm">
-              <Dot tone="warn" live />
-              有未保存的更改，保存后立即生效
+          <div className="flex max-w-2xl animate-in items-center gap-4 rounded-panel border border-line-strong bg-overlay py-2 pr-2 pl-4 shadow-overlay">
+            <span className="flex min-w-0 items-start gap-2.5 text-sm">
+              <Dot tone="err" className="mt-2" />
+              <span className="min-w-0 break-words">这次改动没有保存：{error}</span>
             </span>
-            <span className="flex gap-2">
-              <Button variant="ghost" onClick={discard} disabled={saving}>
-                放弃
+            <span className="flex shrink-0 gap-2">
+              <Button variant="ghost" onClick={discard}>
+                撤回改动
               </Button>
-              <Button variant="primary" onClick={save} loading={saving}>
-                保存
+              <Button variant="primary" onClick={retry}>
+                重试
               </Button>
             </span>
           </div>

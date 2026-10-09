@@ -45,7 +45,7 @@ export function ProvidersPage() {
                           </span>
                           <p className="mt-0.5">
                             {route.disabled_reason === "auth"
-                              ? "接口拒绝了这个密钥，网关不再向它发请求。更换密钥并保存后自动恢复；确认密钥没问题也可以直接重新启用。"
+                              ? "接口拒绝了这个密钥，网关不再向它发请求。更换密钥后自动恢复；确认密钥没问题也可以直接重新启用。"
                               : route.disabled_reason === "quota"
                                 ? route.disabled_ms > 0
                                   ? "接口报告额度已用尽，并给出了重置时间，到时自动恢复。充值后可以直接重新启用。"

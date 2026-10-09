@@ -15,7 +15,7 @@ import { ResearchPage } from "./pages/Research";
 import { SearchPage } from "./pages/Search";
 import { SystemPage } from "./pages/System";
 import { Logo, Shell } from "./Shell";
-import { Button, Empty, Field, Input, Notice, Spinner } from "./ui/primitives";
+import { Button, Empty, Field, Input, Notice, Spinner, PasswordInput } from "./ui/primitives";
 
 export function App() {
   const client = useQueryClient();
@@ -108,8 +108,7 @@ function Gate({ setup, onDone }: { setup: boolean; onDone: () => unknown }) {
             </>
           )}
           <Field label={setup ? "管理员密码" : "密码"} hint={setup ? "至少 10 个字符" : undefined} error={error}>
-            <Input
-              type="password"
+            <PasswordInput
               autoFocus={!setup}
               autoComplete={setup ? "new-password" : "current-password"}
               value={password}

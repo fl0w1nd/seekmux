@@ -6,7 +6,7 @@ import { useConfig } from "../lib/config";
 import { compact, duration } from "../lib/format";
 import { PageHeader } from "../Shell";
 import { JSONInput, RateLimitInput, SecretInput } from "../ui/inputs";
-import { Dialog } from "../ui/overlays";
+import { Dialog, useConfirm } from "../ui/overlays";
 import { Badge, Button, Empty, Field, Input, Notice, NumberInput, Panel, Segmented, Select, Table, Td, Th, Tooltip } from "../ui/primitives";
 
 const typeLabel: Record<LLMType, string> = { "openai-compatible": "OpenAI 兼容", anthropic: "Anthropic" };
@@ -28,14 +28,12 @@ const toModelID = (name: string) =>
     .replace(/^[-._]+|[-._]+$/g, "")
     .slice(0, 64);
 
-const effortLabel: Record<string, string> = { minimal: "极低", low: "低", medium: "中", high: "高", xhigh: "很高", max: "最高" };
-
 function reasoningLabel(r: Reasoning): string {
   switch (r.mode) {
     case "off":
       return "关闭";
     case "effort":
-      return `强度 · ${effortLabel[r.effort ?? ""] ?? r.effort}`;
+      return `强度 · ${r.effort}`;
     case "budget":
       return `预算 · ${compact(r.budget_tokens ?? 0)}`;
     default:
@@ -48,6 +46,7 @@ type Editing = { kind: "provider"; index: number } | { kind: "model"; provider: 
 export function ModelsPage() {
   const { config, update } = useConfig();
   const status = useStatus();
+  const confirm = useConfirm();
   const providers = config.llm.providers;
   // An index of -1 means a new entry.
   const [editing, setEditing] = useState<Editing>(null);
@@ -104,7 +103,9 @@ export function ModelsPage() {
                       aria-label={`删除接口 ${p.name || p.id}`}
                       disabled={inUse}
                       title={inUse ? "它的模型正在被使用，先在抓取或深度研究页改掉指派" : undefined}
-                      onClick={() => update((d) => void d.llm.providers.splice(pi, 1))}
+                      onClick={async () => {
+                        if (await confirm({ title: `删除接口 ${p.name || p.id}？`, body: "接口和它下面的模型一起删除，立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers.splice(pi, 1));
+                      }}
                     />
                   </>
                 }
@@ -174,7 +175,9 @@ export function ModelsPage() {
                                     aria-label={`删除模型 ${m.id}`}
                                     disabled={roles.length > 0}
                                     title={roles.length > 0 ? "正在被使用，先在抓取或深度研究页改掉指派" : undefined}
-                                    onClick={() => update((d) => void d.llm.providers[pi].models.splice(mi, 1))}
+                                    onClick={async () => {
+                                      if (await confirm({ title: `删除模型 ${m.id}？`, body: "立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers[pi].models.splice(mi, 1));
+                                    }}
                                   />
                                 </span>
                               </Td>
@@ -253,7 +256,6 @@ function ProviderDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       title={isNew ? "添加模型接口" : `编辑 ${initial.name || initial.id}`}
-      description="改动先进入草稿，点页面底部的「保存」后才生效。"
       footer={
         <>
           <Button onClick={onClose}>取消</Button>
@@ -347,7 +349,7 @@ function ModelDialog({
       open
       onOpenChange={(open) => !open && onClose()}
       title={isNew ? "添加模型" : `编辑 ${initial.id}`}
-      description={`接口：${provider.name || provider.id}。改动先进入草稿，保存后生效。`}
+      description={`接口：${provider.name || provider.id}`}
       footer={
         <>
           <Button icon={<Zap />} loading={testing} disabled={!form.name} onClick={runTest} className="mr-auto">
@@ -452,7 +454,7 @@ function ReasoningEditor({ type, value, onChange }: { type: LLMType; value: Reas
             <Select className="w-24" value={value.effort} onChange={(e) => onChange({ mode: "effort", effort: e.target.value })} aria-label="推理强度">
               {efforts.map((effort) => (
                 <option key={effort} value={effort}>
-                  {effortLabel[effort] ?? effort}
+                  {effort}
                 </option>
               ))}
             </Select>

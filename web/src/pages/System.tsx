@@ -5,10 +5,10 @@ import { api } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { PageHeader } from "../Shell";
 import { useConfirm, useToast } from "../ui/overlays";
-import { Button, Field, Input, Notice, NumberInput, Panel, Row, Switch } from "../ui/primitives";
+import { Button, Field, Input, Notice, NumberInput, Panel, Row, Switch, PasswordInput } from "../ui/primitives";
 
 export function SystemPage() {
-  const { config, update, meta, dirty } = useConfig();
+  const { config, update, meta } = useConfig();
   const client = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
@@ -95,7 +95,7 @@ export function SystemPage() {
                 if (!picked) return;
                 const ok = await confirm({
                   title: `导入 ${picked.name}？`,
-                  body: dirty ? "当前配置会被整体替换，页面上未保存的修改也会丢失。" : "当前配置会被整体替换。",
+                  body: "当前配置会被整体替换。",
                   confirm: "导入并替换",
                   danger: true,
                 });
@@ -141,13 +141,13 @@ function PasswordPanel() {
         }}
       >
         <Field label="当前密码">
-          <Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+          <PasswordInput autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
         </Field>
         <Field label="新密码" hint="至少 10 个字符">
-          <Input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+          <PasswordInput autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
         </Field>
         <Field label="再输入一次" error={mismatch ? "两次输入不一致" : undefined}>
-          <Input type="password" autoComplete="new-password" value={repeat} aria-invalid={mismatch} onChange={(e) => setRepeat(e.target.value)} />
+          <PasswordInput autoComplete="new-password" value={repeat} aria-invalid={mismatch} onChange={(e) => setRepeat(e.target.value)} />
         </Field>
         {change.error && <Notice tone="err">{change.error.message}</Notice>}
         <div>

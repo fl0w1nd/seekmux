@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Secret } from "../lib/api";
-import { Button, cx, Input, NumberInput, Select, Textarea } from "./primitives";
+import { useConfirm } from "./overlays";
+import { Button, cx, NumberInput, PasswordInput, Select, Textarea } from "./primitives";
 
 /* ---------- Rate limit ---------- */
 
@@ -51,19 +52,26 @@ export function RateLimitInput({ value, onChange, fallback = "5/m" }: { value: s
 /* ---------- Secret ---------- */
 
 /**
- * Edits a stored secret without ever showing it. The server sends only a
- * hint; an empty value keeps the stored key and `clear_api_key` removes it.
+ * Edits a stored secret. The server sends only a hint of the stored key; an
+ * empty value keeps it and `clear_api_key` removes it. What is typed can be
+ * shown, the stored key cannot.
  */
 export function SecretInput<T extends Secret>({ value, onChange, placeholder }: { value: T; onChange: (value: T) => void; placeholder?: string }) {
   const stored = Boolean(value.api_key_hint) && !value.clear_api_key;
   const [editing, setEditing] = useState(false);
+  const confirm = useConfirm();
 
   if (stored && !editing && !value.api_key) {
     return (
       <div className="flex items-center gap-2">
         <span className="num flex h-8 flex-1 items-center rounded-ctl border border-line bg-sunken px-2.5 text-sm text-ink-2">{value.api_key_hint}</span>
         <Button onClick={() => setEditing(true)}>更换</Button>
-        <Button variant="ghost" onClick={() => onChange({ ...value, api_key: "", clear_api_key: true })}>
+        <Button
+          variant="ghost"
+          onClick={async () => {
+            if (await confirm({ title: "清除这个密钥？", body: "清除立即生效，之后需要重新粘贴才能恢复。", confirm: "清除", danger: true })) onChange({ ...value, api_key: "", clear_api_key: true });
+          }}
+        >
           清除
         </Button>
       </div>
@@ -71,16 +79,16 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
   }
   return (
     <div className="flex items-center gap-2">
-      <Input
+      <PasswordInput
         mono
-        type="password"
         autoComplete="new-password"
         autoFocus={editing}
         value={value.api_key}
-        placeholder={value.clear_api_key ? "保存后将清除已存的密钥" : (placeholder ?? "粘贴 API key")}
+        placeholder={placeholder ?? "粘贴 API key"}
         onChange={(e) => onChange({ ...value, api_key: e.target.value.trim(), clear_api_key: false })}
+        onBlur={() => !value.api_key && setEditing(false)}
       />
-      {(editing || value.clear_api_key) && value.api_key_hint && (
+      {editing && value.api_key_hint && (
         <Button
           variant="ghost"
           onClick={() => {
