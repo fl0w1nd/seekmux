@@ -103,6 +103,81 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
   );
 }
 
+/* ---------- Chips ---------- */
+
+/**
+ * Edits a short list of words, such as domains. Enter, a comma, a space or
+ * leaving the field adds what was typed; a paste is split the same way.
+ */
+export function ChipInput({
+  value,
+  onChange,
+  placeholder,
+  max,
+  normalize = (item) => item,
+  "aria-label": label,
+}: {
+  value: string[];
+  onChange: (value: string[]) => void;
+  placeholder?: string;
+  max?: number;
+  normalize?: (item: string) => string;
+  "aria-label"?: string;
+}) {
+  const [text, setText] = useState("");
+  const full = max !== undefined && value.length >= max;
+  const add = (raw: string) => {
+    const next = [...value];
+    for (const part of raw.split(/[\s,，]+/)) {
+      const item = normalize(part.trim());
+      if (item && !next.includes(item) && (max === undefined || next.length < max)) next.push(item);
+    }
+    if (next.length !== value.length) onChange(next);
+    setText("");
+  };
+  return (
+    <div
+      className={cx(
+        "flex min-h-8 w-full flex-wrap items-center gap-1 rounded-ctl border border-line bg-sunken px-1 py-1 transition-colors",
+        "focus-within:border-signal-text hover:border-line-strong",
+      )}
+    >
+      {value.map((item) => (
+        <span key={item} className="num inline-flex h-6 items-center gap-1 rounded-[3px] border border-line-strong bg-surface pr-0.5 pl-1.5 text-xs text-ink">
+          {item}
+          <button
+            type="button"
+            aria-label={`移除 ${item}`}
+            className="grid size-4 place-items-center rounded-[2px] text-ink-3 hover:bg-raised hover:text-ink"
+            onClick={() => onChange(value.filter((v) => v !== item))}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        className="num h-6 min-w-24 flex-1 bg-transparent px-1.5 text-sm text-ink placeholder:text-ink-3 focus:outline-none disabled:opacity-50"
+        spellCheck={false}
+        autoComplete="off"
+        aria-label={label}
+        value={text}
+        disabled={full}
+        placeholder={full ? `最多 ${max} 个` : value.length === 0 ? placeholder : undefined}
+        onChange={(e) => (/[\s,，]/.test(e.target.value) ? add(e.target.value) : setText(e.target.value))}
+        onBlur={() => text && add(text)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && text) {
+            e.preventDefault();
+            add(text);
+          } else if (e.key === "Backspace" && !text && value.length > 0) {
+            onChange(value.slice(0, -1));
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 /* ---------- JSON ---------- */
 
 /** Edits a JSON object as text; only a valid object (or nothing) is reported. */

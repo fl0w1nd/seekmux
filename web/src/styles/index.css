@@ -239,6 +239,122 @@
   color: var(--ink-3);
 }
 
+/* Rendered Markdown (ui/markdown.tsx): reading text, on the same scale and tokens. */
+@layer components {
+  .md {
+    font-size: var(--text-base);
+    line-height: 1.7;
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+  }
+  .md > * + * {
+    margin-top: 0.75em;
+  }
+  .md :is(h1, h2, h3, h4, h5, h6) {
+    color: var(--ink);
+    font-weight: 500;
+    margin-top: 1.4em;
+  }
+  .md > :first-child {
+    margin-top: 0;
+  }
+  .md h1 {
+    font-size: var(--text-xl);
+    line-height: var(--text-xl--line-height);
+  }
+  .md h2 {
+    font-size: var(--text-lg);
+    line-height: var(--text-lg--line-height);
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--line);
+  }
+  .md :is(h3, h4, h5, h6) {
+    font-size: var(--text-base);
+  }
+  .md strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .md a {
+    color: var(--signal-text);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    text-decoration-color: color-mix(in oklch, currentColor 40%, transparent);
+  }
+  .md a:hover {
+    text-decoration-color: currentColor;
+  }
+  .md .md-image {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+  .md :is(ul, ol) {
+    padding-left: 1.4em;
+  }
+  .md ul {
+    list-style: disc;
+  }
+  .md ol {
+    list-style: decimal;
+  }
+  .md li + li {
+    margin-top: 0.25em;
+  }
+  .md li::marker {
+    color: var(--ink-3);
+  }
+  .md blockquote {
+    border-left: 2px solid var(--line-strong);
+    padding-left: 0.9em;
+    color: var(--ink-3);
+  }
+  .md hr {
+    border: 0;
+    border-top: 1px solid var(--line);
+  }
+  .md code {
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+    padding: 0.1em 0.35em;
+    border-radius: 3px;
+    background: var(--sunken);
+    color: var(--ink);
+  }
+  .md pre {
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    padding: 0.75rem;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-ctl);
+    background: var(--sunken);
+  }
+  .md pre code {
+    padding: 0;
+    background: none;
+    font-size: inherit;
+    color: var(--ink-2);
+  }
+  .md table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+  }
+  .md :is(th, td) {
+    border: 1px solid var(--line);
+    padding: 0.35em 0.7em;
+    text-align: left;
+    vertical-align: top;
+  }
+  .md th {
+    color: var(--ink);
+    font-weight: 500;
+    background: var(--raised);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

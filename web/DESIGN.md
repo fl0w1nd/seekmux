@@ -57,13 +57,19 @@ it is disabled under `prefers-reduced-motion`.
 
 - `primitives.tsx` — `Button` (primary / secondary / ghost / danger), `Input`,
   `Textarea`, `Select`, `NumberInput`, `Switch`, `Segmented`, `Field`, `Dot`,
-  `Badge`, `Panel`, `Row`, `Empty`, `Notice`, `Meter`, `CodeBlock`, `Tooltip`,
-  `Table`.
+  `Badge`, `Panel`, `Row`, `Section` (a group that folds away and shows its
+  current values in the header), `Tabs` / `TabList` / `TabPanel`, `Empty`,
+  `Notice`, `Meter`, `CodeBlock`, `Tooltip`, `Table`.
 - `overlays.tsx` — `Dialog`, `Drawer`, toasts (`useToast`), confirmation
   (`useConfirm`). Behavior and accessibility come from unstyled Radix
   primitives; every pixel of styling is ours.
-- `inputs.tsx` — `RateLimitInput`, `SecretInput`, `JSONInput`.
+- `inputs.tsx` — `RateLimitInput`, `SecretInput`, `JSONInput`, `ChipInput`
+  (a short list of words such as domains).
+- `markdown.tsx` — `Markdown`, for long text from providers and models. It
+  never renders raw HTML and turns images into links, since the text is
+  untrusted.
 - `components/` — `RouteList` (numbered priority lanes), `ModelRefEditor`,
+  `ProviderPicker` (auto or one provider, with its health),
   `Waterfall` (the upstream calls of one request on a shared time axis).
 
 ## Rules
@@ -74,6 +80,9 @@ it is disabled under `prefers-reduced-motion`.
 - Panels are numbered (`01`, `02`…) in reading order; the number is a `tag` in
   the signal text color.
 - Destructive actions use the `danger` button and go through `useConfirm`.
+- A control made of several buttons (`Segmented`, `ChipInput`,
+  `ProviderPicker`) is never put inside `Field`: `Field` is a `<label>`, and a
+  click on its text would press the first button.
 - Secrets are never rendered; `SecretInput` shows only the stored hint.
 - Every state has copy: empty states say what will appear and how to get it
   there, errors say what happened and what to do.

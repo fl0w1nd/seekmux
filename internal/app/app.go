@@ -201,14 +201,25 @@ func truncate(s string, limit int) string {
 	return s[:cut] + "…"
 }
 
+// traced returns the trace of ctx, adding a new one when there is none. A
+// caller that wants to show the upstream calls passes its own.
+func traced(ctx context.Context) (context.Context, *core.Trace) {
+	if trace := core.TraceFrom(ctx); trace != nil {
+		return ctx, trace
+	}
+	trace := core.NewTrace()
+	return core.WithTrace(ctx, trace), trace
+}
+
 // Search serves the search tool. The error is an invalid-arguments error.
+// The upstream calls land in the trace of ctx when it carries one.
 func (a *App) Search(ctx context.Context, caller Caller, args search.Args) ([]search.QueryResult, error) {
 	s := a.Snapshot()
 	if err := args.Validate(s.Config); err != nil {
 		return nil, err
 	}
-	trace := core.NewTrace()
-	results := search.Run(core.WithTrace(ctx, trace), s.Config, s.Client, a.Limits, args)
+	ctx, trace := traced(ctx)
+	results := search.Run(ctx, s.Config, s.Client, a.Limits, args)
 
 	entry := store.LogEntry{Status: store.StatusError, Summary: strings.Join(args.Queries, " | ")}
 	var engines []string
@@ -228,13 +239,14 @@ func (a *App) Search(ctx context.Context, caller Caller, args search.Args) ([]se
 }
 
 // Fetch serves the fetch tool. The error is an invalid-arguments error.
+// The upstream calls land in the trace of ctx when it carries one.
 func (a *App) Fetch(ctx context.Context, caller Caller, args fetch.Args) (fetch.Result, error) {
 	s := a.Snapshot()
 	if err := args.Validate(s.Config); err != nil {
 		return fetch.Result{}, err
 	}
-	trace := core.NewTrace()
-	result := a.fetcher.Run(core.WithTrace(ctx, trace), a.fetchRuntime(s), args)
+	ctx, trace := traced(ctx)
+	result := a.fetcher.Run(ctx, a.fetchRuntime(s), args)
 
 	entry := store.LogEntry{Status: store.StatusOK, Summary: args.URL, Provider: result.Engine, Error: result.Error}
 	if result.Error != "" {

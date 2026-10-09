@@ -160,7 +160,8 @@ export function Shell({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="min-w-0 flex-1">
-        <div className={cx("mx-auto w-full max-w-6xl px-6 py-6 max-md:px-4", error && "pb-24")}>{children}</div>
+        {/* The playground sets a request and its result side by side, so it takes the whole width. */}
+        <div className={cx("mx-auto w-full px-6 py-6 max-md:px-4", !location.startsWith("/play") && "max-w-6xl", error && "pb-24")}>{children}</div>
       </main>
 
       {error && (

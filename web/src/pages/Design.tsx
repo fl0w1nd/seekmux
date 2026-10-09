@@ -2,9 +2,44 @@ import { Play, Plus, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Waterfall } from "../components/Waterfall";
 import { PageHeader } from "../Shell";
-import { RateLimitInput } from "../ui/inputs";
+import { ChipInput, RateLimitInput } from "../ui/inputs";
+import { Markdown } from "../ui/markdown";
 import { useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, CodeBlock, cx, Dot, Field, Input, Meter, Notice, NumberInput, Panel, Row, Segmented, Select, Switch, type Tone } from "../ui/primitives";
+import {
+  Badge,
+  Button,
+  CodeBlock,
+  cx,
+  Dot,
+  Field,
+  Input,
+  Meter,
+  Notice,
+  NumberInput,
+  Panel,
+  Row,
+  Section,
+  Segmented,
+  Select,
+  Switch,
+  TabList,
+  TabPanel,
+  Tabs,
+  type Tone,
+} from "../ui/primitives";
+
+const sampleMarkdown = `## Streamable HTTP
+
+服务端提供**一个** HTTP 端点，同时支持 \`POST\` 与 \`GET\`。详见 [规范](https://modelcontextprotocol.io)。
+
+- 每个 JSON-RPC 消息是一次 POST
+- 响应可以是 JSON，也可以是 SSE 流
+
+| 方法 | 用途 |
+| --- | --- |
+| POST | 发送请求 |
+| GET | 打开 SSE 流 |
+`;
 
 const surfaces = [
   ["bg", "bg-bg", "页面底色"],
@@ -67,6 +102,8 @@ export function DesignPage() {
   const [on, setOn] = useState(true);
   const [count, setCount] = useState(15);
   const [limit, setLimit] = useState("15/m");
+  const [domains, setDomains] = useState(["github.com", "docs.python.org"]);
+  const [tab, setTab] = useState("result");
 
   return (
     <>
@@ -169,6 +206,11 @@ export function DesignPage() {
           <Specimen label="Rate limit">
             <RateLimitInput value={limit} onChange={setLimit} />
           </Specimen>
+          <Specimen label="Chips">
+            <div className="w-80">
+              <ChipInput value={domains} onChange={setDomains} max={5} placeholder="example.com" aria-label="示例域名" />
+            </div>
+          </Specimen>
           <Specimen label="Field">
             <Field label="字段名" hint="一句话说明它影响什么" className="w-64">
               <Input placeholder="值" />
@@ -242,6 +284,50 @@ export function DesignPage() {
           <CodeBlock copy className="mt-4">
             {'{\n  "queries": ["mcp streamable http"],\n  "search_engine": "auto"\n}'}
           </CodeBlock>
+        </Panel>
+
+        <Panel index="07" title="结构与内容" description="折叠组在标题行给出当前取值，收起也能读；标签页切换同一份数据的不同视图；Markdown 用于提供商和模型返回的长文本。">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="overflow-hidden rounded-ctl border border-line [&>*:first-child]:border-t-0">
+              <Section title="数量与时间" summary="每条 5 个 · 不限" defaultOpen>
+                <span className="text-xs text-ink-3">展开后是这一组的控件。</span>
+              </Section>
+              <Section title="域名过滤" summary="只看 2 个">
+                <span className="text-xs text-ink-3">收起时只看标题行的摘要。</span>
+              </Section>
+            </div>
+            <div className="rounded-ctl border border-line">
+              <Tabs value={tab} onChange={setTab}>
+                <TabList
+                  tabs={[
+                    { value: "result", label: "结果" },
+                    {
+                      value: "trace",
+                      label: (
+                        <>
+                          调用链<span className="num text-xs text-ink-3">2</span>
+                          <Dot tone="warn" />
+                        </>
+                      ),
+                    },
+                    { value: "code", label: "代码" },
+                  ]}
+                />
+                <TabPanel value="result" className="p-4 text-xs text-ink-3">
+                  标签上可以带数量和状态点。
+                </TabPanel>
+                <TabPanel value="trace" className="p-4 text-xs text-ink-3">
+                  第二个视图。
+                </TabPanel>
+                <TabPanel value="code" className="p-4 text-xs text-ink-3">
+                  第三个视图。
+                </TabPanel>
+              </Tabs>
+            </div>
+          </div>
+          <div className="mt-4 rounded-ctl border border-line px-5 py-4">
+            <Markdown>{sampleMarkdown}</Markdown>
+          </div>
         </Panel>
       </div>
     </>

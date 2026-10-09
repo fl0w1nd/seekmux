@@ -258,6 +258,25 @@ export interface Overview {
   roles: { extract: boolean; research: boolean };
 }
 
+/** The arguments of the search tool, as an MCP client sends them. */
+export interface SearchArgs {
+  queries: string[];
+  maxResults?: number;
+  time_range?: string;
+  include_domains?: string[];
+  exclude_domains?: string[];
+  search_engine?: string;
+}
+
+/** The arguments of the fetch tool, as an MCP client sends them. */
+export interface FetchArgs {
+  url: string;
+  prompt: string;
+  raw?: boolean;
+  offset?: number;
+  fetch_engine?: string;
+}
+
 export interface SearchItem {
   title?: string;
   url?: string;
@@ -394,10 +413,8 @@ export const api = {
   status: () => get<{ routes: RouteStatus[]; models: ModelStatus[] }>("/api/status"),
   resetBreaker: (key: string) => post("/api/breaker/reset", { key }),
 
-  playSearch: (body: { queries: string[]; maxResults: number; time_range?: string; search_engine: string; include_domains?: string[]; exclude_domains?: string[] }) =>
-    post<{ duration_ms: number; results: SearchResult[] }>("/api/play/search", body),
-  playFetch: (body: { url: string; prompt: string; raw: boolean; offset: number; fetch_engine: string }) =>
-    post<{ duration_ms: number; result: FetchResult }>("/api/play/fetch", body),
+  playSearch: (body: SearchArgs) => post<{ duration_ms: number; results: SearchResult[]; attempts: Attempt[] | null }>("/api/play/search", body),
+  playFetch: (body: FetchArgs) => post<{ duration_ms: number; result: FetchResult; attempts: Attempt[] | null }>("/api/play/fetch", body),
   playModel: (provider: LLMProvider, model: Model) =>
     post<{ duration_ms: number; reply: string }>("/api/play/model", { provider, model }),
   startResearch: (question: string) => post<{ task_id: string }>("/api/research/tasks", { question }),

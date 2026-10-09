@@ -16,6 +16,7 @@ import (
 
 	"github.com/fl0w1nd/seekmux/internal/app"
 	"github.com/fl0w1nd/seekmux/internal/config"
+	"github.com/fl0w1nd/seekmux/internal/core"
 	"github.com/fl0w1nd/seekmux/internal/fetch"
 	"github.com/fl0w1nd/seekmux/internal/llm"
 	"github.com/fl0w1nd/seekmux/internal/research"
@@ -537,13 +538,13 @@ func (s *Server) handlePlaySearch(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &args) {
 		return
 	}
-	started := time.Now()
-	results, err := s.app.Search(r.Context(), webui, args)
+	trace := core.NewTrace()
+	results, err := s.app.Search(core.WithTrace(r.Context(), trace), webui, args)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, map[string]any{"duration_ms": time.Since(started).Milliseconds(), "results": results})
+	writeJSON(w, map[string]any{"duration_ms": time.Since(trace.Start).Milliseconds(), "results": results, "attempts": trace.Attempts()})
 }
 
 func (s *Server) handlePlayFetch(w http.ResponseWriter, r *http.Request) {
@@ -551,13 +552,13 @@ func (s *Server) handlePlayFetch(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &args) {
 		return
 	}
-	started := time.Now()
-	result, err := s.app.Fetch(r.Context(), webui, args)
+	trace := core.NewTrace()
+	result, err := s.app.Fetch(core.WithTrace(r.Context(), trace), webui, args)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	writeJSON(w, map[string]any{"duration_ms": time.Since(started).Milliseconds(), "result": result})
+	writeJSON(w, map[string]any{"duration_ms": time.Since(trace.Start).Milliseconds(), "result": result, "attempts": trace.Attempts()})
 }
 
 func (s *Server) handlePlayResearch(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
-import { Check, Copy, Eye, EyeOff, LoaderCircle } from "lucide-react";
-import { Switch as RadixSwitch, Tooltip as RadixTooltip } from "radix-ui";
+import { Check, ChevronRight, Copy, Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { Collapsible as RadixCollapsible, Switch as RadixSwitch, Tabs as RadixTabs, Tooltip as RadixTooltip } from "radix-ui";
 import {
   useState,
   type ButtonHTMLAttributes,
@@ -162,14 +162,17 @@ export function Segmented<T extends string>({
   onChange,
   options,
   size = "md",
+  stretch,
 }: {
   value: T;
   onChange: (value: T) => void;
   options: { value: T; label: ReactNode }[];
   size?: "sm" | "md";
+  /** Fills the container, the options sharing its width. */
+  stretch?: boolean;
 }) {
   return (
-    <div role="radiogroup" className="inline-flex rounded-ctl border border-line bg-sunken p-0.5">
+    <div role="radiogroup" className={cx("rounded-ctl border border-line bg-sunken p-0.5", stretch ? "flex w-full" : "inline-flex")}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -179,6 +182,7 @@ export function Segmented<T extends string>({
           onClick={() => onChange(option.value)}
           className={cx(
             "inline-flex items-center gap-1.5 rounded-[3px] px-2.5 whitespace-nowrap transition-colors [&_svg]:size-3.5",
+            stretch && "flex-1 justify-center",
             size === "sm" ? "h-6 text-xs" : "h-7 text-sm",
             option.value === value ? "bg-raised text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]" : "text-ink-3 hover:text-ink",
           )}
@@ -292,6 +296,65 @@ export function Panel({
       )}
       <div className={flush ? undefined : "p-4"}>{children}</div>
     </section>
+  );
+}
+
+/**
+ * A group that folds away. Its header always shows what the group is set to,
+ * so it can stay closed and still be read.
+ */
+export function Section({ title, summary, defaultOpen, children }: { title: ReactNode; summary?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
+  return (
+    <RadixCollapsible.Root defaultOpen={defaultOpen} className="group/section border-t border-line">
+      <RadixCollapsible.Trigger className="flex h-10 w-full items-center gap-2 px-4 text-left text-sm hover:bg-raised/60">
+        <ChevronRight className="size-3.5 shrink-0 text-ink-3 transition-transform group-data-[state=open]/section:rotate-90" />
+        <span className="shrink-0 font-medium">{title}</span>
+        {summary && <span className="ml-auto min-w-0 truncate text-xs text-ink-3">{summary}</span>}
+      </RadixCollapsible.Trigger>
+      <RadixCollapsible.Content className="flex flex-col gap-4 px-4 pt-1 pb-4">{children}</RadixCollapsible.Content>
+    </RadixCollapsible.Root>
+  );
+}
+
+/* ---------- Tabs ---------- */
+
+export function Tabs<T extends string>({ value, onChange, className, children }: { value: T; onChange: (value: T) => void; className?: string; children: ReactNode }) {
+  return (
+    <RadixTabs.Root value={value} onValueChange={(v) => onChange(v as T)} className={cx("flex min-h-0 flex-col", className)}>
+      {children}
+    </RadixTabs.Root>
+  );
+}
+
+/** The tab strip of a pane; `actions` sit at its right end. */
+export function TabList<T extends string>({ tabs, actions }: { tabs: { value: T; label: ReactNode; disabled?: boolean }[]; actions?: ReactNode }) {
+  return (
+    <div className="flex h-11 shrink-0 items-center gap-4 border-b border-line px-4">
+      <RadixTabs.List className="flex h-full items-stretch gap-4">
+        {tabs.map((tab) => (
+          <RadixTabs.Trigger
+            key={tab.value}
+            value={tab.value}
+            disabled={tab.disabled}
+            className={cx(
+              "relative inline-flex items-center gap-1.5 text-sm text-ink-3 transition-colors hover:text-ink disabled:opacity-45 data-[state=active]:text-ink",
+              "after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full data-[state=active]:after:bg-signal-text",
+            )}
+          >
+            {tab.label}
+          </RadixTabs.Trigger>
+        ))}
+      </RadixTabs.List>
+      {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+export function TabPanel({ value, className, children }: { value: string; className?: string; children: ReactNode }) {
+  return (
+    <RadixTabs.Content value={value} className={cx("min-h-0 flex-1 focus-visible:outline-none", className)}>
+      {children}
+    </RadixTabs.Content>
   );
 }
 
