@@ -379,7 +379,9 @@ func (a *App) StartResearch(ctx context.Context, caller Caller, question string,
 		result, err := a.Research(a.background, caller, question, o, func(line string) {
 			a.Store.SetTaskProgress(a.background, id, line)
 		})
-		if ferr := a.Store.FinishTask(context.Background(), id, result.Report, err); ferr != nil {
+		stats := result
+		stats.Report = ""
+		if ferr := a.Store.FinishTask(context.Background(), id, result.Report, stats, err); ferr != nil {
 			slog.Error("store research result", "task", id, "error", ferr)
 		}
 	})

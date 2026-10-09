@@ -5,7 +5,7 @@ import { Link } from "wouter";
 import { allModels, hasOtherModels, ModelOverride } from "../components/ModelPicker";
 import { ProviderPicker } from "../components/ProviderPicker";
 import { Waterfall } from "../components/Waterfall";
-import { api, type Attempt, type FetchArgs, type FetchResult, type SearchArgs, type SearchResult } from "../lib/api";
+import { api, type Attempt, type FetchArgs, type FetchResult, type ResearchStep, type SearchArgs, type SearchResult } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { bytes, compact, duration } from "../lib/format";
 import { PageHeader } from "../Shell";
@@ -773,15 +773,11 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
   const [question, setQuestion] = useState("");
   const [model, setModel] = useState("");
   const [taskId, setTaskId] = useState<string | null>(null);
-  const [steps, setSteps] = useState<{ at: number; line: string }[]>([]);
   const [view, setView] = useState<View>("result");
   const [format, setFormat] = useState<"rendered" | "text">("rendered");
   const start = useMutation({
     mutationFn: api.startResearch,
-    onSuccess: (data) => {
-      setSteps([]);
-      setTaskId(data.task_id);
-    },
+    onSuccess: (data) => setTaskId(data.task_id),
   });
   const task = useQuery({
     queryKey: ["research-task", taskId],
@@ -792,13 +788,8 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
   const data = task.data;
   const running = start.isPending || (taskId !== null && (!data || data.status === "running"));
   const elapsed = useElapsed(running);
-
-  // The task keeps only its latest progress line; the playground keeps the run of them.
-  useEffect(() => {
-    const line = data?.progress;
-    if (!data || !line) return;
-    setSteps((list) => (list.at(-1)?.line === line ? list : [...list, { at: data.updated_at - data.created_at, line }]));
-  }, [data]);
+  const steps = data?.steps ?? [];
+  const stats = data?.stats;
 
   const ready = question.trim() !== "" && config.research.enabled;
   const submit = () => {
@@ -896,6 +887,11 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
                   {data.status === "done" ? "完成" : data.status === "failed" ? "失败" : "研究中"}
                 </Badge>
                 <span className="num text-ink">{duration(data.status === "running" ? Math.max(elapsed, data.updated_at - data.created_at) : data.updated_at - data.created_at)}</span>
+                {stats && (
+                  <span className="num">
+                    {stats.steps} 步 · {stats.searches} 次搜索 · {stats.fetches} 次读取 · {compact(stats.input_tokens + stats.output_tokens)} token
+                  </span>
+                )}
                 <Badge>{start.variables?.model ?? config.research.model}</Badge>
                 <span className="num truncate">{data.id}</span>
               </>
@@ -911,6 +907,11 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
                 {data.error && (
                   <div className="p-4 pb-0">
                     <Notice tone="err">{data.error}</Notice>
+                  </div>
+                )}
+                {stats?.budget_exhausted && (
+                  <div className="p-4 pb-0">
+                    <Notice tone="warn">预算用完，Agent 被要求停下并按已有材料写报告。</Notice>
                   </div>
                 )}
                 {data.result && (
@@ -941,7 +942,7 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
   );
 }
 
-function StepsView({ steps, live }: { steps: { at: number; line: string }[]; live: boolean }) {
+function StepsView({ steps, live }: { steps: ResearchStep[]; live: boolean }) {
   if (steps.length === 0) return <Empty title={live ? "等待第一个步骤…" : "开始研究后，这里按顺序列出 Agent 的每一步"} />;
   return (
     <ol className="flex flex-col">

@@ -330,6 +330,15 @@ export interface ResearchTask {
   progress?: string;
   result?: string;
   error?: string;
+  /** Every progress line, timed in ms from created_at. */
+  steps: ResearchStep[];
+  /** Set once the run has finished. */
+  stats?: Omit<ResearchResult, "report">;
+}
+
+export interface ResearchStep {
+  at: number;
+  line: string;
 }
 
 export class APIError extends Error {

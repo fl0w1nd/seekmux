@@ -69,9 +69,20 @@ CREATE TABLE IF NOT EXISTS research_tasks (
 	question   TEXT NOT NULL,
 	progress   TEXT NOT NULL DEFAULT '',
 	result     TEXT NOT NULL DEFAULT '',
-	error      TEXT NOT NULL DEFAULT ''
+	error      TEXT NOT NULL DEFAULT '',
+	steps      TEXT NOT NULL DEFAULT '[]',
+	stats      TEXT NOT NULL DEFAULT ''
 );
 `
+
+// added lists the columns that came after the first release, which a
+// database created by an earlier version gains when it is opened.
+var added = []struct{ table, column, definition string }{
+	{"request_logs", "cache_read_tokens", "INTEGER NOT NULL DEFAULT 0"},
+	{"request_logs", "cache_write_tokens", "INTEGER NOT NULL DEFAULT 0"},
+	{"research_tasks", "steps", "TEXT NOT NULL DEFAULT '[]'"},
+	{"research_tasks", "stats", "TEXT NOT NULL DEFAULT ''"},
+}
 
 // Open opens, and creates if needed, the database in dir.
 func Open(dir string) (*Store, error) {
@@ -96,11 +107,10 @@ func Open(dir string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("init database %s: %w", path, err)
 	}
-	// A database created before the cache columns existed gains them here.
-	for _, column := range []string{"cache_read_tokens", "cache_write_tokens"} {
+	for _, c := range added {
 		var n int
-		if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('request_logs') WHERE name = ?`, column).Scan(&n); err == nil && n == 0 {
-			if _, err := db.Exec(`ALTER TABLE request_logs ADD COLUMN ` + column + ` INTEGER NOT NULL DEFAULT 0`); err != nil {
+		if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info(?) WHERE name = ?`, c.table, c.column).Scan(&n); err == nil && n == 0 {
+			if _, err := db.Exec(`ALTER TABLE ` + c.table + ` ADD COLUMN ` + c.column + ` ` + c.definition); err != nil {
 				db.Close()
 				return nil, fmt.Errorf("init database %s: %w", path, err)
 			}

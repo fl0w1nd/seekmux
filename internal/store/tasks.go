@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -23,7 +24,14 @@ type ResearchTask struct {
 	Progress  string `json:"progress,omitempty"`
 	Result    string `json:"result,omitempty"`
 	Error     string `json:"error,omitempty"`
+	// Steps holds every progress line as {"at": ms since created_at, "line"}.
+	Steps json.RawMessage `json:"steps"`
+	// Stats is what FinishTask stored for a finished run, if anything.
+	Stats json.RawMessage `json:"stats,omitempty"`
 }
+
+// maxTaskSteps bounds the progress history kept for one task.
+const maxTaskSteps = 500
 
 func (s *Store) CreateTask(ctx context.Context, id, question string) error {
 	t := now()
@@ -33,30 +41,55 @@ func (s *Store) CreateTask(ctx context.Context, id, question string) error {
 	return err
 }
 
+// SetTaskProgress sets the latest progress line and appends it to the steps.
 func (s *Store) SetTaskProgress(ctx context.Context, id, progress string) {
-	_, _ = s.db.ExecContext(ctx, `UPDATE research_tasks SET progress = ?, updated_at = ? WHERE id = ?`, progress, now(), id)
+	t := now()
+	_, _ = s.db.ExecContext(ctx,
+		`UPDATE research_tasks SET progress = ?, updated_at = ?,
+			steps = CASE WHEN json_array_length(steps) < ?
+				THEN json_insert(steps, '$[#]', json_object('at', ? - created_at, 'line', ?))
+				ELSE steps END
+		WHERE id = ?`,
+		progress, t, maxTaskSteps, t, progress, id)
 }
 
-func (s *Store) FinishTask(ctx context.Context, id, result string, taskErr error) error {
+// FinishTask records the outcome; stats, when not nil, is stored as JSON.
+func (s *Store) FinishTask(ctx context.Context, id, result string, stats any, taskErr error) error {
 	status, message := TaskDone, ""
 	if taskErr != nil {
 		status, message = TaskFailed, taskErr.Error()
 	}
+	encoded := ""
+	if stats != nil {
+		b, err := json.Marshal(stats)
+		if err != nil {
+			return err
+		}
+		encoded = string(b)
+	}
 	_, err := s.db.ExecContext(ctx,
-		`UPDATE research_tasks SET status = ?, result = ?, error = ?, updated_at = ? WHERE id = ?`,
-		status, result, message, now(), id)
+		`UPDATE research_tasks SET status = ?, result = ?, error = ?, stats = ?, updated_at = ? WHERE id = ?`,
+		status, result, message, encoded, now(), id)
 	return err
 }
 
 func (s *Store) GetTask(ctx context.Context, id string) (ResearchTask, bool, error) {
 	var t ResearchTask
+	var steps, stats string
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, created_at, updated_at, status, question, progress, result, error FROM research_tasks WHERE id = ?`, id).
-		Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt, &t.Status, &t.Question, &t.Progress, &t.Result, &t.Error)
+		`SELECT id, created_at, updated_at, status, question, progress, result, error, steps, stats FROM research_tasks WHERE id = ?`, id).
+		Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt, &t.Status, &t.Question, &t.Progress, &t.Result, &t.Error, &steps, &stats)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ResearchTask{}, false, nil
 	}
-	return t, err == nil, err
+	if err != nil {
+		return ResearchTask{}, false, err
+	}
+	t.Steps = json.RawMessage(steps)
+	if stats != "" {
+		t.Stats = json.RawMessage(stats)
+	}
+	return t, true, nil
 }
 
 // RecoverTasks fails the tasks a previous process left running and drops
