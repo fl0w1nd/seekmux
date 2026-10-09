@@ -42,9 +42,10 @@ type Output struct {
 type executor func(ctx context.Context, client *http.Client, base, apiKey string, in Input) (Output, error)
 
 var executors = map[string]executor{
-	"brave":  braveSearch,
-	"exa":    exaSearch,
-	"tavily": tavilySearch,
+	"brave":      braveSearch,
+	"exa":        exaSearch,
+	"perplexity": perplexitySearch,
+	"tavily":     tavilySearch,
 }
 
 // Providers builds the search providers of cfg in priority order.
@@ -190,6 +191,46 @@ func exaSearch(ctx context.Context, client *http.Client, base, apiKey string, in
 			description = strings.Join(r.Highlights, " … ")
 		}
 		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: description, Age: r.PublishedDate})
+	}
+	return out, nil
+}
+
+func perplexitySearch(ctx context.Context, client *http.Client, base, apiKey string, in Input) (Output, error) {
+	body := map[string]any{
+		"query":       in.Query,
+		"max_results": min(in.MaxResults, 20),
+		// Unbounded, a snippet is whatever the page has on the query and can
+		// run to several thousand characters; this keeps it near one thousand.
+		"max_tokens_per_page": 256,
+	}
+	if in.TimeRange != "" {
+		body["search_recency_filter"] = in.TimeRange
+	}
+
+	var raw struct {
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Snippet string `json:"snippet"`
+			// last_updated is also returned, but it follows the crawl rather
+			// than the page and would pass an old page off as a recent one.
+			Date string `json:"date"`
+		} `json:"results"`
+	}
+	err := core.DoJSON(ctx, client, core.Request{
+		Provider: "Perplexity",
+		Method:   http.MethodPost,
+		URL:      base + "/search",
+		Header:   map[string]string{"Authorization": "Bearer " + apiKey},
+		Body:     body,
+	}, &raw)
+	if err != nil {
+		return Output{}, err
+	}
+
+	out := Output{Query: in.Query, Web: []Item{}}
+	for _, r := range raw.Results {
+		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: r.Snippet, Age: r.Date})
 	}
 	return out, nil
 }

@@ -246,6 +246,11 @@ var Catalog = []ProviderInfo{
 		DefaultRateLimit: map[string]string{ToolSearch: "10/s"},
 	},
 	{
+		ID: "perplexity", Name: "Perplexity", Website: "https://console.perplexity.ai", KeyRequired: true,
+		DefaultBase:      map[string]string{ToolSearch: "https://api.perplexity.ai"},
+		DefaultRateLimit: map[string]string{ToolSearch: "50/s"},
+	},
+	{
 		ID: "tavily", Name: "Tavily", Website: "https://app.tavily.com", KeyRequired: true,
 		DefaultBase:      map[string]string{ToolSearch: "https://api.tavily.com", ToolFetch: "https://api.tavily.com"},
 		DefaultRateLimit: map[string]string{ToolSearch: "5/m", ToolFetch: "5/m"},
@@ -283,7 +288,7 @@ func defaultRoutes(tool string, order ...string) []Route {
 // Default returns the configuration of a fresh install.
 func Default() *Config {
 	c := &Config{
-		Search: Search{TimeoutSeconds: 10, Routes: defaultRoutes(ToolSearch, "brave", "exa", "tavily")},
+		Search: Search{TimeoutSeconds: 10, Routes: defaultRoutes(ToolSearch, "brave", "exa", "perplexity", "tavily")},
 		Fetch: Fetch{
 			TimeoutSeconds:       30,
 			SlowThresholdSeconds: 15,

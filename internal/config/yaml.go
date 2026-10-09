@@ -87,8 +87,8 @@ func FromLegacyEnv(r io.Reader) (*Config, error) {
 
 	c := Default()
 	for id, key := range map[string]string{
-		"brave": "BRAVE_API_KEY", "exa": "EXA_API_KEY", "tavily": "TAVILY_API_KEY",
-		"jina": "JINA_API_KEY", "firecrawl": "FIRECRAWL_API_KEY",
+		"brave": "BRAVE_API_KEY", "exa": "EXA_API_KEY", "perplexity": "PERPLEXITY_API_KEY",
+		"tavily": "TAVILY_API_KEY", "jina": "JINA_API_KEY", "firecrawl": "FIRECRAWL_API_KEY",
 	} {
 		c.Providers[id].APIKey = env[key]
 	}

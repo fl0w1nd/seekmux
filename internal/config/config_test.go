@@ -32,7 +32,7 @@ func TestDefaultIsValidAndComplete(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Search.Routes) != 3 || len(c.Fetch.Routes) != 3 || len(c.Providers) != len(Catalog) {
+	if len(c.Search.Routes) != 4 || len(c.Fetch.Routes) != 3 || len(c.Providers) != len(Catalog) {
 		t.Fatalf("routes: %d search, %d fetch, %d providers", len(c.Search.Routes), len(c.Fetch.Routes), len(c.Providers))
 	}
 }
@@ -46,7 +46,7 @@ func TestNormalizeRepairsRoutes(t *testing.T) {
 	for _, r := range c.Search.Routes {
 		got = append(got, r.Provider)
 	}
-	if strings.Join(got, ",") != "exa,brave,tavily" {
+	if strings.Join(got, ",") != "exa,brave,perplexity,tavily" {
 		t.Fatalf("routes = %v", got)
 	}
 	if c.Search.Routes[1].Enabled {
@@ -130,7 +130,7 @@ func TestYAMLRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if back.Providers["brave"].APIKey != "k" || len(back.Search.Routes) != 3 {
+	if back.Providers["brave"].APIKey != "k" || len(back.Search.Routes) != 4 {
 		t.Fatalf("round trip lost data: %s", data)
 	}
 	if _, m, ok := back.ModelByID("m"); !ok || m.RateLimit != "5/m" || m.ExtraBody["reasoning_effort"] != "low" || back.Fetch.Extract.Models[0] != "m" {
