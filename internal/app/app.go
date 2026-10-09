@@ -379,8 +379,12 @@ func (a *App) StartResearch(ctx context.Context, caller Caller, question string,
 		result, err := a.Research(a.background, caller, question, o, func(line string) {
 			a.Store.SetTaskProgress(a.background, id, line)
 		})
-		stats := result
-		stats.Report = ""
+		// A run that failed before its first step has no totals to show.
+		var stats any
+		if totals := result; totals != (research.Result{}) {
+			totals.Report = ""
+			stats = totals
+		}
 		if ferr := a.Store.FinishTask(context.Background(), id, result.Report, stats, err); ferr != nil {
 			slog.Error("store research result", "task", id, "error", ferr)
 		}

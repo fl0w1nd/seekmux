@@ -7,6 +7,11 @@ const statusLabel: Record<Attempt["status"], string> = { ok: "成功", error: "�
 const bar: Record<Attempt["status"], string> = { ok: "bg-ok", error: "bg-err", canceled: "bg-ink-3", cached: "bg-info", skipped: "bg-warn", limited: "bg-warn" };
 /** Notes about a provider that was not called: they have no duration. */
 const note = (status: Attempt["status"]) => status === "cached" || status === "skipped" || status === "limited";
+/** Why a provider was passed over; the gateway words the rate limit in English. */
+function reason(a: Attempt): string | undefined {
+  const slot = a.status === "limited" ? a.error?.match(/next slot in (\S+)$/) : null;
+  return slot ? `已达速率上限，下一个名额在 ${slot[1]} 后释放` : a.error;
+}
 const text: Record<Tone, string> = { ok: "text-ok", err: "text-err", neutral: "text-ink-3", info: "text-info", warn: "text-warn", signal: "text-signal-text" };
 
 /**
@@ -17,7 +22,7 @@ export function Waterfall({ attempts, total }: { attempts: Attempt[]; total: num
   const span = Math.max(total, ...attempts.map((a) => a.start_ms + a.duration_ms), 1);
   return (
     <div className="rounded-ctl border border-line">
-      <div className="tag flex justify-between border-b border-line px-3 py-1.5">
+      <div className="tag flex justify-between border-b border-line px-3 py-1.5 normal-case">
         <span>0</span>
         <span>{duration(span / 2)}</span>
         <span>{duration(span)}</span>
@@ -44,7 +49,7 @@ export function Waterfall({ attempts, total }: { attempts: Attempt[]; total: num
               />
             </div>
             {a.error && a.status === "error" && <div className="num mt-1.5 text-xs break-words text-err">{a.error}</div>}
-            {a.error && (a.status === "skipped" || a.status === "limited") && <div className="num mt-1.5 text-xs break-words text-ink-3">{a.error}</div>}
+            {a.error && (a.status === "skipped" || a.status === "limited") && <div className="num mt-1.5 text-xs break-words text-ink-3">{reason(a)}</div>}
           </li>
         ))}
       </ol>

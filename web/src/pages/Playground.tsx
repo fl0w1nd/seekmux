@@ -7,7 +7,7 @@ import { ProviderPicker } from "../components/ProviderPicker";
 import { Waterfall } from "../components/Waterfall";
 import { api, type Attempt, type FetchArgs, type FetchResult, type ResearchStep, type SearchArgs, type SearchResult } from "../lib/api";
 import { useConfig } from "../lib/config";
-import { bytes, compact, duration } from "../lib/format";
+import { compact, duration } from "../lib/format";
 import { PageHeader } from "../Shell";
 import { ChipInput } from "../ui/inputs";
 import { Markdown } from "../ui/markdown";
@@ -41,7 +41,7 @@ export function PlaygroundPage() {
   // Every tool stays mounted, so switching keeps its form, its result and a running research task.
   return (
     <>
-      <PageHeader title="调试台" description="直接调用网关的工具：和 MCP 走同一套路由、限流和故障转移，调用会记入请求日志。" />
+      <PageHeader title="调试台" description="直接调用网关工具，路由、限流与故障转移均与 MCP 调用一致，调用记入请求日志。" />
       <div hidden={tool !== "search"}>
         <SearchPlay switcher={switcher} />
       </div>
@@ -183,7 +183,7 @@ function Start({ title, examples, mono = true, onPick }: { title: string; exampl
     <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 pb-12 text-center">
       <Play className="size-5 text-ink-3" />
       <div className="text-sm text-ink-2">{title}</div>
-      <div className="text-xs text-ink-3">也可以从一个例子开始：</div>
+      <div className="text-xs text-ink-3">或从示例开始：</div>
       <div className="flex max-w-xl flex-wrap justify-center gap-2">
         {examples.map((example) => (
           <button
@@ -210,8 +210,9 @@ function Failure({ error }: { error: Error }) {
 
 /* ---------- Upstream calls and code ---------- */
 
+const count = (attempts: Attempt[], ...statuses: Attempt["status"][]) => attempts.filter((a) => statuses.includes(a.status)).length;
 /** Attempts that did not serve the call. A canceled attempt lost a race, which is normal. */
-const failures = (attempts: Attempt[]) => attempts.filter((a) => a.status === "error" || a.status === "skipped" || a.status === "limited").length;
+const failures = (attempts: Attempt[]) => count(attempts, "error", "skipped", "limited");
 
 function traceLabel(attempts: Attempt[] | null | undefined): ReactNode {
   return (
@@ -224,13 +225,19 @@ function traceLabel(attempts: Attempt[] | null | undefined): ReactNode {
 }
 
 function TraceView({ attempts, total }: { attempts: Attempt[] | null | undefined; total: number }) {
-  if (attempts === undefined) return <Empty title="运行一次后，这里按时间轴显示它访问了哪些提供商" />;
-  if (!attempts || attempts.length === 0) return <div className="text-xs text-ink-3">这次调用没有访问任何提供商。</div>;
-  const failed = failures(attempts);
+  if (attempts === undefined) return <Empty title="运行后，此处按时间轴显示本次调用的上游请求" />;
+  if (!attempts || attempts.length === 0) return <div className="text-xs text-ink-3">本次调用未请求任何上游提供商。</div>;
+  // A provider that was passed over, or a cache hit, is a note and not a call.
+  const failed = count(attempts, "error");
+  const skipped = count(attempts, "skipped", "limited");
+  const cached = count(attempts, "cached");
+  const calls = attempts.length - skipped - cached;
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-ink-3">
-        共 {attempts.length} 次上游调用{failed > 0 && `，其中 ${failed} 次失败或被跳过，网关换了下一家`}。完整记录在{" "}
+        上游调用 {calls} 次{failed > 0 && `，失败 ${failed} 次`}
+        {skipped > 0 && `；因熔断或限流跳过 ${skipped} 次`}
+        {cached > 0 && `；缓存命中 ${cached} 次`}。完整记录见{" "}
         <Link href="/logs" className="text-ink-2 underline underline-offset-2 hover:text-ink">
           请求日志
         </Link>
@@ -246,7 +253,7 @@ function CodeView({ tool, args, notice }: { tool: string; args: object; notice?:
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-ink-3">
-        MCP 客户端调用 <span className="num text-ink-2">{tool}</span> 工具时发送的请求，随左侧的设置实时更新。没有列出的参数取默认值。
+        MCP 客户端调用 <span className="num text-ink-2">{tool}</span> 工具时发送的请求，随左侧设置实时更新；未列出的参数取默认值。
       </p>
       {notice}
       <CodeBlock copy>{body}</CodeBlock>
@@ -257,7 +264,7 @@ function CodeView({ tool, args, notice }: { tool: string; args: object; notice?:
 function ModelNotice({ model }: { model: string | undefined }) {
   return model ? (
     <Notice tone="info">
-      选定的模型 <span className="num text-ink">{model}</span> 只在调试台生效。MCP 调用不能指定模型，Agent 用的始终是配置里的模型。
+      所选模型 <span className="num text-ink">{model}</span> 仅在调试台生效。MCP 调用不支持指定模型，Agent 始终使用配置中的模型。
     </Notice>
   ) : null;
 }
@@ -265,7 +272,7 @@ function ModelNotice({ model }: { model: string | undefined }) {
 function JSONView({ value }: { value: unknown }) {
   return (
     <div className="flex flex-col gap-3 p-4">
-      <p className="text-xs text-ink-3">MCP 工具返回给 Agent 的内容，原样展示。</p>
+      <p className="text-xs text-ink-3">MCP 工具返回给 Agent 的原始内容。</p>
       <CodeBlock copy wrap>
         {JSON.stringify(value, null, 2)}
       </CodeBlock>
@@ -279,7 +286,7 @@ const ranges = [
   { value: "", label: "不限" },
   { value: "day", label: "一天" },
   { value: "week", label: "一周" },
-  { value: "month", label: "一月" },
+  { value: "month", label: "一个月" },
   { value: "year", label: "一年" },
 ];
 
@@ -325,7 +332,7 @@ function SearchPlay({ switcher }: { switcher: ReactNode }) {
   const data = run.data;
   const found = data?.results.reduce((n, r) => n + (r.web?.length ?? 0) + (r.videos?.length ?? 0), 0) ?? 0;
   const engines = [...new Set(data?.results.map((r) => r.search_engine).filter(Boolean))];
-  const filters = [include.length > 0 && `只看 ${include.length} 个`, exclude.length > 0 && `排除 ${exclude.length} 个`].filter(Boolean).join(" · ");
+  const filters = [include.length > 0 && `限定 ${include.length} 个`, exclude.length > 0 && `排除 ${exclude.length} 个`].filter(Boolean).join(" · ");
 
   return (
     <Workbench
@@ -336,7 +343,7 @@ function SearchPlay({ switcher }: { switcher: ReactNode }) {
             meta={
               over ? (
                 <span className="text-err">
-                  <span className="num">{queries.length}</span> 条查询，一次最多 {maxQueries} 条
+                  <span className="num">{queries.length}</span> 条查询，单次上限 {maxQueries} 条
                 </span>
               ) : (
                 <>
@@ -363,20 +370,20 @@ function SearchPlay({ switcher }: { switcher: ReactNode }) {
           <Section title="提供商" summary={engine === "auto" ? "自动" : provider(engine).name} defaultOpen>
             <ProviderPicker tool="search" value={engine} onChange={setEngine} />
           </Section>
-          <Section title="数量与时间" summary={`每条 ${maxResults} 个 · ${ranges.find((r) => r.value === range)?.label}`}>
+          <Section title="数量与时间" summary={`每条查询 ${maxResults} 条 · ${range ? `近${ranges.find((r) => r.value === range)?.label}` : "时间不限"}`}>
             <Group label="每条查询的结果数" hint={`1–${maxResultsLimit}，默认 ${defaultMaxResults}`}>
               <NumberInput min={1} value={maxResults} aria-label="每条查询的结果数" onChange={(v) => setMaxResults(Math.min(maxResultsLimit, Math.max(1, Math.round(v))))} />
             </Group>
-            <Group label="发布时间" hint="只要这段时间内发布的结果，适合时效性强的问题">
+            <Group label="发布时间" hint="仅返回该时间范围内发布的结果，适用于时效性强的查询">
               <Segmented stretch size="sm" value={range} onChange={setRange} options={ranges} />
             </Group>
           </Section>
           <Section title="域名过滤" summary={filters || "不限"}>
-            <Group label="只看这些域名" hint="包括它们的子域名">
-              <ChipInput value={include} onChange={setInclude} max={maxDomains} normalize={domain} placeholder="docs.python.org" aria-label="只看这些域名" />
+            <Group label="限定域名" hint="含子域名">
+              <ChipInput value={include} onChange={setInclude} max={maxDomains} normalize={domain} placeholder="docs.python.org" aria-label="限定域名" />
             </Group>
-            <Group label="排除这些域名">
-              <ChipInput value={exclude} onChange={setExclude} max={maxDomains} normalize={domain} placeholder="pinterest.com" aria-label="排除这些域名" />
+            <Group label="排除域名">
+              <ChipInput value={exclude} onChange={setExclude} max={maxDomains} normalize={domain} placeholder="pinterest.com" aria-label="排除域名" />
             </Group>
           </Section>
         </>
@@ -427,7 +434,7 @@ function SearchPlay({ switcher }: { switcher: ReactNode }) {
                 <SearchResults key={run.submittedAt} results={data.results} />
               )
             ) : (
-              <Start title="输入查询，在这里看到各家返回的结果" examples={["mcp streamable http spec", "go 1.27 release notes", "sqlite wal mode performance"]} onPick={setText} />
+              <Start title="输入查询后，此处显示各提供商返回的结果" examples={["mcp streamable http spec", "go 1.27 release notes", "sqlite wal mode performance"]} onPick={setText} />
             )
           }
           code={
@@ -437,7 +444,7 @@ function SearchPlay({ switcher }: { switcher: ReactNode }) {
               notice={
                 over && (
                   <Notice tone="warn">
-                    填了 {queries.length} 条查询，但一次最多执行 {maxQueries} 条。Agent 这样调用时，多出的会被直接丢弃，所以这里只列出会执行的前 {maxQueries} 条。
+                    已输入 {queries.length} 条查询，单次调用最多执行 {maxQueries} 条。Agent 以相同参数调用时，超出部分将被忽略，因此此处仅列出实际执行的前 {maxQueries} 条。
                   </Notice>
                 )
               }
@@ -448,6 +455,9 @@ function SearchPlay({ switcher }: { switcher: ReactNode }) {
     />
   );
 }
+
+/** Brave words the age of a result; Exa gives a timestamp, of which the date is enough. */
+const age = (text: string) => (/^\d{4}-\d{2}-\d{2}T/.test(text) ? text.slice(0, 10) : text);
 
 function host(url: string | undefined): string {
   if (!url) return "";
@@ -467,7 +477,7 @@ function SearchResults({ results }: { results: SearchResult[] }) {
         <div className="flex gap-1.5 overflow-x-auto border-b border-line px-4 py-2">
           {results.map((r, i) => (
             <button
-              key={r.query}
+              key={i}
               type="button"
               aria-pressed={i === index}
               onClick={() => setIndex(i)}
@@ -499,7 +509,7 @@ function QueryResult({ result }: { result: SearchResult }) {
       </div>
     );
   }
-  if (items.length === 0) return <Empty title="这条查询没有结果">放宽时间范围或域名过滤再试一次。</Empty>;
+  if (items.length === 0) return <Empty title="该查询没有结果">可放宽时间范围或域名过滤后重试。</Empty>;
   return (
     <ol>
       {items.map((item, i) => (
@@ -509,7 +519,7 @@ function QueryResult({ result }: { result: SearchResult }) {
             <div className="flex items-center gap-2 text-xs text-ink-3">
               <span className="num truncate text-ink-2">{host(item.url)}</span>
               {i >= web.length && <Badge>视频</Badge>}
-              {item.age && <span className="shrink-0">{item.age}</span>}
+              {item.age && <span className="shrink-0">{age(item.age)}</span>}
               {item.duration && <span className="num shrink-0">{item.duration}</span>}
               {item.score !== undefined && <span className="num ml-auto shrink-0">相关度 {item.score.toFixed(2)}</span>}
             </div>
@@ -520,7 +530,7 @@ function QueryResult({ result }: { result: SearchResult }) {
             {item.description ? (
               <p className="mt-1 line-clamp-4 text-xs whitespace-pre-line text-ink-2">{item.description}</p>
             ) : (
-              <p className="mt-1 text-xs text-ink-3">提供商没有返回摘要。</p>
+              <p className="mt-1 text-xs text-ink-3">提供商未返回摘要。</p>
             )}
           </div>
         </li>
@@ -561,6 +571,11 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
     if (view === "code") setView("result");
     run.mutate({ ...next, model: next.raw ? undefined : override });
   };
+  // An offset belongs to one page.
+  const changeUrl = (next: string) => {
+    setUrl(next);
+    setOffset(0);
+  };
   const chooseAnswer = (on: boolean) => {
     setAnswer(on);
     if (on && chain.length === 0 && !model) setModel(models[0]?.id ?? "");
@@ -576,7 +591,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
       composer={
         <>
           <Composer
-            meta={extract ? (override ? <span className="num block truncate">由 {override} 作答</span> : "提取模型按问题作答") : "返回页面原文"}
+            meta={extract ? (override ? <span className="num block truncate">由 {override} 作答</span> : "由提取模型按问题作答") : "返回页面原文"}
             action={<RunButton label="抓取" loading={run.isPending} disabled={!ready} onClick={submit} />}
           >
             <input
@@ -586,7 +601,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
               aria-label="URL"
               placeholder="https://"
               className={cx(bare, "num h-10")}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => changeUrl(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -598,7 +613,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
               <textarea
                 rows={3}
                 value={prompt}
-                aria-label="想从页面里知道什么"
+                aria-label="针对页面的问题"
                 placeholder="这个版本有哪些破坏性变更？"
                 className={cx(bare, "resize-none border-t border-line pt-2.5 leading-5")}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -620,7 +635,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
               />
             ) : (
               <Notice tone="warn">
-                还没有任何模型，只能取原文。到{" "}
+                尚未配置模型，仅可返回原文。请前往{" "}
                 <Link href="/models" className="text-ink underline underline-offset-2">
                   模型接口
                 </Link>{" "}
@@ -628,13 +643,13 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
               </Notice>
             )}
             {canExtract && chain.length === 0 && (
-              <p className="-mt-2 text-xs text-ink-3">抓取工具还没有指派提取模型，Agent 只能拿到原文。可以先在这里选一个模型试试。</p>
+              <p className="-mt-2 text-xs text-ink-3">抓取工具尚未指派提取模型，Agent 仅能获得原文。可在此选择一个模型试用。</p>
             )}
             <p className="-mt-2 text-xs text-ink-3">
-              {extract ? "提取模型读完整页，只返回问题要的内容，Agent 默认这样用。" : "返回页面的 Markdown 原文，很长的页面分段返回。"}
+              {extract ? "提取模型读取整页内容，仅返回与问题相关的部分，这是 Agent 的默认调用方式。" : "返回页面的 Markdown 原文，较长的页面分段返回。"}
             </p>
             {!extract && (
-              <Group label="起始位置" hint="从这里开始读，单位是字节；继续读长页面时用上一段给的位置">
+              <Group label="起始位置" hint="读取的起始偏移量，单位为字节；续读长页面时填入上一段返回的位置">
                 <NumberInput min={0} suffix="字节" value={offset} aria-label="起始位置" onChange={(v) => setOffset(Math.round(v))} />
               </Group>
             )}
@@ -642,7 +657,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
           {extract && hasOtherModels(config, chain) && (
             <Section title="提取模型" summary={override ?? chain.join(" → ")}>
               <ModelOverride assigned={chain} value={model} onChange={setModel} />
-              <p className="text-xs text-ink-3">只对这次调试生效，不改配置。选定的模型单独作答，失败时不换备用模型。</p>
+              <p className="text-xs text-ink-3">仅对本次调试生效，不修改配置。所选模型单独作答，失败时不切换备用模型。</p>
             </Section>
           )}
           <Section title="提供商" summary={engine === "auto" ? "自动" : provider(engine).name}>
@@ -678,7 +693,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
                 {cached && <Badge tone="info">缓存命中</Badge>}
                 {run.variables?.model && <Badge>{run.variables.model}</Badge>}
                 <span>{data.result.answer !== undefined ? "提取回答" : "原文"}</span>
-                {data.result.content_length !== undefined && <span className="num">全文 {bytes(data.result.content_length)}</span>}
+                {data.result.content_length !== undefined && <span className="num">全文 {compact(data.result.content_length)} 字节</span>}
               </>
             )
           }
@@ -696,17 +711,24 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
                   from={run.variables?.offset ?? 0}
                   rendered={format === "rendered"}
                   onNext={(next) => {
+                    // Reads on from the page that was fetched, whatever the form says by now.
+                    const ran = run.variables;
+                    if (!ran) return;
+                    setUrl(ran.url);
+                    setEngine(ran.fetch_engine ?? "auto");
                     setAnswer(false);
                     setOffset(next);
-                    send({ ...args, prompt: "", raw: true, offset: next });
+                    const more: FetchArgs = { url: ran.url, prompt: "", raw: true, offset: next };
+                    if (ran.fetch_engine) more.fetch_engine = ran.fetch_engine;
+                    send(more);
                   }}
                 />
               )
             ) : (
               <Start
-                title="输入 URL，在这里看到抓取到的内容"
+                title="输入 URL 后，此处显示抓取到的内容"
                 examples={["https://modelcontextprotocol.io/specification/draft/basic/transports", "https://go.dev/doc/devel/release"]}
-                onPick={setUrl}
+                onPick={changeUrl}
               />
             )
           }
@@ -728,7 +750,7 @@ function FetchResultView({ result, from, rendered, onNext }: { result: FetchResu
         <div className="flex flex-col gap-2 px-4 pt-4">
           {result.error && <Notice tone="err">{result.error}</Notice>}
           {result.warning && <Notice tone="warn">{result.warning}</Notice>}
-          {result.answer_truncated && <Notice tone="warn">模型在超时前没有写完，下面是已经收到的部分。</Notice>}
+          {result.answer_truncated && <Notice tone="warn">模型未在超时前完成输出，以下为已接收的部分。</Notice>}
         </div>
       )}
       {(result.title || body) && (
@@ -748,7 +770,7 @@ function FetchResultView({ result, from, rendered, onNext }: { result: FetchResu
           )}
         </article>
       )}
-      {total > 0 && (start > 0 || end < total) && (
+      {!result.error && total > 0 && (start > 0 || end < total) && (
         <footer className="sticky bottom-0 flex items-center gap-4 rounded-b-panel border-t border-line bg-surface px-4 py-3">
           <div className="min-w-0 flex-1">
             <div className="relative h-1.5 rounded-full bg-sunken">
@@ -826,18 +848,18 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
           {!config.research.enabled && (
             <div className="px-4 pb-4">
               <Notice tone="warn">
-                深度研究还没有启用。到{" "}
+                深度研究尚未启用。请前往{" "}
                 <Link href="/research" className="text-ink underline underline-offset-2">
                   深度研究
                 </Link>{" "}
-                页选好模型并启用。
+                页选择模型并启用。
               </Notice>
             </div>
           )}
           {config.research.enabled && hasOtherModels(config, assigned) && (
             <Section title="模型" summary={model || config.research.model}>
               <ModelOverride assigned={assigned} value={model} onChange={setModel} />
-              <p className="text-xs text-ink-3">只对这次研究生效，不改配置。预算和读取方式仍按深度研究页的设置。</p>
+              <p className="text-xs text-ink-3">仅对本次研究生效，不修改配置。预算与阅读方式仍以深度研究页的设置为准。</p>
             </Section>
           )}
           <Section title="预算" summary={`${config.research.max_steps} 步 · ${config.research.max_duration_seconds} 秒`}>
@@ -911,7 +933,7 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
                 )}
                 {stats?.budget_exhausted && (
                   <div className="p-4 pb-0">
-                    <Notice tone="warn">预算用完，Agent 被要求停下并按已有材料写报告。</Notice>
+                    <Notice tone="warn">预算已耗尽，Agent 已停止检索并基于现有材料撰写报告。</Notice>
                   </div>
                 )}
                 {data.result && (
@@ -928,7 +950,7 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
               </>
             ) : (
               <Start
-                title="提出一个需要多方查证的问题，研究报告会出现在这里"
+                title="输入需要多方查证的问题后，研究报告显示在此处"
                 examples={["对比 Brave、Exa、Tavily 搜索 API 的定价与限流", "SQLite WAL 模式在高并发写入下的取舍"]}
                 mono={false}
                 onPick={setQuestion}
@@ -943,7 +965,7 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
 }
 
 function StepsView({ steps, live }: { steps: ResearchStep[]; live: boolean }) {
-  if (steps.length === 0) return <Empty title={live ? "等待第一个步骤…" : "开始研究后，这里按顺序列出 Agent 的每一步"} />;
+  if (steps.length === 0) return <Empty title={live ? "等待第一个步骤…" : "开始研究后，此处按顺序列出 Agent 的各个步骤"} />;
   return (
     <ol className="flex flex-col">
       {steps.map((step, i) => {
