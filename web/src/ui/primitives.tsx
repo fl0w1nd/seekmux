@@ -316,6 +316,66 @@ export function Section({ title, summary, defaultOpen, children }: { title: Reac
   );
 }
 
+/* ---------- Choice ---------- */
+
+/** A short list of options read top to bottom, one of which is chosen; each row can carry a status. */
+export function ChoiceList({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="overflow-hidden rounded-ctl border border-line">
+      {children}
+    </div>
+  );
+}
+
+export function Choice({
+  checked,
+  disabled,
+  onSelect,
+  title,
+  mono,
+  status,
+  detail,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+  title: ReactNode;
+  mono?: boolean;
+  status?: ReactNode;
+  /** A line under the title, such as what the option stands for. */
+  detail?: ReactNode;
+}) {
+  return (
+    <div className={cx("border-b border-line last:border-b-0", checked && "bg-raised")}>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={onSelect}
+        className="flex h-9 w-full items-center gap-2.5 px-3 text-left text-sm hover:bg-raised/60 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className={cx("grid size-3.5 shrink-0 place-items-center rounded-full border", checked ? "border-signal-text" : "border-line-strong")}>
+          {checked && <span className="size-1.5 rounded-full bg-signal-text" />}
+        </span>
+        <span className={cx("min-w-0 truncate", checked && "font-medium", mono && "num")}>{title}</span>
+        {status && <span className="ml-auto shrink-0">{status}</span>}
+      </button>
+      {detail && <div className="num -mt-1 truncate px-3 pb-2 pl-9 text-xs text-ink-3">{detail}</div>}
+    </div>
+  );
+}
+
+/** The status of a choice: a dot and a word. */
+export function ChoiceStatus({ tone, children }: { tone: Tone; children: ReactNode }) {
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-ink-3">
+      <Dot tone={tone} />
+      {children}
+    </span>
+  );
+}
+
 /* ---------- Tabs ---------- */
 
 export function Tabs<T extends string>({ value, onChange, className, children }: { value: T; onChange: (value: T) => void; className?: string; children: ReactNode }) {

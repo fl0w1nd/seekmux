@@ -548,12 +548,16 @@ func (s *Server) handlePlaySearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePlayFetch(w http.ResponseWriter, r *http.Request) {
-	var args fetch.Args
-	if !readJSON(w, r, &args) {
+	var body struct {
+		fetch.Args
+		// Model answers in place of the extract chain, to try it before assigning it.
+		Model string `json:"model"`
+	}
+	if !readJSON(w, r, &body) {
 		return
 	}
 	trace := core.NewTrace()
-	result, err := s.app.Fetch(core.WithTrace(r.Context(), trace), webui, args)
+	result, err := s.app.Fetch(core.WithTrace(r.Context(), trace), webui, body.Args, app.Override{ExtractModel: body.Model})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -562,14 +566,12 @@ func (s *Server) handlePlayFetch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePlayResearch(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Question string `json:"question"`
-	}
+	var body researchBody
 	if !readJSON(w, r, &body) {
 		return
 	}
 	started := time.Now()
-	result, err := s.app.Research(r.Context(), webui, body.Question, nil)
+	result, err := s.app.Research(r.Context(), webui, body.Question, app.Override{ResearchModel: body.Model}, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -577,14 +579,19 @@ func (s *Server) handlePlayResearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"duration_ms": time.Since(started).Milliseconds(), "result": result})
 }
 
+// researchBody starts research from the console.
+type researchBody struct {
+	Question string `json:"question"`
+	// Model runs the agent in place of the configured model, to try it.
+	Model string `json:"model"`
+}
+
 func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Question string `json:"question"`
-	}
+	var body researchBody
 	if !readJSON(w, r, &body) {
 		return
 	}
-	id, err := s.app.StartResearch(r.Context(), webui, body.Question)
+	id, err := s.app.StartResearch(r.Context(), webui, body.Question, app.Override{ResearchModel: body.Model})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

@@ -175,7 +175,7 @@ func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
 			if err := rateLimited(a, key); err != nil {
 				return failure(err), nil, nil
 			}
-			result, err := a.Fetch(ctx, caller, args)
+			result, err := a.Fetch(ctx, caller, args, app.Override{})
 			if err != nil {
 				return failure(err), nil, nil
 			}
@@ -224,7 +224,7 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: token, Progress: step, Message: line})
 			}
 		}
-		result, err := a.Research(ctx, caller, args.Question, progress)
+		result, err := a.Research(ctx, caller, args.Question, app.Override{}, progress)
 		if err != nil {
 			return failure(err), nil, nil
 		}
@@ -239,7 +239,7 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 		if err := rateLimited(a, key); err != nil {
 			return failure(err), nil, nil
 		}
-		id, err := a.StartResearch(ctx, caller, args.Question)
+		id, err := a.StartResearch(ctx, caller, args.Question, app.Override{})
 		if err != nil {
 			return failure(err), nil, nil
 		}

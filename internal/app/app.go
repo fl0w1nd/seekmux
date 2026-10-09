@@ -95,6 +95,37 @@ func (a *App) Close() {
 
 func (a *App) Snapshot() *Snapshot { return a.snapshot.Load() }
 
+// Override replaces, for a single call, the models the configuration
+// assigns. The console uses it to try a model before assigning it; tool
+// calls over MCP never carry one.
+type Override struct {
+	// ExtractModel answers fetch prompts on its own, in place of the
+	// extract chain.
+	ExtractModel string
+	// ResearchModel runs the research agent.
+	ResearchModel string
+}
+
+// with returns s with o applied, or s itself when o changes nothing.
+func (s *Snapshot) with(o Override) (*Snapshot, error) {
+	if o == (Override{}) {
+		return s, nil
+	}
+	cfg := s.Config.Clone()
+	for _, id := range []string{o.ExtractModel, o.ResearchModel} {
+		if _, _, ok := cfg.ModelByID(id); id != "" && !ok {
+			return nil, fmt.Errorf("model %q does not exist", id)
+		}
+	}
+	if o.ExtractModel != "" {
+		cfg.Fetch.Extract.Models = []string{o.ExtractModel}
+	}
+	if o.ResearchModel != "" {
+		cfg.Research.Model = o.ResearchModel
+	}
+	return &Snapshot{Version: s.Version, Config: cfg, Client: s.Client}, nil
+}
+
 func (a *App) install(cfg *config.Config) {
 	var version int64 = 1
 	if prev := a.snapshot.Load(); prev != nil {
@@ -240,8 +271,11 @@ func (a *App) Search(ctx context.Context, caller Caller, args search.Args) ([]se
 
 // Fetch serves the fetch tool. The error is an invalid-arguments error.
 // The upstream calls land in the trace of ctx when it carries one.
-func (a *App) Fetch(ctx context.Context, caller Caller, args fetch.Args) (fetch.Result, error) {
-	s := a.Snapshot()
+func (a *App) Fetch(ctx context.Context, caller Caller, args fetch.Args, o Override) (fetch.Result, error) {
+	s, err := a.Snapshot().with(o)
+	if err != nil {
+		return fetch.Result{}, err
+	}
 	if err := args.Validate(s.Config); err != nil {
 		return fetch.Result{}, err
 	}
@@ -268,8 +302,11 @@ func ResearchAvailable(s *Snapshot) bool {
 }
 
 // Research runs the research agent to completion. progress may be nil.
-func (a *App) Research(ctx context.Context, caller Caller, question string, progress func(string)) (research.Result, error) {
-	s := a.Snapshot()
+func (a *App) Research(ctx context.Context, caller Caller, question string, o Override, progress func(string)) (research.Result, error) {
+	s, err := a.Snapshot().with(o)
+	if err != nil {
+		return research.Result{}, err
+	}
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return research.Result{}, fmt.Errorf("question is required")
@@ -322,12 +359,16 @@ func (a *App) Research(ctx context.Context, caller Caller, question string, prog
 
 // StartResearch runs research in the background and returns the task id to
 // poll with ResearchTask.
-func (a *App) StartResearch(ctx context.Context, caller Caller, question string) (string, error) {
+func (a *App) StartResearch(ctx context.Context, caller Caller, question string, o Override) (string, error) {
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return "", fmt.Errorf("question is required")
 	}
-	if !ResearchAvailable(a.Snapshot()) {
+	s, err := a.Snapshot().with(o)
+	if err != nil {
+		return "", err
+	}
+	if !ResearchAvailable(s) {
 		return "", fmt.Errorf("research is not enabled")
 	}
 	id := store.NewToken("rs_")
@@ -335,7 +376,7 @@ func (a *App) StartResearch(ctx context.Context, caller Caller, question string)
 		return "", err
 	}
 	a.tasks.Go(func() {
-		result, err := a.Research(a.background, caller, question, func(line string) {
+		result, err := a.Research(a.background, caller, question, o, func(line string) {
 			a.Store.SetTaskProgress(a.background, id, line)
 		})
 		if ferr := a.Store.FinishTask(context.Background(), id, result.Report, err); ferr != nil {

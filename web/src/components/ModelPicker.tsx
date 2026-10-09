@@ -2,7 +2,8 @@ import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { Link } from "wouter";
 import type { Config, Model } from "../lib/api";
 import { useConfig } from "../lib/config";
-import { Badge, Button, Notice, Select } from "../ui/primitives";
+import { Badge, Button, Choice, ChoiceList, ChoiceStatus, Notice, Select } from "../ui/primitives";
+import { healthLabel, useStatus } from "./Health";
 
 /** Every configured model with the name of the provider it belongs to. */
 export function allModels(config: Config): (Model & { provider: string })[] {
@@ -46,6 +47,55 @@ export function ModelSelect({ value, onChange }: { value: string; onChange: (id:
       <option value="">未选择</option>
       <Options models={models} />
     </Select>
+  );
+}
+
+/**
+ * Whether there is a model to try besides what a feature is assigned, so
+ * that offering a choice makes sense.
+ */
+export function hasOtherModels(config: Config, assigned: string[]): boolean {
+  return allModels(config).some((m) => !assigned.includes(m.id));
+}
+
+/**
+ * Picks the model for one call: "" keeps what the feature is assigned
+ * (`assigned`, in order), a model id replaces it for this call only.
+ */
+export function ModelOverride({ assigned, value, onChange }: { assigned: string[]; value: string; onChange: (id: string) => void }) {
+  const { config } = useConfig();
+  const status = useStatus();
+  const models = allModels(config);
+  return (
+    <ChoiceList label="模型">
+      <Choice
+        checked={value === ""}
+        disabled={assigned.length === 0}
+        onSelect={() => onChange("")}
+        title="按配置"
+        detail={assigned.length > 0 ? assigned.join(" → ") : "还没有指派模型"}
+      />
+      {models.map((m) => {
+        const health = status?.models.find((s) => s.id === m.id);
+        return (
+          <Choice
+            key={m.id}
+            mono
+            checked={value === m.id}
+            onSelect={() => onChange(m.id)}
+            title={m.id}
+            status={
+              health?.disabled ? (
+                <ChoiceStatus tone={health.disabled_reason === "provider" ? "warn" : "err"}>{healthLabel(health)}</ChoiceStatus>
+              ) : (
+                <span className="text-xs text-ink-3">{m.provider}</span>
+              )
+            }
+            detail={value === m.id && `${m.name}${m.rate_limit ? ` · ${m.rate_limit}` : ""}`}
+          />
+        );
+      })}
+    </ChoiceList>
   );
 }
 

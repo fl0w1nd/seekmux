@@ -414,9 +414,11 @@ export const api = {
   resetBreaker: (key: string) => post("/api/breaker/reset", { key }),
 
   playSearch: (body: SearchArgs) => post<{ duration_ms: number; results: SearchResult[]; attempts: Attempt[] | null }>("/api/play/search", body),
-  playFetch: (body: FetchArgs) => post<{ duration_ms: number; result: FetchResult; attempts: Attempt[] | null }>("/api/play/fetch", body),
+  /** `model` answers in place of the extract chain, for this call only. */
+  playFetch: (body: FetchArgs & { model?: string }) => post<{ duration_ms: number; result: FetchResult; attempts: Attempt[] | null }>("/api/play/fetch", body),
   playModel: (provider: LLMProvider, model: Model) =>
     post<{ duration_ms: number; reply: string }>("/api/play/model", { provider, model }),
-  startResearch: (question: string) => post<{ task_id: string }>("/api/research/tasks", { question }),
+  /** `model` runs the agent in place of the configured model, for this task only. */
+  startResearch: (body: { question: string; model?: string }) => post<{ task_id: string }>("/api/research/tasks", body),
   researchTask: (id: string) => get<ResearchTask>(`/api/research/tasks/${id}`),
 };

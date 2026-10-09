@@ -58,7 +58,9 @@ it is disabled under `prefers-reduced-motion`.
 - `primitives.tsx` — `Button` (primary / secondary / ghost / danger), `Input`,
   `Textarea`, `Select`, `NumberInput`, `Switch`, `Segmented`, `Field`, `Dot`,
   `Badge`, `Panel`, `Row`, `Section` (a group that folds away and shows its
-  current values in the header), `Tabs` / `TabList` / `TabPanel`, `Empty`,
+  current values in the header), `Tabs` / `TabList` / `TabPanel`,
+  `ChoiceList` / `Choice` (a short list of options, one chosen, each with a
+  status), `Empty`,
   `Notice`, `Meter`, `CodeBlock`, `Tooltip`, `Table`.
 - `overlays.tsx` — `Dialog`, `Drawer`, toasts (`useToast`), confirmation
   (`useConfirm`). Behavior and accessibility come from unstyled Radix
@@ -69,7 +71,8 @@ it is disabled under `prefers-reduced-motion`.
   never renders raw HTML and turns images into links, since the text is
   untrusted.
 - `components/` — `RouteList` (numbered priority lanes), `ModelRefEditor`,
-  `ProviderPicker` (auto or one provider, with its health),
+  `ProviderPicker` (auto or one provider, with its health), `ModelOverride`
+  (the assigned models or another one, for a single call),
   `Waterfall` (the upstream calls of one request on a shared time axis).
 
 ## Rules

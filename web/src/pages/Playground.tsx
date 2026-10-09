@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { ExternalLink, Play } from "lucide-react";
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "wouter";
+import { allModels, hasOtherModels, ModelOverride } from "../components/ModelPicker";
 import { ProviderPicker } from "../components/ProviderPicker";
 import { Waterfall } from "../components/Waterfall";
 import { api, type Attempt, type FetchArgs, type FetchResult, type SearchArgs, type SearchResult } from "../lib/api";
@@ -240,13 +241,18 @@ function TraceView({ attempts, total }: { attempts: Attempt[] | null | undefined
   );
 }
 
-function CodeView({ tool, args }: { tool: string; args: object }) {
+function CodeView({ tool, args, model }: { tool: string; args: object; model?: string }) {
   const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: args } }, null, 2);
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-ink-3">
         MCP 客户端调用 <span className="num text-ink-2">{tool}</span> 工具时发送的请求，随左侧的设置实时更新。没有列出的参数取默认值。
       </p>
+      {model && (
+        <Notice tone="info">
+          选定的模型 <span className="num text-ink">{model}</span> 只在调试台生效。MCP 调用不能指定模型，Agent 用的始终是配置里的模型。
+        </Notice>
+      )}
       <CodeBlock copy>{body}</CodeBlock>
     </div>
   );
@@ -511,10 +517,14 @@ function QueryResult({ result }: { result: SearchResult }) {
 
 function FetchPlay({ switcher }: { switcher: ReactNode }) {
   const { config, provider } = useConfig();
-  const canExtract = config.fetch.extract.models.length > 0;
+  const chain = config.fetch.extract.models;
+  const models = allModels(config);
+  // Without an extract chain a model can still be tried, picked here.
+  const canExtract = chain.length > 0 || models.length > 0;
   const [url, setUrl] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [answer, setAnswer] = useState(canExtract);
+  const [answer, setAnswer] = useState(chain.length > 0);
+  const [model, setModel] = useState("");
   const [offset, setOffset] = useState(0);
   const [engine, setEngine] = useState("auto");
   const [view, setView] = useState<View>("result");
@@ -528,10 +538,16 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
   if (!extract && offset > 0) args.offset = offset;
   if (engine !== "auto") args.fetch_engine = engine;
 
+  const override = extract && model ? model : undefined;
+
   const ready = args.url !== "" && (!extract || args.prompt !== "");
   const send = (next: FetchArgs) => {
     if (view === "code") setView("result");
-    run.mutate(next);
+    run.mutate({ ...next, model: next.raw ? undefined : override });
+  };
+  const chooseAnswer = (on: boolean) => {
+    setAnswer(on);
+    if (on && chain.length === 0 && !model) setModel(models[0]?.id ?? "");
   };
   const submit = () => ready && !run.isPending && send(args);
 
@@ -544,7 +560,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
       composer={
         <>
           <Composer
-            meta={extract ? "提取模型按问题作答" : "返回页面原文"}
+            meta={extract ? (override ? <span className="num block truncate">由 {override} 作答</span> : "提取模型按问题作答") : "返回页面原文"}
             action={<RunButton label="抓取" loading={run.isPending} disabled={!ready} onClick={submit} />}
           >
             <input
@@ -579,8 +595,8 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
               <Segmented
                 stretch
                 size="sm"
-                value={answer ? "answer" : "raw"}
-                onChange={(v) => setAnswer(v === "answer")}
+                value={extract ? "answer" : "raw"}
+                onChange={(v) => chooseAnswer(v === "answer")}
                 options={[
                   { value: "answer", label: "提取回答" },
                   { value: "raw", label: "原文" },
@@ -588,12 +604,15 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
               />
             ) : (
               <Notice tone="warn">
-                还没有配置提取模型，只能取原文。到{" "}
-                <Link href="/fetch" className="text-ink underline underline-offset-2">
-                  抓取
+                还没有任何模型，只能取原文。到{" "}
+                <Link href="/models" className="text-ink underline underline-offset-2">
+                  模型接口
                 </Link>{" "}
                 页添加。
               </Notice>
+            )}
+            {canExtract && chain.length === 0 && (
+              <p className="-mt-2 text-xs text-ink-3">抓取工具还没有指派提取模型，Agent 只能拿到原文。可以先在这里选一个模型试试。</p>
             )}
             <p className="-mt-2 text-xs text-ink-3">
               {extract ? "提取模型读完整页，只返回问题要的内容，Agent 默认这样用。" : "返回页面的 Markdown 原文，很长的页面分段返回。"}
@@ -604,6 +623,12 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
               </Group>
             )}
           </Section>
+          {extract && hasOtherModels(config, chain) && (
+            <Section title="提取模型" summary={override ?? chain.join(" → ")}>
+              <ModelOverride assigned={chain} value={model} onChange={setModel} />
+              <p className="text-xs text-ink-3">只对这次调试生效，不改配置。选定的模型单独作答，失败时不换备用模型。</p>
+            </Section>
+          )}
           <Section title="提供商" summary={engine === "auto" ? "自动" : provider(engine).name}>
             <ProviderPicker tool="fetch" value={engine} onChange={setEngine} />
           </Section>
@@ -635,6 +660,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
                 <span className="num text-ink">{duration(data.duration_ms)}</span>
                 {data.result.fetch_engine && <Badge tone="signal">{data.result.fetch_engine}</Badge>}
                 {cached && <Badge tone="info">缓存命中</Badge>}
+                {run.variables?.model && <Badge>{run.variables.model}</Badge>}
                 <span>{data.result.answer !== undefined ? "提取回答" : "原文"}</span>
                 {data.result.content_length !== undefined && <span className="num">全文 {bytes(data.result.content_length)}</span>}
               </>
@@ -668,7 +694,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
               />
             )
           }
-          code={<CodeView tool="fetch" args={args} />}
+          code={<CodeView tool="fetch" args={args} model={override} />}
         />
       }
     />
@@ -727,7 +753,9 @@ function FetchResultView({ result, from, rendered, onNext }: { result: FetchResu
 
 function ResearchPlay({ switcher }: { switcher: ReactNode }) {
   const { config } = useConfig();
+  const assigned = config.research.model ? [config.research.model] : [];
   const [question, setQuestion] = useState("");
+  const [model, setModel] = useState("");
   const [taskId, setTaskId] = useState<string | null>(null);
   const [steps, setSteps] = useState<{ at: number; line: string }[]>([]);
   const [view, setView] = useState<View>("result");
@@ -760,7 +788,7 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
   const submit = () => {
     if (!ready || running) return;
     if (view === "code") setView("result");
-    start.mutate(question.trim());
+    start.mutate({ question: question.trim(), model: model || undefined });
   };
   const error = start.error ?? task.error;
 
@@ -799,10 +827,14 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
               </Notice>
             </div>
           )}
-          <Section title="预算" summary={config.research.model || "未选模型"}>
+          {config.research.enabled && hasOtherModels(config, assigned) && (
+            <Section title="模型" summary={model || config.research.model}>
+              <ModelOverride assigned={assigned} value={model} onChange={setModel} />
+              <p className="text-xs text-ink-3">只对这次研究生效，不改配置。预算和读取方式仍按深度研究页的设置。</p>
+            </Section>
+          )}
+          <Section title="预算" summary={`${config.research.max_steps} 步 · ${config.research.max_duration_seconds} 秒`}>
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-xs">
-              <dt className="text-ink-3">模型</dt>
-              <dd className="num truncate">{config.research.model || "—"}</dd>
               <dt className="text-ink-3">步数上限</dt>
               <dd className="num">{config.research.max_steps}</dd>
               <dt className="text-ink-3">时长上限</dt>
@@ -848,6 +880,7 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
                   {data.status === "done" ? "完成" : data.status === "failed" ? "失败" : "研究中"}
                 </Badge>
                 <span className="num text-ink">{duration(data.status === "running" ? Math.max(elapsed, data.updated_at - data.created_at) : data.updated_at - data.created_at)}</span>
+                <Badge>{start.variables?.model ?? config.research.model}</Badge>
                 <span className="num truncate">{data.id}</span>
               </>
             )
@@ -885,7 +918,7 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
               />
             )
           }
-          code={<CodeView tool="research" args={{ question: question.trim() }} />}
+          code={<CodeView tool="research" args={{ question: question.trim() }} model={model || undefined} />}
         />
       }
     />

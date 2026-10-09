@@ -1,9 +1,8 @@
-import type { ReactNode } from "react";
 import { Link } from "wouter";
 import type { Route, Tool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { optionText } from "../lib/options";
-import { cx, Dot, type Tone } from "../ui/primitives";
+import { Choice, ChoiceList, ChoiceStatus, type Tone } from "../ui/primitives";
 import { healthLabel, useStatus } from "./Health";
 
 type RoutedTool = Extract<Tool, "search" | "fetch">;
@@ -41,23 +40,18 @@ export function ProviderPicker({ tool, value, onChange }: { tool: RoutedTool; va
   const order = rows.filter((r) => r.state.usable).map((r) => r.name);
 
   return (
-    <div role="radiogroup" aria-label="提供商" className="overflow-hidden rounded-ctl border border-line">
-      <Option checked={value === "auto"} onSelect={() => onChange("auto")} title="自动" detail={order.length > 0 ? order.join(" → ") : "没有可用的提供商"} />
+    <ChoiceList label="提供商">
+      <Choice checked={value === "auto"} onSelect={() => onChange("auto")} title="自动" detail={order.length > 0 ? order.join(" → ") : "没有可用的提供商"} />
       {rows.map(({ route, name, state }) => {
         const changed = changes(tool, route);
         return (
-          <Option
+          <Choice
             key={route.provider}
             checked={value === route.provider}
             disabled={!state.usable}
             onSelect={() => onChange(route.provider)}
             title={name}
-            status={
-              <span className="flex items-center gap-1.5 text-xs text-ink-3">
-                <Dot tone={state.tone} />
-                {state.label}
-              </span>
-            }
+            status={<ChoiceStatus tone={state.tone}>{state.label}</ChoiceStatus>}
             detail={
               value === route.provider &&
               (changed.length > 0 ? (
@@ -75,42 +69,6 @@ export function ProviderPicker({ tool, value, onChange }: { tool: RoutedTool; va
           />
         );
       })}
-    </div>
-  );
-}
-
-function Option({
-  checked,
-  disabled,
-  onSelect,
-  title,
-  status,
-  detail,
-}: {
-  checked: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  title: string;
-  status?: ReactNode;
-  detail?: ReactNode;
-}) {
-  return (
-    <div className={cx("border-b border-line last:border-b-0", checked && "bg-raised")}>
-      <button
-        type="button"
-        role="radio"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={onSelect}
-        className="flex h-9 w-full items-center gap-2.5 px-3 text-left text-sm hover:bg-raised/60 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <span className={cx("grid size-3.5 shrink-0 place-items-center rounded-full border", checked ? "border-signal-text" : "border-line-strong")}>
-          {checked && <span className="size-1.5 rounded-full bg-signal-text" />}
-        </span>
-        <span className={cx("shrink-0", checked && "font-medium")}>{title}</span>
-        <span className="ml-auto shrink-0">{status}</span>
-      </button>
-      {detail && <div className="num -mt-1 truncate px-3 pb-2 pl-9 text-xs text-ink-3">{detail}</div>}
-    </div>
+    </ChoiceList>
   );
 }
