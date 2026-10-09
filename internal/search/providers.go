@@ -6,9 +6,11 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"html"
 	"maps"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -185,13 +187,25 @@ func braveSearch(ctx context.Context, c call, in Input) (Output, error) {
 	// Brave echoes the query with the operators added above.
 	out := Output{Query: in.Query, Web: []Item{}}
 	for _, r := range raw.Web.Results {
-		description := strings.Join(append([]string{r.Description}, r.Extra...), "\n")
-		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: description, Age: r.Age})
+		parts := []string{braveText(r.Description)}
+		for _, extra := range r.Extra {
+			parts = append(parts, braveText(extra))
+		}
+		out.Web = append(out.Web, Item{Title: braveText(r.Title), URL: r.URL, Description: strings.Join(parts, "\n"), Age: r.Age})
 	}
 	for _, r := range raw.Videos.Results {
-		out.Videos = append(out.Videos, Item{Title: r.Title, URL: r.URL, Description: r.Description, Age: r.Age, Duration: r.Video.Duration})
+		out.Videos = append(out.Videos, Item{Title: braveText(r.Title), URL: r.URL, Description: braveText(r.Description), Age: r.Age, Duration: r.Video.Duration})
 	}
 	return out, nil
+}
+
+var htmlTag = regexp.MustCompile(`<[^>]*>`)
+
+// braveText turns Brave's display markup (<strong> around the matched terms,
+// entities such as &#x27;) into plain text. Brave escapes a literal "<" in
+// the text, so every "<" left is the start of a tag.
+func braveText(s string) string {
+	return html.UnescapeString(htmlTag.ReplaceAllString(s, ""))
 }
 
 func exaStartDate(timeRange string, now time.Time) string {

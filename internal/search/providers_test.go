@@ -128,6 +128,41 @@ func TestOptionsReachTheRequest(t *testing.T) {
 	}
 }
 
+func TestBraveResultsArePlainText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"web": {"results": [{
+			"title": "Streamable HTTP &#x27;spec&#x27;",
+			"url": "https://example.com",
+			"description": "The <strong>Streamable HTTP</strong> transport &amp; a &lt;tag&gt;",
+			"extra_snippets": ["<strong>MCP</strong> servers"]
+		}]}}`))
+	}))
+	defer server.Close()
+
+	cfg := config.Default()
+	cfg.Providers["brave"].APIKey = "key"
+	cfg.Providers["brave"].BaseURL = server.URL
+	cfg.Normalize()
+	ran := false
+	for _, p := range Providers(cfg, server.Client()) {
+		if p.Name != "brave" {
+			continue
+		}
+		ran = true
+		out, err := p.Execute(context.Background(), Input{Query: "q", MaxResults: 5})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := out.Web[0]
+		if got.Title != "Streamable HTTP 'spec'" || got.Description != "The Streamable HTTP transport & a <tag>\nMCP servers" {
+			t.Errorf("result = %+v", got)
+		}
+	}
+	if !ran {
+		t.Fatal("no brave provider")
+	}
+}
+
 func TestDomainFilters(t *testing.T) {
 	cfg := config.Default()
 	args := Args{Queries: []string{"q"}, IncludeDomains: []string{" https://www.Example.com/docs ", "example.com", ""}, ExcludeDomains: []string{"blog.example.com"}}
