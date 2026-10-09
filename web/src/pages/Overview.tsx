@@ -58,7 +58,7 @@ function Kpis({ data }: { data: Overview }) {
   return (
     <div className="grid grid-cols-2 overflow-hidden rounded-panel border border-line bg-line gap-px lg:grid-cols-4">
       <Kpi label="调用" value={compact(calls)} detail={tools.length ? tools.map((t) => `${toolLabel[t.tool]} ${compact(t.calls)}`).join(" · ") : "暂无调用"} />
-      <Kpi label="成功率" value={percent(calls - errors, calls)} tone={errors > 0 && errors / calls > 0.1 ? "text-warn" : undefined} detail={errors ? `${errors} 次失败` : "没有失败"} />
+      <Kpi label="成功率" value={percent(calls - errors, calls)} tone={errors > 0 && errors / calls > 0.1 ? "text-warn" : undefined} detail={errors ? `${errors} 次失败` : "无失败"} />
       <Kpi
         label="P50 耗时"
         value={by("search") ? duration(by("search")!.p50_ms) : "—"}
@@ -94,8 +94,8 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
   const peak = Math.max(1, ...slots.map((s) => s.calls));
   if (data.stats.buckets.length === 0) {
     return (
-      <Empty icon={<Activity />} title="这段时间内没有请求">
-        接入 Agent，或到调试台发一次请求。
+      <Empty icon={<Activity />} title="所选时间范围内没有请求">
+        接入 Agent，或在调试台发起一次请求。
       </Empty>
     );
   }
@@ -127,7 +127,7 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
       <div className="tag mt-2 flex justify-between normal-case">
         <span>{dateTime(slots[0].ts).slice(5, 16)}</span>
         <span>峰值 {peak} 次 / 格</span>
-        <span>现在</span>
+        <span>当前</span>
       </div>
     </div>
   );
@@ -201,9 +201,9 @@ function Providers({ data, index }: { data: Overview; index: string }) {
   const { provider } = useConfig();
   const rows = data.stats.providers;
   return (
-    <Panel index={index} title="提供商表现" description="按对上游的每一次尝试统计，包含被故障转移跳过和在竞速中被取消的请求。" flush>
+    <Panel index={index} title="提供商表现" description="按对上游的每次请求统计，包含因故障转移被跳过和在竞速中被取消的请求。" flush>
       {rows.length === 0 ? (
-        <Empty title="还没有数据" />
+        <Empty title="暂无数据" />
       ) : (
         <div className="overflow-x-auto">
           <Table>
@@ -264,7 +264,7 @@ function Roles({ data }: { data: Overview }) {
       </div>
       {!data.roles.extract && (
         <Notice tone="warn">
-          还没有配置提取模型，fetch 只能返回原始页面，带 prompt 的调用会退回到截断的原文。到{" "}
+          尚未配置提取模型，fetch 仅能返回原始页面，带 prompt 的调用将回退为截断的原文。请前往{" "}
           <Link href="/fetch" className="text-ink underline underline-offset-2">
             抓取
           </Link>{" "}

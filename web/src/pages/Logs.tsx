@@ -61,7 +61,7 @@ export function LogsPage() {
     <>
       <PageHeader
         title="请求日志"
-        description="每一次工具调用，以及它背后对各提供商的每一次尝试。"
+        description="每次工具调用，及其对各提供商的每次请求。"
         actions={
           <>
             <Button variant={live ? "secondary" : "ghost"} icon={live ? <Dot tone="signal" live /> : <Radio />} onClick={() => setLive(!live)}>
@@ -71,7 +71,7 @@ export function LogsPage() {
               variant="ghost"
               icon={<Trash2 />}
               onClick={async () => {
-                if (await confirm({ title: "清空全部日志？", body: "概览页的统计也来自这些日志，会一并清零。", confirm: "清空", danger: true })) {
+                if (await confirm({ title: "清空全部日志？", body: "概览页的统计同样来自这些日志，将一并清零。", confirm: "清空", danger: true })) {
                   await api.clearLogs();
                   await client.invalidateQueries({ queryKey: ["logs"] });
                   toast("日志已清空");
@@ -121,7 +121,7 @@ export function LogsPage() {
           </div>
         ) : entries.length === 0 ? (
           <Empty icon={<ScrollText />} title="没有符合条件的日志">
-            Agent 调用工具，或在调试台发起请求后，记录会出现在这里。
+            Agent 调用工具或在调试台发起请求后，记录将显示在此处。
           </Empty>
         ) : (
           <div className="overflow-x-auto">
@@ -278,8 +278,8 @@ function LogDrawer({ id, onClose }: { id: number | null; onClose: () => void }) 
           )}
 
           <section>
-            <h3 className="tag mb-1.5">上游调用 · {entry.attempts?.length ?? 0} 次</h3>
-            {entry.attempts?.length ? <Waterfall attempts={entry.attempts} total={entry.duration_ms} /> : <div className="text-xs text-ink-3">这次调用没有访问任何提供商。</div>}
+            <h3 className="tag mb-1.5">调用链 · {entry.attempts?.length ?? 0} 条</h3>
+            {entry.attempts?.length ? <Waterfall attempts={entry.attempts} total={entry.duration_ms} /> : <div className="text-xs text-ink-3">本次调用未请求任何上游提供商。</div>}
           </section>
 
           <section>

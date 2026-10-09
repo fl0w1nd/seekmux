@@ -59,7 +59,7 @@ export function App() {
           <Route path="/system" component={SystemPage} />
           <Route path="/design" component={DesignPage} />
           <Route>
-            <Empty title="没有这个页面" />
+            <Empty title="页面不存在" />
           </Route>
         </Switch>
       </Shell>
@@ -101,7 +101,7 @@ function Gate({ setup, onDone }: { setup: boolean; onDone: () => unknown }) {
         <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-5">
           {setup && (
             <>
-              <Notice>首次启动，需要设置管理员密码。设置令牌打印在服务端启动日志里（setup_token）。</Notice>
+              <Notice>首次启动需设置管理员密码。设置令牌见服务端启动日志（setup_token）。</Notice>
               <Field label="设置令牌">
                 <Input mono autoFocus value={token} onChange={(e) => setToken(e.target.value)} placeholder="setup_…" required />
               </Field>

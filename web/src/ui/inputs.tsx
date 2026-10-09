@@ -69,7 +69,7 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
         <Button
           variant="ghost"
           onClick={async () => {
-            if (await confirm({ title: "清除这个密钥？", body: "清除立即生效，之后需要重新粘贴才能恢复。", confirm: "清除", danger: true })) onChange({ ...value, api_key: "", clear_api_key: true });
+            if (await confirm({ title: "清除该密钥？", body: "清除后立即生效，恢复需重新填入密钥。", confirm: "清除", danger: true })) onChange({ ...value, api_key: "", clear_api_key: true });
           }}
         >
           清除
@@ -217,7 +217,7 @@ export function JSONInput({
             setError("");
             onChange(parsed as Record<string, unknown>);
           } catch {
-            setError("需要是一个 JSON 对象；修正前不会保存这里的改动");
+            setError("须为 JSON 对象；修正前不会保存此处的改动");
           }
         }}
       />

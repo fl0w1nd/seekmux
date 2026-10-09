@@ -44,7 +44,7 @@ export function RouteOptions({ tool, index }: { tool: Extract<Tool, "search" | "
           })}
         </div>
       )}
-      <Field label={extra.label} hint="JSON 对象，原样并入发给提供商的请求，最后合并，会覆盖上面的同名设置。用于这里没有列出的参数">
+      <Field label={extra.label} hint="JSON 对象，原样并入发往提供商的请求；最后合并，会覆盖上方的同名设置。用于此处未列出的参数">
         <JSONInput value={route.extra_body} placeholder={extra.placeholder} onChange={(extra_body) => update((draft) => void (draft[tool].routes[index].extra_body = extra_body))} />
       </Field>
     </div>

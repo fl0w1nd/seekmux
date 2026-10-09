@@ -27,7 +27,7 @@ export function KeysPage() {
     <>
       <PageHeader
         title="访问密钥"
-        description="Agent 连接 MCP 端点用的密钥，和登录本页面的管理员密码是两套体系。每把密钥可以限定可用工具和调用频率，随时吊销。"
+        description="Agent 连接 MCP 端点所用的密钥，与登录控制台的管理员密码相互独立。每个密钥可限定可用工具与调用频率，并可随时吊销。"
         actions={
           <Button variant="primary" icon={<Plus />} onClick={() => setForm("new")}>
             创建密钥
@@ -37,8 +37,8 @@ export function KeysPage() {
       <div className="flex flex-col gap-4">
         <Panel flush>
           {keys.data?.length === 0 ? (
-            <Empty icon={<KeyRound />} title="还没有访问密钥">
-              创建一把密钥，Agent 才能连接到这个网关。
+            <Empty icon={<KeyRound />} title="尚无访问密钥">
+              创建密钥后，Agent 才能连接到本网关。
             </Empty>
           ) : (
             <Table>
@@ -81,7 +81,7 @@ export function KeysPage() {
                                 size="sm"
                                 variant="danger"
                                 onClick={async () => {
-                                  if (await confirm({ title: `吊销「${key.name}」？`, body: "使用这把密钥的 Agent 会立即失去访问权限，且无法恢复。", confirm: "吊销", danger: true })) {
+                                  if (await confirm({ title: `吊销「${key.name}」？`, body: "使用该密钥的 Agent 将立即失去访问权限，且无法恢复。", confirm: "吊销", danger: true })) {
                                     revoke.mutate(key.id);
                                   }
                                 }}
@@ -100,7 +100,7 @@ export function KeysPage() {
           )}
         </Panel>
 
-        <Panel index="MCP" title="连接方式" description="端点使用 Streamable HTTP 传输，密钥放在 Authorization 头里。">
+        <Panel index="MCP" title="连接方式" description="端点使用 Streamable HTTP 传输，密钥通过 Authorization 请求头传递。">
           <ConnectionGuide secret="<你的密钥>" />
         </Panel>
       </div>
@@ -123,7 +123,7 @@ export function KeysPage() {
 
       <Dialog open={created !== null} onOpenChange={(open) => !open && setCreated(null)} title={`密钥「${created?.name}」已创建`} width="max-w-2xl" footer={<Button variant="primary" onClick={() => setCreated(null)}>我已保存</Button>}>
         <div className="flex flex-col gap-4">
-          <Notice tone="warn">密钥只显示这一次。服务端只保存它的哈希，关闭后无法再查看。</Notice>
+          <Notice tone="warn">密钥仅显示一次。服务端只保存其哈希，关闭后无法再次查看。</Notice>
           <CodeBlock copy wrap>
             {created?.secret ?? ""}
           </CodeBlock>
@@ -196,7 +196,7 @@ function KeyDialog({
       }
     >
       <div className="flex flex-col gap-4">
-        <Field label="名称" hint="用来在日志里区分调用方，例如设备名或 Agent 名">
+        <Field label="名称" hint="用于在日志中区分调用方，例如设备名或 Agent 名">
           <Input autoFocus value={name} maxLength={64} placeholder="macbook · claude code" onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label="可用工具">
@@ -221,8 +221,8 @@ function KeyDialog({
             })}
           </div>
         </Field>
-        {scopes.includes("research") && !config.research.enabled && <Notice>研究工具目前未启用，启用之前这把密钥看不到它。</Notice>}
-        <Field label="调用限流" hint="这把密钥所有工具调用合计的频率上限">
+        {scopes.includes("research") && !config.research.enabled && <Notice>研究工具尚未启用，启用前该密钥无法使用此工具。</Notice>}
+        <Field label="调用限流" hint="该密钥全部工具调用合计的频率上限">
           <RateLimitInput value={rateLimit} onChange={setRateLimit} fallback="60/m" />
         </Field>
       </div>

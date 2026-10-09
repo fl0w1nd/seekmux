@@ -11,7 +11,7 @@ export function ProvidersPage() {
   const status = useStatus();
   return (
     <>
-      <PageHeader title="提供商" description="搜索与抓取服务的凭据。一个提供商的密钥对它支持的所有工具通用；优先级和限流在「搜索」「抓取」页按工具设置。" />
+      <PageHeader title="提供商" description="搜索与抓取服务的凭据。同一提供商的密钥适用于其支持的所有工具；优先级与限流在「搜索」「抓取」页按工具设置。" />
       <div className="grid gap-4 lg:grid-cols-2">
         {meta.catalog.map((info, index) => {
           const creds = config.providers[info.id];
@@ -45,11 +45,11 @@ export function ProvidersPage() {
                           </span>
                           <p className="mt-0.5">
                             {route.disabled_reason === "auth"
-                              ? "接口拒绝了这个密钥，网关不再向它发请求。更换密钥后自动恢复；确认密钥没问题也可以直接重新启用。"
+                              ? "接口拒绝了该密钥，网关已停止向其发送请求。更换密钥后自动恢复；确认密钥有效时也可直接重新启用。"
                               : route.disabled_reason === "quota"
                                 ? route.disabled_ms > 0
-                                  ? "接口报告额度已用尽，并给出了重置时间，到时自动恢复。充值后可以直接重新启用。"
-                                  : "接口报告额度已用尽，网关不再向它发请求。充值后在这里重新启用。"
+                                  ? "接口报告额度已用尽并给出了重置时间，届时自动恢复。充值后可直接重新启用。"
+                                  : "接口报告额度已用尽，网关已停止向其发送请求。充值后可在此重新启用。"
                                 : "短时间内连续失败，暂时跳过，冷却后自动重试。"}
                           </p>
                           {route.disabled_detail && <p className="num mt-1 break-all text-ink-3">{route.disabled_detail}</p>}
@@ -59,7 +59,7 @@ export function ProvidersPage() {
                     </Notice>
                   );
                 })}
-                <Field label="API key" hint={info.key_required ? undefined : "可选：不填也能用，填了额度更高"}>
+                <Field label="API key" hint={info.key_required ? undefined : "可选：留空亦可使用，填写后额度更高"}>
                   <SecretInput value={creds} onChange={(next) => update((d) => void (d.providers[info.id] = next))} />
                 </Field>
                 <details className="group">

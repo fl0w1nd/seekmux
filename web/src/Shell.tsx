@@ -169,11 +169,11 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="flex max-w-2xl animate-in items-center gap-4 rounded-panel border border-line-strong bg-overlay py-2 pr-2 pl-4 shadow-overlay">
             <span className="flex min-w-0 items-start gap-2.5 text-sm">
               <Dot tone="err" className="mt-2" />
-              <span className="min-w-0 break-words">这次改动没有保存：{error}</span>
+              <span className="min-w-0 break-words">改动未能保存：{error}</span>
             </span>
             <span className="flex shrink-0 gap-2">
               <Button variant="ghost" onClick={discard}>
-                撤回改动
+                撤销改动
               </Button>
               <Button variant="primary" onClick={retry}>
                 重试

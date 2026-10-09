@@ -13,11 +13,11 @@ export function allModels(config: Config): (Model & { provider: string })[] {
 function NoModels() {
   return (
     <Notice tone="warn">
-      还没有可用的模型。先到{" "}
+      尚无可用模型。请先前往{" "}
       <Link href="/models" className="text-ink underline underline-offset-2">
         模型接口
       </Link>{" "}
-      添加接口并在它下面登记模型。
+      页添加接口并登记模型。
     </Notice>
   );
 }
@@ -73,7 +73,7 @@ export function ModelOverride({ assigned, value, onChange }: { assigned: string[
         disabled={assigned.length === 0}
         onSelect={() => onChange("")}
         title="按配置"
-        detail={assigned.length > 0 ? assigned.join(" → ") : "还没有指派模型"}
+        detail={assigned.length > 0 ? assigned.join(" → ") : "尚未指派模型"}
       />
       {models.map((m) => {
         const health = status?.models.find((s) => s.id === m.id);
@@ -117,7 +117,7 @@ export function ModelChain({ value, onChange }: { value: string[]; onChange: (id
 
   return (
     <div className="rounded-ctl border border-line">
-      {value.length === 0 && <div className="border-b border-line px-3 py-3 text-xs text-ink-3">还没有指派模型。</div>}
+      {value.length === 0 && <div className="border-b border-line px-3 py-3 text-xs text-ink-3">尚未指派模型。</div>}
       <ol>
         {value.map((id, index) => {
           const model = models.find((m) => m.id === id);
@@ -148,7 +148,7 @@ export function ModelChain({ value, onChange }: { value: string[]; onChange: (id
           aria-label="添加模型"
           onChange={(e) => e.target.value && onChange([...value, e.target.value])}
         >
-          <option value="">{unused.length === 0 ? "所有模型都已在链中" : value.length === 0 ? "选择模型" : "添加备用模型"}</option>
+          <option value="">{unused.length === 0 ? "所有模型均已在链中" : value.length === 0 ? "选择模型" : "添加备用模型"}</option>
           <Options models={unused} />
         </Select>
       </div>

@@ -56,7 +56,7 @@ export function ModelsPage() {
     <>
       <PageHeader
         title="模型接口"
-        description="大模型的接口和接口下的模型。模型在这里有自己的身份：参数、限流都跟着模型走，「抓取」和「深度研究」只按 ID 引用它，共用同一个模型时也共用它的限流。"
+        description="大模型接口及其下属模型。模型在此独立定义：参数与限流随模型生效，「抓取」和「深度研究」仅按 ID 引用；引用同一模型的功能共用其限流。"
         actions={
           <Button variant="primary" icon={<Plus />} onClick={() => setEditing({ kind: "provider", index: -1 })}>
             添加接口
@@ -66,8 +66,8 @@ export function ModelsPage() {
 
       {providers.length === 0 ? (
         <Panel>
-          <Empty icon={<Bot />} title="还没有模型接口">
-            添加一个 OpenAI 兼容或 Anthropic 格式的接口，再在它下面登记模型。之后 fetch 才能用模型提炼页面，研究工具才能运行。
+          <Empty icon={<Bot />} title="尚无模型接口">
+            添加 OpenAI 兼容或 Anthropic 格式的接口，并在其下登记模型。完成后 fetch 才能使用模型提取页面内容，研究工具才能运行。
           </Empty>
         </Panel>
       ) : (
@@ -102,16 +102,16 @@ export function ModelsPage() {
                       icon={<Trash2 />}
                       aria-label={`删除接口 ${p.name || p.id}`}
                       disabled={inUse}
-                      title={inUse ? "它的模型正在被使用，先在抓取或深度研究页改掉指派" : undefined}
+                      title={inUse ? "其下的模型正在使用中，请先在抓取或深度研究页解除指派" : undefined}
                       onClick={async () => {
-                        if (await confirm({ title: `删除接口 ${p.name || p.id}？`, body: "接口和它下面的模型一起删除，立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers.splice(pi, 1));
+                        if (await confirm({ title: `删除接口 ${p.name || p.id}？`, body: "接口及其下属模型将一并删除，立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers.splice(pi, 1));
                       }}
                     />
                   </>
                 }
               >
                 {p.models.length === 0 ? (
-                  <div className="px-4 py-5 text-xs text-ink-3">这个接口下还没有模型。添加模型后才能把它指派给提取或研究。</div>
+                  <div className="px-4 py-5 text-xs text-ink-3">该接口下尚无模型。添加模型后方可指派给提取或研究。</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
@@ -174,7 +174,7 @@ export function ModelsPage() {
                                     icon={<Trash2 />}
                                     aria-label={`删除模型 ${m.id}`}
                                     disabled={roles.length > 0}
-                                    title={roles.length > 0 ? "正在被使用，先在抓取或深度研究页改掉指派" : undefined}
+                                    title={roles.length > 0 ? "正在使用中，请先在抓取或深度研究页解除指派" : undefined}
                                     onClick={async () => {
                                       if (await confirm({ title: `删除模型 ${m.id}？`, body: "立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers[pi].models.splice(mi, 1));
                                     }}
@@ -247,8 +247,8 @@ function ProviderDialog({
   const [form, setForm] = useState<LLMProvider>(() => structuredClone(initial));
   const set = (change: Partial<LLMProvider>) => setForm((f) => ({ ...f, ...change }));
 
-  const idError = !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(form.id) ? "小写字母、数字、- 或 _，最长 32 位" : taken.includes(form.id) ? "这个 ID 已被使用" : "";
-  const urlError = form.type === "openai-compatible" && !form.base_url ? "OpenAI 兼容接口必须填写地址" : form.base_url && !/^https?:\/\/.+/.test(form.base_url) ? "需要以 http:// 或 https:// 开头" : "";
+  const idError = !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(form.id) ? "小写字母、数字、- 或 _，最长 32 位" : taken.includes(form.id) ? "该 ID 已被使用" : "";
+  const urlError = form.type === "openai-compatible" && !form.base_url ? "OpenAI 兼容接口必须填写地址" : form.base_url && !/^https?:\/\/.+/.test(form.base_url) ? "须以 http:// 或 https:// 开头" : "";
   const valid = !idError && !urlError;
 
   return (
@@ -277,7 +277,7 @@ function ProviderDialog({
           />
         </Field>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="ID" hint={isNew ? "创建后不能修改" : undefined} error={form.id ? idError : undefined}>
+          <Field label="ID" hint={isNew ? "创建后不可修改" : undefined} error={form.id ? idError : undefined}>
             <Input mono value={form.id} disabled={!isNew} placeholder="openrouter" onChange={(e) => set({ id: e.target.value.trim().toLowerCase() })} />
           </Field>
           <Field label="显示名称">
@@ -287,7 +287,7 @@ function ProviderDialog({
         <Field
           label="Base URL"
           error={urlError || undefined}
-          hint={form.type === "anthropic" ? "留空使用 https://api.anthropic.com；中转站填到域名即可，不带 /v1" : "填到 /v1 为止，例如 https://api.openai.com/v1"}
+          hint={form.type === "anthropic" ? "留空则使用 https://api.anthropic.com；中转服务填写到域名为止，不含 /v1" : "填写到 /v1 为止，例如 https://api.openai.com/v1"}
         >
           <Input mono value={form.base_url} placeholder={form.type === "anthropic" ? "https://api.anthropic.com" : "https://…/v1"} onChange={(e) => set({ base_url: e.target.value.trim() })} />
         </Field>
@@ -328,7 +328,7 @@ function ModelDialog({
   const [testing, setTesting] = useState(false);
   const set = (change: Partial<Model>) => setForm((f) => ({ ...f, ...change }));
 
-  const idError = !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(form.id) ? "小写字母、数字、. - 或 _，最长 64 位" : taken.includes(form.id) ? "这个 ID 已被使用（模型 ID 在所有接口中唯一）" : "";
+  const idError = !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(form.id) ? "小写字母、数字、. - 或 _，最长 64 位" : taken.includes(form.id) ? "该 ID 已被使用（模型 ID 在所有接口中唯一）" : "";
   const valid = !idError && form.name !== "";
 
   const runTest = async () => {
@@ -376,7 +376,7 @@ function ModelDialog({
               }}
             />
           </Field>
-          <Field label="模型 ID" hint={isNew ? "功能靠它引用这个模型，创建后不能修改。同一上游模型想要两套参数，就建两个 ID" : undefined} error={form.id ? idError : undefined}>
+          <Field label="模型 ID" hint={isNew ? "各功能通过该 ID 引用模型，创建后不可修改。同一上游模型需要两套参数时，可分别创建两个 ID" : undefined} error={form.id ? idError : undefined}>
             <Input
               mono
               value={form.id}
@@ -394,7 +394,7 @@ function ModelDialog({
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-line px-3 py-2.5">
             <div>
               <div className="text-sm">限流</div>
-              <div className="text-xs text-ink-3">所有使用这个模型的功能共用</div>
+              <div className="text-xs text-ink-3">由使用该模型的所有功能共用</div>
             </div>
             <RateLimitInput value={form.rate_limit} fallback="60/m" onChange={(rate_limit) => set({ rate_limit })} />
           </div>
@@ -409,10 +409,10 @@ function ModelDialog({
 
         <ReasoningEditor type={provider.type} value={form.reasoning} onChange={(reasoning) => set({ reasoning })} />
 
-        <Field label="最大输出 token" hint={provider.type === "anthropic" ? "模型的输出上限，研究与抓取都受它约束。0 按 32000 发送（该接口必须带上限）；抓取可在抓取页另设更小的值" : "模型的输出上限，研究与抓取都受它约束。0 为不限制；抓取可在抓取页另设更小的值"} className="max-w-md">
+        <Field label="最大输出 token" hint={provider.type === "anthropic" ? "模型的输出上限，研究与抓取均受其约束。0 按 32000 发送（该接口要求指定上限）；抓取可在抓取页另设更小的值" : "模型的输出上限，研究与抓取均受其约束。0 为不限制；抓取可在抓取页另设更小的值"} className="max-w-md">
           <NumberInput value={form.max_output_tokens ?? 0} onChange={(n) => set({ max_output_tokens: Math.round(n) || undefined })} />
         </Field>
-        <Field label="附加请求字段" hint="原样合并进请求体的 JSON，最后合并，会覆盖上面的同名设置。用于界面没有覆盖到的参数">
+        <Field label="附加请求字段" hint="原样并入请求体的 JSON；最后合并，会覆盖上方的同名设置。用于界面未提供的参数">
           <JSONInput value={form.extra_body} onChange={(extra_body) => set({ extra_body })} placeholder={'{ "top_p": 0.9 }'} />
         </Field>
 
@@ -427,7 +427,7 @@ function ReasoningEditor({ type, value, onChange }: { type: LLMType; value: Reas
   const { meta } = useConfig();
   const efforts = meta.reasoning_efforts[type];
   const hints: Record<Reasoning["mode"], string> = {
-    "": "不发送任何推理参数，由模型自己的默认行为决定。",
+    "": "不发送任何推理参数，采用模型的默认行为。",
     off: type === "anthropic" ? "发送 thinking: disabled。" : "发送 reasoning_effort: none；不支持该取值的模型会报错，可改用「模型默认」。",
     effort: type === "anthropic" ? "自适应思考，并用 effort 控制投入程度。" : "发送 reasoning_effort。",
     budget: "固定的思考 token 预算；只接受自适应思考的新模型会自动改用自适应。",
