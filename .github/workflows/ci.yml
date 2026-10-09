@@ -11,6 +11,8 @@ on:
       # .dockerignore out of this list.
       - "*.md"
       - "**/*.md"
+      - "LICENSE"
+      - "Makefile"
       - ".gitignore"
       - ".editorconfig"
       - "docker-compose.yml"
