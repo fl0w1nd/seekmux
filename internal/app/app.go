@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -109,8 +110,8 @@ func (a *App) install(cfg *config.Config) {
 	a.snapshot.Store(&Snapshot{Version: version, Config: cfg, Client: newClient(cfg.Network.Proxy)})
 }
 
-// SaveConfig validates, persists and activates cfg. Limiter windows and the
-// page cache carry over.
+// SaveConfig validates, persists and activates cfg. Limiter windows carry
+// over, and so does the page cache unless the fetch routes changed.
 func (a *App) SaveConfig(ctx context.Context, cfg *config.Config) error {
 	cfg.Normalize()
 	if err := cfg.Validate(); err != nil {
@@ -125,8 +126,14 @@ func (a *App) SaveConfig(ctx context.Context, cfg *config.Config) error {
 	if err := a.Store.Set(ctx, configKey, data); err != nil {
 		return err
 	}
+	prev := a.Snapshot().Config
 	a.install(cfg)
-	a.fetcher.ClearAnswers()
+	if reflect.DeepEqual(prev.Fetch.Routes, cfg.Fetch.Routes) {
+		a.fetcher.ClearAnswers()
+	} else {
+		// A provider's options change what it returns for the same URL.
+		a.fetcher.ClearCache()
+	}
 	return nil
 }
 

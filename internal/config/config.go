@@ -57,11 +57,22 @@ type Route struct {
 	Enabled     bool   `json:"enabled"`
 	RateLimit   string `json:"rate_limit"`
 	Concurrency int    `json:"concurrency"`
+	// Options holds the provider's parameters for this tool that differ from
+	// the defaults its catalog entry declares.
+	Options map[string]any `json:"options,omitempty"`
+	// ExtraBody is merged into the request last, so it overrides Options and
+	// reaches parameters that have no option. It is the JSON body, or the
+	// query string or headers of a provider that takes its parameters there.
+	ExtraBody map[string]any `json:"extra_body,omitempty"`
 }
 
 type Search struct {
 	TimeoutSeconds float64 `json:"timeout_seconds"`
-	Routes         []Route `json:"routes"`
+	// Country and Language localize results on every provider that can; a
+	// route's own option overrides them.
+	Country  string  `json:"country,omitempty"`
+	Language string  `json:"language,omitempty"`
+	Routes   []Route `json:"routes"`
 }
 
 type Fetch struct {
@@ -226,6 +237,8 @@ type ProviderInfo struct {
 	DefaultBase map[string]string `json:"default_base_url"`
 	// DefaultRateLimit is keyed by tool; a missing tool means unsupported.
 	DefaultRateLimit map[string]string `json:"default_rate_limit"`
+	// Options is keyed by tool.
+	Options map[string][]Option `json:"options,omitempty"`
 }
 
 func (p ProviderInfo) Supports(tool string) bool {
@@ -239,31 +252,83 @@ var Catalog = []ProviderInfo{
 		ID: "brave", Name: "Brave Search", Website: "https://api-dashboard.search.brave.com", KeyRequired: true,
 		DefaultBase:      map[string]string{ToolSearch: "https://api.search.brave.com"},
 		DefaultRateLimit: map[string]string{ToolSearch: "1/s"},
+		Options: map[string][]Option{ToolSearch: {
+			{Key: "extra_snippets", Type: OptionBool, Default: false},
+			{Key: "safesearch", Type: OptionEnum, Default: "moderate", Values: []string{"off", "moderate", "strict"}},
+			{Key: "goggles", Type: OptionString, Default: ""},
+			optCountry, optLanguage,
+		}},
 	},
 	{
 		ID: "exa", Name: "Exa", Website: "https://dashboard.exa.ai", KeyRequired: true,
-		DefaultBase:      map[string]string{ToolSearch: "https://api.exa.ai"},
-		DefaultRateLimit: map[string]string{ToolSearch: "10/s"},
+		DefaultBase:      map[string]string{ToolSearch: "https://api.exa.ai", ToolFetch: "https://api.exa.ai"},
+		DefaultRateLimit: map[string]string{ToolSearch: "10/s", ToolFetch: "10/s"},
+		Options: map[string][]Option{
+			ToolSearch: {
+				{Key: "type", Type: OptionEnum, Default: "auto", Values: []string{"instant", "fast", "auto", "deep-lite", "deep"}},
+				{Key: "contents", Type: OptionEnum, Default: "highlights", Values: []string{"highlights", "text", "summary"}},
+				{Key: "max_characters", Type: OptionInt, Default: 600, Min: 1, Max: 100000},
+				{Key: "max_age_hours", Type: OptionInt, Min: -1, Max: 720},
+				optCountry,
+			},
+			ToolFetch: {
+				{Key: "verbosity", Type: OptionEnum, Default: "compact", Values: []string{"compact", "standard", "full"}},
+				{Key: "max_age_hours", Type: OptionInt, Min: -1, Max: 720},
+				{Key: "livecrawl_timeout_ms", Type: OptionInt, Default: 10000, Min: 1000, Max: 90000},
+			},
+		},
 	},
 	{
 		ID: "perplexity", Name: "Perplexity", Website: "https://console.perplexity.ai", KeyRequired: true,
 		DefaultBase:      map[string]string{ToolSearch: "https://api.perplexity.ai"},
 		DefaultRateLimit: map[string]string{ToolSearch: "50/s"},
+		Options: map[string][]Option{ToolSearch: {
+			{Key: "search_type", Type: OptionEnum, Default: "web", Values: []string{"web", "fast"}},
+			{Key: "max_tokens_per_page", Type: OptionInt, Default: 256, Min: 1, Max: 1000000},
+			{Key: "max_tokens", Type: OptionInt, Min: 1, Max: 1000000},
+			optCountry, optLanguage,
+		}},
 	},
 	{
 		ID: "tavily", Name: "Tavily", Website: "https://app.tavily.com", KeyRequired: true,
 		DefaultBase:      map[string]string{ToolSearch: "https://api.tavily.com", ToolFetch: "https://api.tavily.com"},
 		DefaultRateLimit: map[string]string{ToolSearch: "5/m", ToolFetch: "5/m"},
+		Options: map[string][]Option{
+			ToolSearch: {
+				{Key: "search_depth", Type: OptionEnum, Default: "advanced", Values: []string{"basic", "advanced", "fast", "ultra-fast"}},
+				{Key: "chunks_per_source", Type: OptionInt, Default: 3, Min: 1, Max: 3},
+				{Key: "topic", Type: OptionEnum, Default: "general", Values: []string{"general", "news", "finance"}},
+				optCountry, optLanguage,
+			},
+			ToolFetch: {
+				{Key: "extract_depth", Type: OptionEnum, Default: "basic", Values: []string{"basic", "advanced"}},
+			},
+		},
 	},
 	{
 		ID: "jina", Name: "Jina Reader", Website: "https://jina.ai/reader", KeyRequired: false,
 		DefaultBase:      map[string]string{ToolFetch: "https://r.jina.ai"},
 		DefaultRateLimit: map[string]string{ToolFetch: "5/m"},
+		Options: map[string][]Option{ToolFetch: {
+			{Key: "engine", Type: OptionEnum, Default: "auto", Values: []string{"auto", "browser", "curl"}},
+			{Key: "retain_images", Type: OptionEnum, Default: "none", Values: []string{"all", "alt", "none"}},
+			{Key: "cache_tolerance_seconds", Type: OptionInt, Min: 0, Max: 2592000},
+			{Key: "proxy_country", Type: OptionString, Default: "", Format: FormatCountry},
+		}},
 	},
 	{
 		ID: "firecrawl", Name: "Firecrawl", Website: "https://www.firecrawl.dev/app", KeyRequired: true,
 		DefaultBase:      map[string]string{ToolFetch: "https://api.firecrawl.dev"},
 		DefaultRateLimit: map[string]string{ToolFetch: "5/m"},
+		Options: map[string][]Option{ToolFetch: {
+			{Key: "max_age_hours", Type: OptionInt, Default: 48, Min: 0, Max: 17520},
+			{Key: "proxy", Type: OptionEnum, Default: "auto", Values: []string{"auto", "basic", "enhanced"}},
+			{Key: "wait_for_ms", Type: OptionInt, Default: 0, Min: 0, Max: 60000},
+			{Key: "only_main_content", Type: OptionBool, Default: true},
+			{Key: "pdf_mode", Type: OptionEnum, Default: "auto", Values: []string{"auto", "fast", "ocr"}},
+			{Key: "pdf_max_pages", Type: OptionInt, Min: 1, Max: 10000},
+			optCountry,
+		}},
 	},
 }
 
@@ -296,7 +361,7 @@ func Default() *Config {
 			CacheTTLSeconds:      300,
 			PassthroughLength:    4000,
 			RawPageLength:        40000,
-			Routes:               defaultRoutes(ToolFetch, "jina", "firecrawl", "tavily"),
+			Routes:               defaultRoutes(ToolFetch, "jina", "firecrawl", "tavily", "exa"),
 			Extract: Extract{
 				RawOnFailure:         true,
 				MaxInputLength:       150000,
@@ -333,6 +398,8 @@ func (c *Config) Normalize() {
 		p.BaseURL = strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
 	}
 
+	c.Search.Country = cleanFormat(FormatCountry, c.Search.Country)
+	c.Search.Language = cleanFormat(FormatLanguage, c.Search.Language)
 	c.Search.Routes = normalizeRoutes(ToolSearch, c.Search.Routes)
 	c.Fetch.Routes = normalizeRoutes(ToolFetch, c.Fetch.Routes)
 
@@ -428,6 +495,7 @@ func normalizeRoutes(tool string, routes []Route) []Route {
 		if r.Concurrency < 0 {
 			r.Concurrency = 0
 		}
+		normalizeOptions(tool, &r)
 		out = append(out, r)
 	}
 	for _, info := range Catalog {
@@ -455,7 +523,16 @@ func (c *Config) Validate() error {
 			if _, err := ParseRateLimit(r.RateLimit); err != nil {
 				return fmt.Errorf("%s route %q: %w", tool.name, r.Provider, err)
 			}
+			if err := validateOptions(tool.name, r); err != nil {
+				return fmt.Errorf("%s route %q: %w", tool.name, r.Provider, err)
+			}
 		}
+	}
+	if err := checkFormat(FormatCountry, c.Search.Country); err != nil {
+		return fmt.Errorf("search.country: %w", err)
+	}
+	if err := checkFormat(FormatLanguage, c.Search.Language); err != nil {
+		return fmt.Errorf("search.language: %w", err)
 	}
 	for id, p := range c.Providers {
 		if err := checkURL(p.BaseURL, "http", "https"); err != nil {

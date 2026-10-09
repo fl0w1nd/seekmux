@@ -1,19 +1,23 @@
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, SlidersHorizontal } from "lucide-react";
+import { useState } from "react";
 import { Link } from "wouter";
 import type { Route, Tool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { Tripped, useStatus } from "./Health";
+import { customized, RouteOptions } from "./RouteOptions";
 import { RateLimitInput } from "../ui/inputs";
 import { Badge, Button, cx, NumberInput, Switch, Tooltip } from "../ui/primitives";
 
 /**
  * The priority lanes of a tool: one provider per lane, tried from the top.
- * Each lane carries the limits of that provider for this tool.
+ * Each lane carries the limits of that provider for this tool, and opens to
+ * the provider's own parameters.
  */
 export function RouteList({ tool }: { tool: Extract<Tool, "search" | "fetch"> }) {
   const { config, update, provider } = useConfig();
   const routes = config[tool].routes;
   const status = useStatus();
+  const [open, setOpen] = useState<string | null>(null);
 
   const edit = (index: number, change: Partial<Route>) =>
     update((draft) => {
@@ -34,6 +38,7 @@ export function RouteList({ tool }: { tool: Extract<Tool, "search" | "fetch"> })
         const missingKey = info.key_required && !hasKey;
         const live = route.enabled && !missingKey;
         const health = status?.routes.find((r) => r.key === `${route.provider}:${tool}`);
+        const changed = customized(route);
         return (
           <li
             key={route.provider}
@@ -75,7 +80,17 @@ export function RouteList({ tool }: { tool: Extract<Tool, "search" | "fetch"> })
               </Tooltip>
               <NumberInput className="w-16" value={route.concurrency} onChange={(concurrency) => edit(index, { concurrency: Math.round(concurrency) })} aria-label="并发上限" />
             </label>
+            <Button
+              size="sm"
+              variant={open === route.provider ? "secondary" : "ghost"}
+              icon={<SlidersHorizontal />}
+              aria-expanded={open === route.provider}
+              onClick={() => setOpen(open === route.provider ? null : route.provider)}
+            >
+              参数{changed > 0 && <span className="num text-signal-text">{changed}</span>}
+            </Button>
             <Switch checked={route.enabled} onCheckedChange={(enabled) => edit(index, { enabled })} aria-label={`启用 ${info.name}`} />
+            {open === route.provider && <RouteOptions tool={tool} index={index} />}
           </li>
         );
       })}

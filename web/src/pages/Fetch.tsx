@@ -14,7 +14,7 @@ export function FetchPage() {
     <>
       <PageHeader title="抓取" description="fetch 工具先通过提供商取回页面，再由提取模型针对调用方的 prompt 作答，只把答案返回给 Agent。" />
       <div className="flex flex-col gap-4">
-        <Panel index="01" title="路由优先级" description="从上到下依次尝试。调用方也可以用 fetch_engine 参数指定其中一家。" flush>
+        <Panel index="01" title="路由优先级" description="从上到下依次尝试。调用方也可以用 fetch_engine 参数指定其中一家。每家自己的参数在「参数」里，改动后页面缓存会清空。" flush>
           <RouteList tool="fetch" />
         </Panel>
 

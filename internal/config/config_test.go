@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func TestDefaultIsValidAndComplete(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Search.Routes) != 4 || len(c.Fetch.Routes) != 3 || len(c.Providers) != len(Catalog) {
+	if len(c.Search.Routes) != 4 || len(c.Fetch.Routes) != 4 || len(c.Providers) != len(Catalog) {
 		t.Fatalf("routes: %d search, %d fetch, %d providers", len(c.Search.Routes), len(c.Fetch.Routes), len(c.Providers))
 	}
 }
@@ -227,5 +228,60 @@ func TestReasoningIsCheckedAgainstTheAPIFormat(t *testing.T) {
 		if err := with(bad.apiType, bad.r); err == nil {
 			t.Errorf("%s %+v must be rejected", bad.apiType, bad.r)
 		}
+	}
+}
+
+func TestRouteOptions(t *testing.T) {
+	c := Default()
+	route := &c.Search.Routes[0] // brave
+	route.Options = map[string]any{"extra_snippets": true, "safesearch": "moderate", "country": " us ", "nope": 1.0}
+	route.ExtraBody = map[string]any{}
+	c.Normalize()
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	route = &c.Search.Routes[0]
+	// The default and the undeclared key are gone; the country is cleaned.
+	if len(route.Options) != 2 || route.Options["extra_snippets"] != true || route.Options["country"] != "US" || route.ExtraBody != nil {
+		t.Fatalf("options = %v, extra = %v", route.Options, route.ExtraBody)
+	}
+	values := OptionValues(ToolSearch, *route)
+	if !values.Bool("extra_snippets") || values.Str("safesearch") != "moderate" || values.Str("goggles") != "" {
+		t.Fatalf("values = %v", values)
+	}
+
+	// Stored options survive the JSON round trip of the database.
+	data, _ := json.Marshal(c)
+	back, err := FromStored(data)
+	if err != nil || back.Search.Routes[0].Options["country"] != "US" {
+		t.Fatalf("stored: %v, %v", err, back.Search.Routes[0].Options)
+	}
+
+	for _, bad := range []map[string]any{
+		{"extra_snippets": "yes"}, {"safesearch": "loose"}, {"country": "USA"}, {"language": "english"},
+	} {
+		c := Default()
+		c.Search.Routes[0].Options = bad
+		c.Normalize()
+		if err := c.Validate(); err == nil {
+			t.Errorf("%v must be rejected", bad)
+		}
+	}
+	c = Default()
+	c.Search.Routes[1].Options = map[string]any{"max_characters": 0.0} // exa
+	c.Normalize()
+	if err := c.Validate(); err == nil {
+		t.Error("an out-of-range number must be rejected")
+	}
+	c = Default()
+	c.Search.Country = "china"
+	c.Normalize()
+	if err := c.Validate(); err == nil {
+		t.Error("a bad global country must be rejected")
+	}
+
+	// An unset number is absent, not zero.
+	if _, ok := OptionValues(ToolSearch, c.Search.Routes[1]).Int("max_age_hours"); ok {
+		t.Error("max_age_hours must be unset by default")
 	}
 }

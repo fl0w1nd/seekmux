@@ -15,6 +15,10 @@ export interface Route {
   enabled: boolean;
   rate_limit: string;
   concurrency: number;
+  /** The provider's parameters for this tool that differ from the declared defaults. */
+  options?: Record<string, unknown>;
+  /** Merged into the request last. */
+  extra_body?: Record<string, unknown>;
 }
 
 /** How much a model thinks before answering. An empty mode leaves it to the model. */
@@ -75,7 +79,7 @@ export interface Research {
 
 export interface Config {
   providers: Record<string, Provider>;
-  search: { timeout_seconds: number; routes: Route[] };
+  search: { timeout_seconds: number; country?: string; language?: string; routes: Route[] };
   fetch: {
     timeout_seconds: number;
     slow_threshold_seconds: number;
@@ -103,6 +107,19 @@ export interface ProviderInfo {
   key_required: boolean;
   default_base_url: Record<string, string>;
   default_rate_limit: Record<string, string>;
+  /** Keyed by tool. */
+  options?: Record<string, ProviderOption[]>;
+}
+
+/** One parameter of a provider for a tool; a null default leaves it out of the request. */
+export interface ProviderOption {
+  key: string;
+  type: "bool" | "int" | "enum" | "string";
+  default: unknown;
+  values?: string[];
+  min?: number;
+  max?: number;
+  format?: "country" | "language";
 }
 
 export interface Meta {
@@ -377,7 +394,7 @@ export const api = {
   status: () => get<{ routes: RouteStatus[]; models: ModelStatus[] }>("/api/status"),
   resetBreaker: (key: string) => post("/api/breaker/reset", { key }),
 
-  playSearch: (body: { queries: string[]; maxResults: number; time_range?: string; search_engine: string }) =>
+  playSearch: (body: { queries: string[]; maxResults: number; time_range?: string; search_engine: string; include_domains?: string[]; exclude_domains?: string[] }) =>
     post<{ duration_ms: number; results: SearchResult[] }>("/api/play/search", body),
   playFetch: (body: { url: string; prompt: string; raw: boolean; offset: number; fetch_engine: string }) =>
     post<{ duration_ms: number; result: FetchResult }>("/api/play/fetch", body),

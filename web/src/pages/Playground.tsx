@@ -97,12 +97,18 @@ function SearchPlay() {
   const [maxResults, setMaxResults] = useState(5);
   const [range, setRange] = useState("");
   const [engine, setEngine] = useState("auto");
+  const [include, setInclude] = useState("");
+  const [exclude, setExclude] = useState("");
   const run = useMutation({ mutationFn: api.playSearch });
+  const domains = (text: string) => {
+    const list = text.split(/[\s,]+/).filter(Boolean);
+    return list.length > 0 ? list : undefined;
+  };
   const list = queries
     .split("\n")
     .map((q) => q.trim())
     .filter(Boolean);
-  const submit = () => list.length > 0 && run.mutate({ queries: list, maxResults, time_range: range || undefined, search_engine: engine });
+  const submit = () => list.length > 0 && run.mutate({ queries: list, maxResults, time_range: range || undefined, search_engine: engine, include_domains: domains(include), exclude_domains: domains(exclude) });
 
   return (
     <Layout
@@ -128,6 +134,12 @@ function SearchPlay() {
               </Select>
             </Field>
           </div>
+          <Field label="只要这些域名" hint="include_domains，逗号或空格分隔，含子域名">
+            <Input mono value={include} placeholder="docs.python.org, github.com" onChange={(e) => setInclude(e.target.value)} />
+          </Field>
+          <Field label="排除这些域名" hint="exclude_domains">
+            <Input mono value={exclude} placeholder="pinterest.com" onChange={(e) => setExclude(e.target.value)} />
+          </Field>
           <Button variant="primary" icon={<Play />} loading={run.isPending} disabled={list.length === 0} onClick={submit}>
             搜索
           </Button>

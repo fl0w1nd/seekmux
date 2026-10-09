@@ -3,7 +3,10 @@
 package search
 
 import (
+	"cmp"
 	"context"
+	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -22,6 +25,9 @@ type Input struct {
 	Query      string
 	MaxResults int
 	TimeRange  string
+	// IncludeDomains and ExcludeDomains are bare host names.
+	IncludeDomains []string
+	ExcludeDomains []string
 }
 
 type Item struct {
@@ -39,7 +45,21 @@ type Output struct {
 	Videos []Item
 }
 
-type executor func(ctx context.Context, client *http.Client, base, apiKey string, in Input) (Output, error)
+// call is what a provider needs besides the query: where and how to reach
+// it, and the route's settings.
+type call struct {
+	client *http.Client
+	base   string
+	apiKey string
+	opt    config.Values
+	// extra is merged into the request last.
+	extra map[string]any
+	// country and language are the route's or else the global ones; empty
+	// when unset or when the provider has no such parameter.
+	country, language string
+}
+
+type executor func(ctx context.Context, c call, in Input) (Output, error)
 
 var executors = map[string]executor{
 	"brave":      braveSearch,
@@ -63,6 +83,13 @@ func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, O
 			base = info.DefaultBase[config.ToolSearch]
 		}
 		limit, _ := config.ParseRateLimit(route.RateLimit)
+		c := call{client: client, base: base, apiKey: creds.APIKey, opt: config.OptionValues(config.ToolSearch, route), extra: route.ExtraBody}
+		if _, ok := c.opt[config.OptionCountry]; ok {
+			c.country = cmp.Or(c.opt.Str(config.OptionCountry), cfg.Search.Country)
+		}
+		if _, ok := c.opt[config.OptionLanguage]; ok {
+			c.language = cmp.Or(c.opt.Str(config.OptionLanguage), cfg.Search.Language)
+		}
 		out = append(out, core.Provider[Input, Output]{
 			Name:        route.Provider,
 			Key:         route.Provider + ":" + config.ToolSearch,
@@ -70,7 +97,7 @@ func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, O
 			Concurrency: route.Concurrency,
 			Available:   route.Enabled && (creds.APIKey != "" || !info.KeyRequired),
 			Execute: func(ctx context.Context, in Input) (Output, error) {
-				return run(ctx, client, base, creds.APIKey, in)
+				return run(ctx, c, in)
 			},
 		})
 	}
@@ -79,27 +106,64 @@ func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, O
 
 var braveFreshness = map[string]string{"day": "pd", "week": "pw", "month": "pm", "year": "py"}
 
-func braveSearch(ctx context.Context, client *http.Client, base, apiKey string, in Input) (Output, error) {
+// braveLanguages are the languages Brave names differently from ISO 639-1.
+var braveLanguages = map[string]string{"zh": "zh-hans", "ja": "jp", "pt": "pt-br", "no": "nb"}
+
+// braveQuery adds the domain filters as search operators, the only form
+// Brave takes them in.
+func braveQuery(in Input) string {
+	var b strings.Builder
+	b.WriteString(in.Query)
+	switch len(in.IncludeDomains) {
+	case 0:
+	case 1:
+		b.WriteString(" site:" + in.IncludeDomains[0])
+	default:
+		b.WriteString(" (site:" + strings.Join(in.IncludeDomains, " OR site:") + ")")
+	}
+	for _, d := range in.ExcludeDomains {
+		b.WriteString(" -site:" + d)
+	}
+	return b.String()
+}
+
+func braveSearch(ctx context.Context, c call, in Input) (Output, error) {
 	query := url.Values{}
-	query.Set("q", in.Query)
+	query.Set("q", braveQuery(in))
 	query.Set("count", strconv.Itoa(min(in.MaxResults, 20)))
 	if f := braveFreshness[in.TimeRange]; f != "" {
 		query.Set("freshness", f)
 	}
+	if c.country != "" {
+		query.Set("country", c.country)
+	}
+	if c.language != "" {
+		query.Set("search_lang", cmp.Or(braveLanguages[c.language], c.language))
+	}
+	if c.opt.Bool("extra_snippets") {
+		query.Set("extra_snippets", "true")
+	}
+	if v := c.opt.Str("safesearch"); v != "moderate" {
+		query.Set("safesearch", v)
+	}
+	if v := c.opt.Str("goggles"); v != "" {
+		query.Set("goggles", v)
+	}
+	for key, value := range c.extra {
+		query.Set(key, fmt.Sprint(value))
+	}
 
 	type result struct {
-		Title       string `json:"title"`
-		URL         string `json:"url"`
-		Description string `json:"description"`
-		Age         string `json:"age"`
+		Title       string   `json:"title"`
+		URL         string   `json:"url"`
+		Description string   `json:"description"`
+		Extra       []string `json:"extra_snippets"`
+		Age         string   `json:"age"`
 		Video       struct {
 			Duration string `json:"duration"`
 		} `json:"video"`
 	}
 	var raw struct {
-		Query struct {
-			Original string `json:"original"`
-		} `json:"query"`
 		Web struct {
 			Results []result `json:"results"`
 		} `json:"web"`
@@ -107,20 +171,22 @@ func braveSearch(ctx context.Context, client *http.Client, base, apiKey string, 
 			Results []result `json:"results"`
 		} `json:"videos"`
 	}
-	err := core.DoJSON(ctx, client, core.Request{
+	err := core.DoJSON(ctx, c.client, core.Request{
 		Provider: "Brave",
 		Classify: upstream.Brave,
-		URL:      base + "/res/v1/web/search",
+		URL:      c.base + "/res/v1/web/search",
 		Query:    query,
-		Header:   map[string]string{"X-Subscription-Token": apiKey},
+		Header:   map[string]string{"X-Subscription-Token": c.apiKey},
 	}, &raw)
 	if err != nil {
 		return Output{}, err
 	}
 
-	out := Output{Query: raw.Query.Original, Web: []Item{}}
+	// Brave echoes the query with the operators added above.
+	out := Output{Query: in.Query, Web: []Item{}}
 	for _, r := range raw.Web.Results {
-		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: r.Description, Age: r.Age})
+		description := strings.Join(append([]string{r.Description}, r.Extra...), "\n")
+		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: description, Age: r.Age})
 	}
 	for _, r := range raw.Videos.Results {
 		out.Videos = append(out.Videos, Item{Title: r.Title, URL: r.URL, Description: r.Description, Age: r.Age, Duration: r.Video.Duration})
@@ -145,19 +211,40 @@ func exaStartDate(timeRange string, now time.Time) string {
 	return now.Format("2006-01-02T15:04:05.000Z")
 }
 
-func exaSearch(ctx context.Context, client *http.Client, base, apiKey string, in Input) (Output, error) {
+func exaSearch(ctx context.Context, c call, in Input) (Output, error) {
+	// Without contents a result is a bare title and URL. Highlights come at
+	// the price of the search itself; unbounded they run to several thousand
+	// characters a result.
+	contents := map[string]any{}
+	limit, _ := c.opt.Int("max_characters")
+	switch mode := c.opt.Str("contents"); mode {
+	case "summary":
+		contents[mode] = map[string]any{}
+	default:
+		contents[mode] = map[string]any{"maxCharacters": limit}
+	}
+	if hours, ok := c.opt.Int("max_age_hours"); ok {
+		contents["maxAgeHours"] = hours
+	}
 	body := map[string]any{
 		"query":      in.Query,
 		"numResults": min(in.MaxResults, 100),
-		"type":       "auto",
-		// Without contents a result is a bare title and URL. Highlights come
-		// at the price of the search itself; unbounded they run to several
-		// thousand characters a result.
-		"contents": map[string]any{"highlights": map[string]any{"maxCharacters": 600}},
+		"type":       c.opt.Str("type"),
+		"contents":   contents,
 	}
 	if start := exaStartDate(in.TimeRange, time.Now()); start != "" {
 		body["startPublishedDate"] = start
 	}
+	if c.country != "" {
+		body["userLocation"] = c.country
+	}
+	if len(in.IncludeDomains) > 0 {
+		body["includeDomains"] = in.IncludeDomains
+	}
+	if len(in.ExcludeDomains) > 0 {
+		body["excludeDomains"] = in.ExcludeDomains
+	}
+	maps.Copy(body, c.extra)
 
 	var raw struct {
 		Results []struct {
@@ -169,12 +256,12 @@ func exaSearch(ctx context.Context, client *http.Client, base, apiKey string, in
 			PublishedDate string   `json:"publishedDate"`
 		} `json:"results"`
 	}
-	err := core.DoJSON(ctx, client, core.Request{
+	err := core.DoJSON(ctx, c.client, core.Request{
 		Provider: "Exa",
 		Classify: upstream.Exa,
 		Method:   http.MethodPost,
-		URL:      base + "/search",
-		Header:   map[string]string{"x-api-key": apiKey},
+		URL:      c.base + "/search",
+		Header:   map[string]string{"x-api-key": c.apiKey},
 		Body:     body,
 	}, &raw)
 	if err != nil {
@@ -195,17 +282,43 @@ func exaSearch(ctx context.Context, client *http.Client, base, apiKey string, in
 	return out, nil
 }
 
-func perplexitySearch(ctx context.Context, client *http.Client, base, apiKey string, in Input) (Output, error) {
+func perplexitySearch(ctx context.Context, c call, in Input) (Output, error) {
+	// Unbounded, a snippet is whatever the page has on the query and can run
+	// to several thousand characters; the default of 256 tokens keeps it
+	// near one thousand.
+	perPage, _ := c.opt.Int("max_tokens_per_page")
 	body := map[string]any{
-		"query":       in.Query,
-		"max_results": min(in.MaxResults, 20),
-		// Unbounded, a snippet is whatever the page has on the query and can
-		// run to several thousand characters; this keeps it near one thousand.
-		"max_tokens_per_page": 256,
+		"query":               in.Query,
+		"max_results":         min(in.MaxResults, 20),
+		"max_tokens_per_page": perPage,
+	}
+	if v := c.opt.Str("search_type"); v != "web" {
+		body["search_type"] = v
+	}
+	if total, ok := c.opt.Int("max_tokens"); ok {
+		body["max_tokens"] = total
 	}
 	if in.TimeRange != "" {
 		body["search_recency_filter"] = in.TimeRange
 	}
+	if c.country != "" {
+		body["country"] = c.country
+	}
+	if c.language != "" {
+		body["search_language_filter"] = []string{c.language}
+	}
+	// The filter is either an allowlist or a denylist. Given both, the
+	// allowlist goes to the API and Run drops the excluded hosts.
+	if len(in.IncludeDomains) > 0 {
+		body["search_domain_filter"] = in.IncludeDomains
+	} else if len(in.ExcludeDomains) > 0 {
+		deny := make([]string, len(in.ExcludeDomains))
+		for i, d := range in.ExcludeDomains {
+			deny[i] = "-" + d
+		}
+		body["search_domain_filter"] = deny
+	}
+	maps.Copy(body, c.extra)
 
 	var raw struct {
 		Results []struct {
@@ -217,11 +330,11 @@ func perplexitySearch(ctx context.Context, client *http.Client, base, apiKey str
 			Date string `json:"date"`
 		} `json:"results"`
 	}
-	err := core.DoJSON(ctx, client, core.Request{
+	err := core.DoJSON(ctx, c.client, core.Request{
 		Provider: "Perplexity",
 		Method:   http.MethodPost,
-		URL:      base + "/search",
-		Header:   map[string]string{"Authorization": "Bearer " + apiKey},
+		URL:      c.base + "/search",
+		Header:   map[string]string{"Authorization": "Bearer " + c.apiKey},
 		Body:     body,
 	}, &raw)
 	if err != nil {
@@ -235,15 +348,37 @@ func perplexitySearch(ctx context.Context, client *http.Client, base, apiKey str
 	return out, nil
 }
 
-func tavilySearch(ctx context.Context, client *http.Client, base, apiKey string, in Input) (Output, error) {
+func tavilySearch(ctx context.Context, c call, in Input) (Output, error) {
+	topic := c.opt.Str("topic")
 	body := map[string]any{
-		"query":        in.Query,
-		"search_depth": "advanced",
-		"max_results":  min(in.MaxResults, 20),
+		"query":                  in.Query,
+		"search_depth":           c.opt.Str("search_depth"),
+		"max_results":            min(in.MaxResults, 20),
+		"include_published_date": true,
+	}
+	if chunks, _ := c.opt.Int("chunks_per_source"); chunks != 3 {
+		body["chunks_per_source"] = chunks
+	}
+	if topic != "general" {
+		body["topic"] = topic
 	}
 	if in.TimeRange != "" {
 		body["time_range"] = in.TimeRange
 	}
+	// Tavily names countries in full and takes one for general searches only.
+	if name := tavilyCountries[c.country]; name != "" && topic == "general" {
+		body["country"] = name
+	}
+	if c.language != "" {
+		body["language"] = c.language
+	}
+	if len(in.IncludeDomains) > 0 {
+		body["include_domains"] = in.IncludeDomains
+	}
+	if len(in.ExcludeDomains) > 0 {
+		body["exclude_domains"] = in.ExcludeDomains
+	}
+	maps.Copy(body, c.extra)
 
 	var raw struct {
 		Query   string `json:"query"`
@@ -252,14 +387,15 @@ func tavilySearch(ctx context.Context, client *http.Client, base, apiKey string,
 			URL     string   `json:"url"`
 			Content string   `json:"content"`
 			Score   *float64 `json:"score"`
+			Date    string   `json:"published_date"`
 		} `json:"results"`
 	}
-	err := core.DoJSON(ctx, client, core.Request{
+	err := core.DoJSON(ctx, c.client, core.Request{
 		Provider: "Tavily",
 		Classify: upstream.Tavily,
 		Method:   http.MethodPost,
-		URL:      base + "/search",
-		Header:   map[string]string{"Authorization": "Bearer " + apiKey},
+		URL:      c.base + "/search",
+		Header:   map[string]string{"Authorization": "Bearer " + c.apiKey},
 		Body:     body,
 	}, &raw)
 	if err != nil {
@@ -268,7 +404,43 @@ func tavilySearch(ctx context.Context, client *http.Client, base, apiKey string,
 
 	out := Output{Query: raw.Query, Web: []Item{}}
 	for _, r := range raw.Results {
-		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: r.Content, Score: r.Score})
+		age := r.Date
+		if t, err := time.Parse(time.RFC1123, age); err == nil {
+			age = t.Format(time.DateOnly)
+		}
+		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: r.Content, Age: age, Score: r.Score})
 	}
 	return out, nil
+}
+
+// tavilyCountries maps ISO 3166-1 alpha-2 codes to the names Tavily accepts.
+var tavilyCountries = map[string]string{
+	"AF": "afghanistan", "AL": "albania", "DZ": "algeria", "AD": "andorra", "AO": "angola", "AR": "argentina",
+	"AM": "armenia", "AU": "australia", "AT": "austria", "AZ": "azerbaijan", "BS": "bahamas", "BH": "bahrain",
+	"BD": "bangladesh", "BB": "barbados", "BY": "belarus", "BE": "belgium", "BZ": "belize", "BJ": "benin",
+	"BT": "bhutan", "BO": "bolivia", "BA": "bosnia and herzegovina", "BW": "botswana", "BR": "brazil", "BN": "brunei",
+	"BG": "bulgaria", "BF": "burkina faso", "BI": "burundi", "KH": "cambodia", "CM": "cameroon", "CA": "canada",
+	"CV": "cape verde", "CF": "central african republic", "TD": "chad", "CL": "chile", "CN": "china", "CO": "colombia",
+	"KM": "comoros", "CG": "congo", "CR": "costa rica", "HR": "croatia", "CU": "cuba", "CY": "cyprus",
+	"CZ": "czech republic", "DK": "denmark", "DJ": "djibouti", "DO": "dominican republic", "EC": "ecuador", "EG": "egypt",
+	"SV": "el salvador", "GQ": "equatorial guinea", "ER": "eritrea", "EE": "estonia", "ET": "ethiopia", "FJ": "fiji",
+	"FI": "finland", "FR": "france", "GA": "gabon", "GM": "gambia", "GE": "georgia", "DE": "germany",
+	"GH": "ghana", "GR": "greece", "GT": "guatemala", "GN": "guinea", "HT": "haiti", "HN": "honduras",
+	"HU": "hungary", "IS": "iceland", "IN": "india", "ID": "indonesia", "IR": "iran", "IQ": "iraq",
+	"IE": "ireland", "IL": "israel", "IT": "italy", "JM": "jamaica", "JP": "japan", "JO": "jordan",
+	"KZ": "kazakhstan", "KE": "kenya", "KW": "kuwait", "KG": "kyrgyzstan", "LV": "latvia", "LB": "lebanon",
+	"LS": "lesotho", "LR": "liberia", "LY": "libya", "LI": "liechtenstein", "LT": "lithuania", "LU": "luxembourg",
+	"MG": "madagascar", "MW": "malawi", "MY": "malaysia", "MV": "maldives", "ML": "mali", "MT": "malta",
+	"MR": "mauritania", "MU": "mauritius", "MX": "mexico", "MD": "moldova", "MC": "monaco", "MN": "mongolia",
+	"ME": "montenegro", "MA": "morocco", "MZ": "mozambique", "MM": "myanmar", "NA": "namibia", "NP": "nepal",
+	"NL": "netherlands", "NZ": "new zealand", "NI": "nicaragua", "NE": "niger", "NG": "nigeria", "KP": "north korea",
+	"MK": "north macedonia", "NO": "norway", "OM": "oman", "PK": "pakistan", "PA": "panama", "PG": "papua new guinea",
+	"PY": "paraguay", "PE": "peru", "PH": "philippines", "PL": "poland", "PT": "portugal", "QA": "qatar",
+	"RO": "romania", "RU": "russia", "RW": "rwanda", "SA": "saudi arabia", "SN": "senegal", "RS": "serbia",
+	"SG": "singapore", "SK": "slovakia", "SI": "slovenia", "SO": "somalia", "ZA": "south africa", "KR": "south korea",
+	"SS": "south sudan", "ES": "spain", "LK": "sri lanka", "SD": "sudan", "SE": "sweden", "CH": "switzerland",
+	"SY": "syria", "TW": "taiwan", "TJ": "tajikistan", "TZ": "tanzania", "TH": "thailand", "TG": "togo",
+	"TT": "trinidad and tobago", "TN": "tunisia", "TR": "turkey", "TM": "turkmenistan", "UG": "uganda", "UA": "ukraine",
+	"AE": "united arab emirates", "GB": "united kingdom", "US": "united states", "UY": "uruguay", "UZ": "uzbekistan",
+	"VE": "venezuela", "VN": "vietnam", "YE": "yemen", "ZM": "zambia", "ZW": "zimbabwe",
 }

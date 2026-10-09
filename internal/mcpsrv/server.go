@@ -133,6 +133,10 @@ func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
 					"maxResults": {"type": "integer", "minimum": 1, "maximum": 100, "default": 5, "description": "Max results per query"},
 					"time_range": {"type": "string", "enum": ` + enum(search.TimeRanges) + `,
 						"description": "Limit results to a recent publication window. Use for freshness-sensitive research."},
+					"include_domains": {"type": "array", "maxItems": ` + strconv.Itoa(search.MaxDomains) + `, "items": {"type": "string"},
+						"description": "Only return results from these domains and their subdomains. Example: [\"docs.python.org\", \"github.com\"]"},
+					"exclude_domains": {"type": "array", "maxItems": ` + strconv.Itoa(search.MaxDomains) + `, "items": {"type": "string"},
+						"description": "Never return results from these domains."},
 					"search_engine": {"type": "string", "enum": ` + enum(search.Engines(snap.Config)) + `, "default": "auto",
 						"description": "Search provider: auto or any configured provider"}
 				}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -18,6 +19,9 @@ const (
 	EngineAuto        = "auto"
 	MaxQueries        = 3
 	DefaultMaxResults = 5
+	// MaxDomains bounds each domain filter: Brave takes the filters inside
+	// the query, which has a length limit.
+	MaxDomains = 10
 )
 
 // Args are the arguments of the search tool.
@@ -26,6 +30,10 @@ type Args struct {
 	MaxResults int      `json:"maxResults"`
 	TimeRange  string   `json:"time_range"`
 	Engine     string   `json:"search_engine"`
+	// IncludeDomains restricts results to these domains and their
+	// subdomains; ExcludeDomains removes them.
+	IncludeDomains []string `json:"include_domains"`
+	ExcludeDomains []string `json:"exclude_domains"`
 }
 
 // QueryResult is the answer to one query.
@@ -70,6 +78,13 @@ func (a *Args) Validate(cfg *config.Config) error {
 	if a.TimeRange != "" && !slices.Contains(TimeRanges, a.TimeRange) {
 		return fmt.Errorf("time_range must be one of: %s", strings.Join(TimeRanges, ", "))
 	}
+	var err error
+	if a.IncludeDomains, err = cleanDomains("include_domains", a.IncludeDomains); err != nil {
+		return err
+	}
+	if a.ExcludeDomains, err = cleanDomains("exclude_domains", a.ExcludeDomains); err != nil {
+		return err
+	}
 	if a.Engine == "" {
 		a.Engine = EngineAuto
 	}
@@ -93,7 +108,10 @@ func Run(ctx context.Context, cfg *config.Config, client *http.Client, lim *core
 	var wg sync.WaitGroup
 	for i, query := range args.Queries {
 		wg.Go(func() {
-			in := Input{Query: query, MaxResults: args.MaxResults, TimeRange: args.TimeRange}
+			in := Input{
+				Query: query, MaxResults: args.MaxResults, TimeRange: args.TimeRange,
+				IncludeDomains: args.IncludeDomains, ExcludeDomains: args.ExcludeDomains,
+			}
 			out, provider, err := core.RunFallback(ctx, lim, providers, in, core.RunOptions{
 				Kind:        config.ToolSearch,
 				Target:      query,
@@ -108,7 +126,9 @@ func Run(ctx context.Context, cfg *config.Config, client *http.Client, lim *core
 			if out.Query == "" {
 				out.Query = query
 			}
-			results[i] = QueryResult{Engine: provider, Query: out.Query, Web: out.Web, Videos: out.Videos}
+			// Providers apply the filters in their own ways and not all can
+			// take both at once, so the result is checked here as well.
+			results[i] = QueryResult{Engine: provider, Query: out.Query, Web: filterDomains(out.Web, args), Videos: filterDomains(out.Videos, args)}
 		})
 	}
 	wg.Wait()
@@ -119,6 +139,53 @@ func Run(ctx context.Context, cfg *config.Config, client *http.Client, lim *core
 		results[i].Videos = dedupe(results[i].Videos, seen)
 	}
 	return results
+}
+
+var domainPattern = regexp.MustCompile(`^[\p{L}\p{N}-]+(\.[\p{L}\p{N}-]+)+$`)
+
+// cleanDomains reduces each entry, which callers also write as a URL, to a
+// bare host name.
+func cleanDomains(name string, list []string) ([]string, error) {
+	var out []string
+	for _, entry := range list {
+		d := strings.ToLower(strings.TrimSpace(entry))
+		if _, rest, ok := strings.Cut(d, "://"); ok {
+			d = rest
+		}
+		d, _, _ = strings.Cut(d, "/")
+		d = strings.TrimPrefix(d, "www.")
+		if d == "" {
+			continue
+		}
+		if !domainPattern.MatchString(d) {
+			return nil, fmt.Errorf("%s: %q is not a domain such as example.com", name, entry)
+		}
+		if !slices.Contains(out, d) {
+			out = append(out, d)
+		}
+	}
+	if len(out) > MaxDomains {
+		return nil, fmt.Errorf("%s takes at most %d domains", name, MaxDomains)
+	}
+	return out, nil
+}
+
+func inDomains(host string, domains []string) bool {
+	return slices.ContainsFunc(domains, func(d string) bool { return host == d || strings.HasSuffix(host, "."+d) })
+}
+
+func filterDomains(items []Item, args Args) []Item {
+	if len(args.IncludeDomains) == 0 && len(args.ExcludeDomains) == 0 {
+		return items
+	}
+	return slices.DeleteFunc(items, func(item Item) bool {
+		u, err := url.Parse(item.URL)
+		if err != nil {
+			return true
+		}
+		host := strings.ToLower(u.Hostname())
+		return inDomains(host, args.ExcludeDomains) || (len(args.IncludeDomains) > 0 && !inDomains(host, args.IncludeDomains))
+	})
 }
 
 func dedupe(items []Item, seen map[string]bool) []Item {
