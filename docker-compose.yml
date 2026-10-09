@@ -1,0 +1,28 @@
+# SeekMux, from the published image.
+#
+#   1. docker compose up -d
+#   2. docker compose logs seekmux    # prints a one-time setup token
+#   3. open http://<host>:8787 and set the admin password with that token
+#
+# To set the password without the token, put SEEKMUX_ADMIN_PASSWORD (10+
+# characters) in a .env file next to this one before the first start.
+#
+# Put a TLS-terminating reverse proxy in front for anything beyond a private
+# network; see "Deploy" in the README for the two proxy settings that matter.
+#
+# Upgrade: docker compose pull && docker compose up -d
+services:
+  seekmux:
+    image: ghcr.io/fl0w1nd/seekmux:latest
+    container_name: seekmux
+    restart: unless-stopped
+    ports:
+      # Bound to the loopback interface for a reverse proxy on the same host.
+      # Use "8787:8787" to reach it from other machines directly.
+      - "127.0.0.1:8787:8787"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # The database with all configuration, keys and logs.
+      - ./data:/data

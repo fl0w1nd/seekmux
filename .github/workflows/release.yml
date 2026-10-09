@@ -1,0 +1,226 @@
+name: Release
+
+# Push a tag such as v0.1.0 to publish: the tag is the version. The release
+# notes are the commit subjects since the previous tag.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  # A rehearsal: builds both architectures and writes the release notes to
+  # the job summary, without pushing an image or creating a release.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Validate release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      image: ${{ steps.release.outputs.image }}
+      commit: ${{ steps.release.outputs.commit }}
+      date: ${{ steps.release.outputs.date }}
+      is_latest: ${{ steps.release.outputs.is_latest }}
+      previous_tag: ${{ steps.release.outputs.previous_tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Read the version from the tag
+        id: release
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag=""
+            version="0.0.0-rehearsal"
+          else
+            tag="$GITHUB_REF_NAME"
+            version="${tag#v}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Tag $tag is not of the form v1.2.3" >&2
+              exit 1
+            fi
+          fi
+          highest_tag="$(git tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)"
+          previous_tag="$(git tag --list 'v[0-9]*' --sort=-version:refname | grep -vx "$tag" | head -n 1 || true)"
+          {
+            echo "version=$version"
+            echo "image=ghcr.io/fl0w1nd/seekmux"
+            echo "commit=$(git rev-parse HEAD)"
+            echo "date=$(git show -s --format=%cI HEAD)"
+            echo "previous_tag=$previous_tag"
+            echo "is_latest=$([[ -n "$tag" && "$tag" == "$highest_tag" ]] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test the tagged commit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Go tests
+        run: go vet ./... && go test ./...
+
+  build-image:
+    name: Build ${{ matrix.platform }}
+    needs:
+      - prepare
+      - test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            slug: amd64
+          - platform: linux/arm64
+            slug: arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build platform image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: ${{ github.event_name == 'push' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', needs.prepare.outputs.image) || 'type=cacheonly' }}
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            COMMIT=${{ needs.prepare.outputs.commit }}
+            BUILD_DATE=${{ needs.prepare.outputs.date }}
+          cache-from: type=gha,scope=release-${{ matrix.slug }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.slug }}
+          provenance: ${{ github.event_name == 'push' && 'mode=max' || 'false' }}
+          sbom: ${{ github.event_name == 'push' }}
+
+      - name: Export image digest
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload image digest
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.slug }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish-image:
+    name: Publish multi-architecture image
+    if: github.event_name == 'push'
+    needs:
+      - prepare
+      - build-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download image digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Create release manifests
+        env:
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          IS_LATEST: ${{ needs.prepare.outputs.is_latest }}
+        shell: bash
+        run: |
+          refs=()
+          for digest_file in /tmp/digests/*; do
+            refs+=("$IMAGE@sha256:$(basename "$digest_file")")
+          done
+          tags=(--tag "$IMAGE:$VERSION")
+          if [[ "$IS_LATEST" == "true" ]]; then
+            tags+=(--tag "$IMAGE:latest")
+          fi
+          docker buildx imagetools create "${tags[@]}" "${refs[@]}"
+          docker buildx imagetools inspect "$IMAGE:$VERSION"
+
+  release:
+    name: Publish GitHub Release
+    # The image job is skipped in a rehearsal.
+    if: ${{ !cancelled() && !failure() }}
+    needs:
+      - prepare
+      - build-image
+      - publish-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Write release notes
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
+        run: scripts/release-notes.sh "$VERSION" "$PREVIOUS_TAG" > "$RUNNER_TEMP/release-notes.md"
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_LATEST: ${{ needs.prepare.outputs.is_latest }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "SeekMux $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            --verify-tag \
+            --latest="$IS_LATEST"
+
+      - name: Show rehearsal notes
+        if: github.event_name == 'workflow_dispatch'
+        run: cat "$RUNNER_TEMP/release-notes.md" >> "$GITHUB_STEP_SUMMARY"

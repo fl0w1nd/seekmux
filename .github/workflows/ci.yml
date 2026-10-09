@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+    tags-ignore:
+      - "v*"
+    paths-ignore: &ci-skip-paths
+      # Files this workflow does not validate. Keep ci.yml, Dockerfile and
+      # .dockerignore out of this list.
+      - "*.md"
+      - "**/*.md"
+      - ".gitignore"
+      - ".editorconfig"
+      - "docker-compose.yml"
+      - "scripts/release-notes.sh"
+      - ".github/workflows/release.yml"
+  pull_request:
+    paths-ignore: *ci-skip-paths
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install pnpm
+        run: npm install -g pnpm@10.33.0
+
+      - name: Install web dependencies
+        run: pnpm --dir web install --frozen-lockfile
+
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Check go.mod is tidy
+        run: go mod tidy -diff
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Check web types
+        run: pnpm --dir web typecheck
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Go tests
+        run: go test -shuffle=on -coverprofile=coverage.out ./...
+
+      - name: Report coverage
+        run: go tool cover -func=coverage.out | tail -1
+
+  race:
+    name: Race detector
+    # The slowest job; skip it for pushes to side branches.
+    if: github.event_name != 'push' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Go tests with the race detector
+        run: go test -race -shuffle=on ./...
+
+  build:
+    name: Build validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install pnpm
+        run: npm install -g pnpm@10.33.0
+
+      - name: Install web dependencies
+        run: pnpm --dir web install --frozen-lockfile
+
+      - name: Build web console
+        run: pnpm --dir web build
+
+      - name: Build server binary
+        run: go build -trimpath -o bin/seekmux ./cmd/seekmux
+
+  container:
+    name: Container validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Read build metadata
+        id: metadata
+        shell: bash
+        run: |
+          {
+            echo "commit=$(git rev-parse --short=12 HEAD)"
+            echo "date=$(git show -s --format=%cI HEAD)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build container
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: seekmux:ci
+          build-args: |
+            VERSION=ci-${{ steps.metadata.outputs.commit }}
+            COMMIT=${{ steps.metadata.outputs.commit }}
+            BUILD_DATE=${{ steps.metadata.outputs.date }}
+          cache-from: type=gha,scope=ci-container
+          cache-to: type=gha,mode=max,scope=ci-container
+
+      - name: Smoke-test container
+        shell: bash
+        run: scripts/smoke-container.sh seekmux:ci

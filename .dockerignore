@@ -1,0 +1,16 @@
+.git
+.github
+.claude
+.vscode
+.idea
+.env
+.env.*
+bin
+data
+node_modules
+**/node_modules
+web/dist
+coverage.out
+*.log
+*.md
+docker-compose.yml
