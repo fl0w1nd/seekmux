@@ -241,21 +241,25 @@ function TraceView({ attempts, total }: { attempts: Attempt[] | null | undefined
   );
 }
 
-function CodeView({ tool, args, model }: { tool: string; args: object; model?: string }) {
+function CodeView({ tool, args, notice }: { tool: string; args: object; notice?: ReactNode }) {
   const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: args } }, null, 2);
   return (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-ink-3">
         MCP 客户端调用 <span className="num text-ink-2">{tool}</span> 工具时发送的请求，随左侧的设置实时更新。没有列出的参数取默认值。
       </p>
-      {model && (
-        <Notice tone="info">
-          选定的模型 <span className="num text-ink">{model}</span> 只在调试台生效。MCP 调用不能指定模型，Agent 用的始终是配置里的模型。
-        </Notice>
-      )}
+      {notice}
       <CodeBlock copy>{body}</CodeBlock>
     </div>
   );
+}
+
+function ModelNotice({ model }: { model: string | undefined }) {
+  return model ? (
+    <Notice tone="info">
+      选定的模型 <span className="num text-ink">{model}</span> 只在调试台生效。MCP 调用不能指定模型，Agent 用的始终是配置里的模型。
+    </Notice>
+  ) : null;
 }
 
 function JSONView({ value }: { value: unknown }) {
@@ -304,7 +308,7 @@ function SearchPlay({ switcher }: { switcher: ReactNode }) {
     .map((q) => q.trim())
     .filter(Boolean);
   const over = queries.length > maxQueries;
-  const args: SearchArgs = { queries };
+  const args: SearchArgs = { queries: queries.slice(0, maxQueries) };
   if (maxResults !== defaultMaxResults) args.maxResults = maxResults;
   if (range) args.time_range = range;
   if (include.length > 0) args.include_domains = include;
@@ -426,7 +430,19 @@ function SearchPlay({ switcher }: { switcher: ReactNode }) {
               <Start title="输入查询，在这里看到各家返回的结果" examples={["mcp streamable http spec", "go 1.27 release notes", "sqlite wal mode performance"]} onPick={setText} />
             )
           }
-          code={<CodeView tool="search" args={args} />}
+          code={
+            <CodeView
+              tool="search"
+              args={args}
+              notice={
+                over && (
+                  <Notice tone="warn">
+                    填了 {queries.length} 条查询，但一次最多执行 {maxQueries} 条。Agent 这样调用时，多出的会被直接丢弃，所以这里只列出会执行的前 {maxQueries} 条。
+                  </Notice>
+                )
+              }
+            />
+          }
         />
       }
     />
@@ -694,7 +710,7 @@ function FetchPlay({ switcher }: { switcher: ReactNode }) {
               />
             )
           }
-          code={<CodeView tool="fetch" args={args} model={override} />}
+          code={<CodeView tool="fetch" args={args} notice={<ModelNotice model={override} />} />}
         />
       }
     />
@@ -918,7 +934,7 @@ function ResearchPlay({ switcher }: { switcher: ReactNode }) {
               />
             )
           }
-          code={<CodeView tool="research" args={{ question: question.trim() }} model={model || undefined} />}
+          code={<CodeView tool="research" args={{ question: question.trim() }} notice={<ModelNotice model={model || undefined} />} />}
         />
       }
     />
