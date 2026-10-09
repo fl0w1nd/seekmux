@@ -1,0 +1,249 @@
+@import "tailwindcss";
+@import "@fontsource-variable/ibm-plex-sans/index.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/*
+ * Signal — the SeekMux design system.
+ *
+ * The raw tokens below are the only place colors are defined. Components use
+ * the Tailwind utilities generated from the @theme block and nothing else;
+ * the default Tailwind palette is switched off so an off-system color cannot
+ * be written by accident. See web/DESIGN.md.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces, from the page up. */
+  --bg: oklch(0.972 0.006 112);
+  --surface: oklch(0.995 0.003 112);
+  --raised: oklch(0.955 0.008 116);
+  --sunken: oklch(0.948 0.008 116);
+  --overlay: oklch(0.995 0.003 112);
+
+  /* Lines. */
+  --line: oklch(0.895 0.01 122);
+  --line-strong: oklch(0.79 0.014 128);
+
+  /* Text. */
+  --ink: oklch(0.225 0.02 148);
+  --ink-2: oklch(0.42 0.018 148);
+  --ink-3: oklch(0.565 0.014 148);
+
+  /* Signal: the one brand color, for the primary action and "this is live". */
+  --signal: oklch(0.87 0.2 128);
+  --signal-hover: oklch(0.83 0.2 128);
+  --signal-ink: oklch(0.24 0.06 136);
+  --signal-text: oklch(0.47 0.135 136);
+
+  /* Status. Kept clear of the signal hue so "success" never reads as "brand". */
+  --ok: oklch(0.5 0.105 178);
+  --warn: oklch(0.57 0.125 68);
+  --err: oklch(0.545 0.19 27);
+  --info: oklch(0.5 0.125 246);
+
+  --overlay-shadow: 0 1px 2px oklch(0.2 0.02 148 / 0.06), 0 12px 32px oklch(0.2 0.02 148 / 0.14);
+  --scrim: oklch(0.2 0.02 148 / 0.32);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: oklch(0.158 0.007 150);
+    --surface: oklch(0.192 0.008 150);
+    --raised: oklch(0.232 0.01 150);
+    --sunken: oklch(0.135 0.007 150);
+    --overlay: oklch(0.215 0.009 150);
+    --line: oklch(0.275 0.01 150);
+    --line-strong: oklch(0.37 0.013 150);
+    --ink: oklch(0.945 0.008 125);
+    --ink-2: oklch(0.755 0.012 140);
+    --ink-3: oklch(0.585 0.012 148);
+    --signal: oklch(0.885 0.205 128);
+    --signal-hover: oklch(0.925 0.19 128);
+    --signal-ink: oklch(0.2 0.05 136);
+    --signal-text: oklch(0.885 0.205 128);
+    --ok: oklch(0.79 0.125 178);
+    --warn: oklch(0.83 0.145 80);
+    --err: oklch(0.735 0.165 25);
+    --info: oklch(0.785 0.105 238);
+    --overlay-shadow: 0 1px 2px oklch(0 0 0 / 0.4), 0 16px 40px oklch(0 0 0 / 0.5);
+    --scrim: oklch(0.08 0.005 150 / 0.62);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: oklch(0.158 0.007 150);
+  --surface: oklch(0.192 0.008 150);
+  --raised: oklch(0.232 0.01 150);
+  --sunken: oklch(0.135 0.007 150);
+  --overlay: oklch(0.215 0.009 150);
+  --line: oklch(0.275 0.01 150);
+  --line-strong: oklch(0.37 0.013 150);
+  --ink: oklch(0.945 0.008 125);
+  --ink-2: oklch(0.755 0.012 140);
+  --ink-3: oklch(0.585 0.012 148);
+  --signal: oklch(0.885 0.205 128);
+  --signal-hover: oklch(0.925 0.19 128);
+  --signal-ink: oklch(0.2 0.05 136);
+  --signal-text: oklch(0.885 0.205 128);
+  --ok: oklch(0.79 0.125 178);
+  --warn: oklch(0.83 0.145 80);
+  --err: oklch(0.735 0.165 25);
+  --info: oklch(0.785 0.105 238);
+  --overlay-shadow: 0 1px 2px oklch(0 0 0 / 0.4), 0 16px 40px oklch(0 0 0 / 0.5);
+  --scrim: oklch(0.08 0.005 150 / 0.62);
+}
+
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-sunken: var(--sunken);
+  --color-overlay: var(--overlay);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-signal: var(--signal);
+  --color-signal-hover: var(--signal-hover);
+  --color-signal-ink: var(--signal-ink);
+  --color-signal-text: var(--signal-text);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-err: var(--err);
+  --color-info: var(--info);
+  --color-scrim: var(--scrim);
+
+  --font-sans: "IBM Plex Sans Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", monospace;
+
+  /* Type scale: six sizes, each with its line height. */
+  --text-*: initial;
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+
+  /* Two radii: controls and containers. */
+  --radius-*: initial;
+  --radius-ctl: 5px;
+  --radius-panel: 10px;
+  --radius-full: 999px;
+
+  --shadow-*: initial;
+  --shadow-overlay: var(--overlay-shadow);
+
+  --animate-in: enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-slide: slide 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
+  --animate-spin: spin 0.8s linear infinite;
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+@keyframes slide {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@keyframes pulse-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    font-feature-settings: "ss01", "cv05";
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--signal) 38%, transparent);
+  }
+  /* One focus treatment for every interactive element. */
+  :focus-visible {
+    outline: 2px solid var(--signal-text);
+    outline-offset: 2px;
+  }
+  button,
+  [role="button"],
+  summary,
+  select,
+  label[for] {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+  input[type="number"]::-webkit-inner-spin-button {
+    appearance: none;
+  }
+  input[type="number"] {
+    appearance: textfield;
+  }
+}
+
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Micro label: the small mono caption that tags panels, columns and lanes. */
+@utility tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
