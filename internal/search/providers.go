@@ -149,6 +149,10 @@ func exaSearch(ctx context.Context, client *http.Client, base, apiKey string, in
 		"query":      in.Query,
 		"numResults": min(in.MaxResults, 100),
 		"type":       "auto",
+		// Without contents a result is a bare title and URL. Highlights come
+		// at the price of the search itself; unbounded they run to several
+		// thousand characters a result.
+		"contents": map[string]any{"highlights": map[string]any{"maxCharacters": 600}},
 	}
 	if start := exaStartDate(in.TimeRange, time.Now()); start != "" {
 		body["startPublishedDate"] = start
