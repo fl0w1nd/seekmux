@@ -61,6 +61,8 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
   const [editing, setEditing] = useState(false);
   const confirm = useConfirm();
 
+  // A typed key keeps the field open until it is saved; the saved document
+  // comes back without it, which returns the field to the stored hint.
   if (stored && !editing && !value.api_key) {
     return (
       <div className="flex items-center gap-2">
@@ -86,9 +88,9 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
         value={value.api_key}
         placeholder={placeholder ?? "粘贴 API key"}
         onChange={(e) => onChange({ ...value, api_key: e.target.value.trim(), clear_api_key: false })}
-        onBlur={() => !value.api_key && setEditing(false)}
+        onBlur={() => setEditing(false)}
       />
-      {editing && value.api_key_hint && (
+      {value.api_key_hint && (editing || value.api_key) && (
         <Button
           variant="ghost"
           onClick={() => {

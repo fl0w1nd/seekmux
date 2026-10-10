@@ -2,6 +2,7 @@ import { clsx, type ClassValue } from "clsx";
 import { Check, ChevronRight, Copy, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { Collapsible as RadixCollapsible, Switch as RadixSwitch, Tabs as RadixTabs, Tooltip as RadixTooltip } from "radix-ui";
 import {
+  useId,
   useState,
   type ButtonHTMLAttributes,
   type ComponentProps,
@@ -218,12 +219,21 @@ export function Field({
   children: ReactNode;
   className?: string;
 }) {
+  // Not a <label>: that would hand every click on the blank space around the
+  // control back to it, so the field could not be left by clicking beside it.
+  const id = useId();
   return (
-    <label className={cx("flex cursor-default flex-col gap-1.5", className)}>
-      <span className="text-xs font-medium text-ink-2">{label}</span>
+    <div role="group" aria-labelledby={id} className={cx("flex flex-col gap-1.5", className)}>
+      <span
+        id={id}
+        className="self-start text-xs font-medium text-ink-2"
+        onClick={(e) => e.currentTarget.parentElement?.querySelector<HTMLElement>("input, textarea, select")?.focus()}
+      >
+        {label}
+      </span>
       {children}
       {error ? <span className="text-xs text-err">{error}</span> : hint ? <span className="text-xs text-ink-3">{hint}</span> : null}
-    </label>
+    </div>
   );
 }
 
