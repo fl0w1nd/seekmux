@@ -48,31 +48,33 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/auth/password", s.requireAuth(s.handlePassword))
 
 	for pattern, handler := range map[string]http.HandlerFunc{
-		"GET /api/meta":                s.handleMeta,
-		"GET /api/config":              s.handleGetConfig,
-		"PUT /api/config":              s.handlePutConfig,
-		"GET /api/config/export":       s.handleExport,
-		"POST /api/config/import":      s.handleImport,
-		"POST /api/breaker/reset":      s.handleBreakerReset,
-		"GET /api/status":              s.handleStatus,
-		"GET /api/keys":                s.handleListKeys,
-		"POST /api/keys":               s.handleCreateKey,
-		"PATCH /api/keys/{id}":         s.handleUpdateKey,
-		"POST /api/keys/{id}/revoke":   s.handleRevokeKey,
-		"DELETE /api/keys/{id}":        s.handleDeleteKey,
-		"GET /api/logs":                s.handleListLogs,
-		"GET /api/logs/stream":         s.handleLogStream,
-		"GET /api/logs/{id}":           s.handleGetLog,
-		"DELETE /api/logs":             s.handleClearLogs,
-		"GET /api/stats":               s.handleStats,
-		"POST /api/cache/clear":        s.handleClearCache,
-		"POST /api/play/search":        s.handlePlaySearch,
-		"POST /api/play/dev_search":    s.handlePlayDevSearch,
-		"POST /api/play/fetch":         s.handlePlayFetch,
-		"POST /api/play/research":      s.handlePlayResearch,
-		"POST /api/play/model":         s.handlePlayModel,
-		"GET /api/research/tasks/{id}": s.handleGetTask,
-		"POST /api/research/tasks":     s.handleStartTask,
+		"GET /api/meta":                        s.handleMeta,
+		"GET /api/config":                      s.handleGetConfig,
+		"PUT /api/config":                      s.handlePutConfig,
+		"GET /api/config/export":               s.handleExport,
+		"POST /api/config/import":              s.handleImport,
+		"POST /api/breaker/reset":              s.handleBreakerReset,
+		"GET /api/status":                      s.handleStatus,
+		"GET /api/keys":                        s.handleListKeys,
+		"POST /api/keys":                       s.handleCreateKey,
+		"PATCH /api/keys/{id}":                 s.handleUpdateKey,
+		"POST /api/keys/{id}/revoke":           s.handleRevokeKey,
+		"DELETE /api/keys/{id}":                s.handleDeleteKey,
+		"GET /api/logs":                        s.handleListLogs,
+		"GET /api/logs/stream":                 s.handleLogStream,
+		"GET /api/logs/{id}":                   s.handleGetLog,
+		"DELETE /api/logs":                     s.handleClearLogs,
+		"GET /api/stats":                       s.handleStats,
+		"POST /api/cache/clear":                s.handleClearCache,
+		"POST /api/play/search":                s.handlePlaySearch,
+		"POST /api/play/dev_search":            s.handlePlayDevSearch,
+		"POST /api/play/fetch":                 s.handlePlayFetch,
+		"POST /api/play/research":              s.handlePlayResearch,
+		"POST /api/play/model":                 s.handlePlayModel,
+		"GET /api/research/tasks":              s.handleListTasks,
+		"GET /api/research/tasks/{id}":         s.handleGetTask,
+		"POST /api/research/tasks":             s.handleStartTask,
+		"POST /api/research/tasks/{id}/cancel": s.handleCancelTask,
 	} {
 		api.HandleFunc(pattern, s.requireAuth(handler))
 	}
@@ -536,13 +538,23 @@ func (s *Server) handleClearCache(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// tuning is what a playground call may replace of the configuration, next
+// to the arguments of the tool.
+type tuning struct {
+	// Route holds a provider's parameters as they should be for this call.
+	Route *app.RouteOverride `json:"route"`
+}
+
 func (s *Server) handlePlaySearch(w http.ResponseWriter, r *http.Request) {
-	var args search.Args
-	if !readJSON(w, r, &args) {
+	var body struct {
+		search.Args
+		tuning
+	}
+	if !readJSON(w, r, &body) {
 		return
 	}
 	trace := core.NewTrace()
-	results, err := s.app.Search(core.WithTrace(r.Context(), trace), webui, args)
+	results, err := s.app.Search(core.WithTrace(r.Context(), trace), webui, body.Args, app.Override{Route: body.Route})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -551,12 +563,22 @@ func (s *Server) handlePlaySearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePlayDevSearch(w http.ResponseWriter, r *http.Request) {
-	var args search.DevArgs
-	if !readJSON(w, r, &args) {
+	var body struct {
+		search.DevArgs
+		tuning
+		// Engine leaves one provider to serve the call; the tool itself has
+		// no such argument.
+		Engine string `json:"search_engine"`
+	}
+	if !readJSON(w, r, &body) {
 		return
 	}
+	o := app.Override{Route: body.Route}
+	if body.Engine != search.EngineAuto {
+		o.Pin = body.Engine
+	}
 	trace := core.NewTrace()
-	result, err := s.app.DevSearch(core.WithTrace(r.Context(), trace), webui, args)
+	result, err := s.app.DevSearch(core.WithTrace(r.Context(), trace), webui, body.DevArgs, o)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -567,14 +589,17 @@ func (s *Server) handlePlayDevSearch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePlayFetch(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		fetch.Args
+		tuning
 		// Model answers in place of the extract chain, to try it before assigning it.
 		Model string `json:"model"`
+		// NoCache reads the page anew instead of answering from the cache.
+		NoCache bool `json:"no_cache"`
 	}
 	if !readJSON(w, r, &body) {
 		return
 	}
 	trace := core.NewTrace()
-	result, err := s.app.Fetch(core.WithTrace(r.Context(), trace), webui, body.Args, app.Override{ExtractModel: body.Model})
+	result, err := s.app.Fetch(core.WithTrace(r.Context(), trace), webui, body.Args, app.Override{ExtractModel: body.Model, Route: body.Route, NoCache: body.NoCache})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -588,7 +613,7 @@ func (s *Server) handlePlayResearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	started := time.Now()
-	result, err := s.app.Research(r.Context(), webui, body.Question, app.Override{ResearchModel: body.Model}, nil)
+	result, err := s.app.Research(r.Context(), webui, body.Question, body.override(), nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -601,6 +626,12 @@ type researchBody struct {
 	Question string `json:"question"`
 	// Model runs the agent in place of the configured model, to try it.
 	Model string `json:"model"`
+	// Budget replaces the configured limits it sets, for this run only.
+	Budget app.ResearchOverride `json:"budget"`
+}
+
+func (b researchBody) override() app.Override {
+	return app.Override{ResearchModel: b.Model, Research: b.Budget}
 }
 
 func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
@@ -608,12 +639,21 @@ func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &body) {
 		return
 	}
-	id, err := s.app.StartResearch(r.Context(), webui, body.Question, app.Override{ResearchModel: body.Model})
+	id, err := s.app.StartResearch(r.Context(), webui, body.Question, body.override())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	writeJSON(w, map[string]string{"task_id": id})
+}
+
+func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
+	tasks, err := s.app.Store.ListTasks(r.Context(), 20)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, tasks)
 }
 
 func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
@@ -626,7 +666,21 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errors.New("task not found"))
 		return
 	}
-	writeJSON(w, task)
+	// Now lets the console time a running task by the server's clock.
+	writeJSON(w, struct {
+		store.ResearchTask
+		Now int64 `json:"now"`
+	}{task, time.Now().UnixMilli()})
+}
+
+// handleCancelTask stops a research task under way; the task then ends as
+// canceled, which the next read of it shows.
+func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
+	if !s.app.CancelResearch(r.PathValue("id")) {
+		writeError(w, http.StatusConflict, errors.New("the task is not running"))
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // handlePlayModel sends a one-line prompt to a model so the WebUI can verify

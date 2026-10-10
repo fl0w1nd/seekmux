@@ -2,14 +2,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
   Boxes,
+  Braces,
   Code,
   FileText,
-  FlaskConical,
   Gauge,
+  Globe,
   KeyRound,
   LogOut,
+  Microscope,
   Monitor,
   Moon,
+  ScanText,
   ScrollText,
   Search,
   Settings,
@@ -44,7 +47,16 @@ const nav = [
     items: [
       { href: "/", label: "概览", icon: Gauge },
       { href: "/logs", label: "请求日志", icon: ScrollText },
-      { href: "/play", label: "调试台", icon: FlaskConical },
+    ],
+  },
+  {
+    // Named by what each page does, apart from the settings pages of the same tools below.
+    group: "调试台",
+    items: [
+      { href: "/play/search", label: "搜索网页", icon: Globe },
+      { href: "/play/dev-search", label: "搜索开发资料", icon: Braces },
+      { href: "/play/fetch", label: "抓取页面", icon: ScanText },
+      { href: "/play/research", label: "发起研究", icon: Microscope },
     ],
   },
   {
@@ -162,8 +174,7 @@ export function Shell({ children }: { children: ReactNode }) {
       </aside>
 
       <main className="min-w-0 flex-1">
-        {/* The playground sets a request and its result side by side, so it takes the whole width. */}
-        <div className={cx("mx-auto w-full px-6 py-6 max-md:px-4", !location.startsWith("/play") && "max-w-6xl", error && "pb-24")}>{children}</div>
+        <div className={cx("mx-auto w-full max-w-6xl px-6 py-6 max-md:px-4", error && "pb-24")}>{children}</div>
       </main>
 
       {error && (

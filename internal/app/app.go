@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -63,6 +64,9 @@ type App struct {
 	background context.Context
 	stop       context.CancelFunc
 	tasks      sync.WaitGroup
+	// running holds the cancel function of every research task under way,
+	// by task id.
+	running sync.Map
 }
 
 // New loads the stored configuration, creating the default one on first run.
@@ -95,20 +99,83 @@ func (a *App) Close() {
 
 func (a *App) Snapshot() *Snapshot { return a.snapshot.Load() }
 
-// Override replaces, for a single call, the models the configuration
-// assigns. The console uses it to try a model before assigning it; tool
-// calls over MCP never carry one.
+// Override replaces parts of the configuration for a single call. The
+// console uses it to try a model, a budget or a provider's parameters before
+// saving them; tool calls over MCP never carry one.
 type Override struct {
 	// ExtractModel answers fetch prompts on its own, in place of the
 	// extract chain.
 	ExtractModel string
 	// ResearchModel runs the research agent.
 	ResearchModel string
+	// Research replaces the limits of a research run.
+	Research ResearchOverride
+	// Route replaces the parameters of one provider of the tool called.
+	Route *RouteOverride
+	// Pin leaves this provider alone to serve the call, for a tool that
+	// takes no engine argument.
+	Pin string
+	// NoCache makes fetch read the page anew and keep it out of the cache.
+	NoCache bool
 }
 
-// with returns s with o applied, or s itself when o changes nothing.
-func (s *Snapshot) with(o Override) (*Snapshot, error) {
-	if o == (Override{}) {
+// ResearchOverride holds the research settings a run may replace; a zero
+// field keeps what is configured.
+type ResearchOverride struct {
+	Reading            string `json:"reading"`
+	MaxSteps           int    `json:"max_steps"`
+	MaxDurationSeconds int    `json:"max_duration_seconds"`
+	MaxTokens          int64  `json:"max_tokens"`
+	MaxContextTokens   int64  `json:"max_context_tokens"`
+}
+
+// RouteOverride holds a route's parameters as they should be for one call.
+type RouteOverride struct {
+	Provider  string         `json:"provider"`
+	Options   map[string]any `json:"options"`
+	ExtraBody map[string]any `json:"extra_body"`
+}
+
+// The ceilings of an overridden research budget: a run is bounded even when
+// a number is mistyped.
+const (
+	maxResearchSteps    = 200
+	maxResearchDuration = 3600
+)
+
+func (o ResearchOverride) apply(r *config.Research) error {
+	switch {
+	case o.Reading != "" && o.Reading != config.ReadingRaw && o.Reading != config.ReadingExtract:
+		return fmt.Errorf("reading must be %q or %q", config.ReadingRaw, config.ReadingExtract)
+	case o.MaxSteps < 0 || o.MaxSteps > maxResearchSteps:
+		return fmt.Errorf("max_steps must be between 1 and %d", maxResearchSteps)
+	case o.MaxDurationSeconds < 0 || o.MaxDurationSeconds > maxResearchDuration:
+		return fmt.Errorf("max_duration_seconds must be between 1 and %d", maxResearchDuration)
+	case o.MaxTokens < 0 || o.MaxContextTokens < 0:
+		return fmt.Errorf("token limits must be positive")
+	}
+	if o.Reading != "" {
+		r.Reading = o.Reading
+	}
+	if o.MaxSteps > 0 {
+		r.MaxSteps = o.MaxSteps
+	}
+	if o.MaxDurationSeconds > 0 {
+		r.MaxDurationSeconds = o.MaxDurationSeconds
+	}
+	if o.MaxTokens > 0 {
+		r.MaxTokens = o.MaxTokens
+	}
+	if o.MaxContextTokens > 0 {
+		r.MaxContextTokens = o.MaxContextTokens
+	}
+	return nil
+}
+
+// with returns s with o applied to a call of tool, or s itself when o
+// changes nothing.
+func (s *Snapshot) with(tool string, o Override) (*Snapshot, error) {
+	if o.ExtractModel == "" && o.ResearchModel == "" && o.Research == (ResearchOverride{}) && o.Route == nil && o.Pin == "" {
 		return s, nil
 	}
 	cfg := s.Config.Clone()
@@ -122,6 +189,19 @@ func (s *Snapshot) with(o Override) (*Snapshot, error) {
 	}
 	if o.ResearchModel != "" {
 		cfg.Research.Model = o.ResearchModel
+	}
+	if err := o.Research.apply(&cfg.Research); err != nil {
+		return nil, err
+	}
+	if o.Route != nil {
+		if err := cfg.TuneRoute(tool, o.Route.Provider, o.Route.Options, o.Route.ExtraBody); err != nil {
+			return nil, err
+		}
+	}
+	if o.Pin != "" {
+		if err := cfg.PinRoute(tool, o.Pin); err != nil {
+			return nil, err
+		}
 	}
 	return &Snapshot{Version: s.Version, Config: cfg, Client: s.Client}, nil
 }
@@ -188,8 +268,9 @@ func newClient(proxy string) *http.Client {
 	return &http.Client{Transport: transport}
 }
 
-func (a *App) fetchRuntime(s *Snapshot) fetch.Runtime {
-	return fetch.Runtime{Config: s.Config, Client: s.Client, LLMClient: s.Client}
+func (a *App) fetchRuntime(s *Snapshot, o Override) fetch.Runtime {
+	// A page read with parameters of its own must not answer later calls.
+	return fetch.Runtime{Config: s.Config, Client: s.Client, LLMClient: s.Client, NoCache: o.NoCache || o.Route != nil}
 }
 
 // logCall writes the request log entry of a finished tool call.
@@ -244,8 +325,11 @@ func traced(ctx context.Context) (context.Context, *core.Trace) {
 
 // Search serves the search tool. The error is an invalid-arguments error.
 // The upstream calls land in the trace of ctx when it carries one.
-func (a *App) Search(ctx context.Context, caller Caller, args search.Args) ([]search.QueryResult, error) {
-	s := a.Snapshot()
+func (a *App) Search(ctx context.Context, caller Caller, args search.Args, o Override) ([]search.QueryResult, error) {
+	s, err := a.Snapshot().with(config.ToolSearch, o)
+	if err != nil {
+		return nil, err
+	}
 	if err := args.Validate(s.Config); err != nil {
 		return nil, err
 	}
@@ -271,8 +355,11 @@ func (a *App) Search(ctx context.Context, caller Caller, args search.Args) ([]se
 
 // DevSearch serves the dev_search tool. The error is an invalid-arguments
 // error. The upstream calls land in the trace of ctx when it carries one.
-func (a *App) DevSearch(ctx context.Context, caller Caller, args search.DevArgs) (search.DevResult, error) {
-	s := a.Snapshot()
+func (a *App) DevSearch(ctx context.Context, caller Caller, args search.DevArgs, o Override) (search.DevResult, error) {
+	s, err := a.Snapshot().with(config.ToolDevSearch, o)
+	if err != nil {
+		return search.DevResult{}, err
+	}
 	if err := args.Validate(s.Config); err != nil {
 		return search.DevResult{}, err
 	}
@@ -290,7 +377,7 @@ func (a *App) DevSearch(ctx context.Context, caller Caller, args search.DevArgs)
 // Fetch serves the fetch tool. The error is an invalid-arguments error.
 // The upstream calls land in the trace of ctx when it carries one.
 func (a *App) Fetch(ctx context.Context, caller Caller, args fetch.Args, o Override) (fetch.Result, error) {
-	s, err := a.Snapshot().with(o)
+	s, err := a.Snapshot().with(config.ToolFetch, o)
 	if err != nil {
 		return fetch.Result{}, err
 	}
@@ -298,7 +385,7 @@ func (a *App) Fetch(ctx context.Context, caller Caller, args fetch.Args, o Overr
 		return fetch.Result{}, err
 	}
 	ctx, trace := traced(ctx)
-	result := a.fetcher.Run(ctx, a.fetchRuntime(s), args)
+	result := a.fetcher.Run(ctx, a.fetchRuntime(s, o), args)
 
 	entry := store.LogEntry{Status: store.StatusOK, Summary: args.URL, Provider: result.Engine, Error: result.Error}
 	if result.Error != "" {
@@ -320,8 +407,8 @@ func ResearchAvailable(s *Snapshot) bool {
 }
 
 // Research runs the research agent to completion. progress may be nil.
-func (a *App) Research(ctx context.Context, caller Caller, question string, o Override, progress func(string)) (research.Result, error) {
-	s, err := a.Snapshot().with(o)
+func (a *App) Research(ctx context.Context, caller Caller, question string, o Override, progress func(research.Event)) (research.Result, error) {
+	s, err := a.Snapshot().with(config.ToolResearch, o)
 	if err != nil {
 		return research.Result{}, err
 	}
@@ -336,11 +423,11 @@ func (a *App) Research(ctx context.Context, caller Caller, question string, o Ov
 	trace := core.NewTrace()
 	ctx = core.WithTrace(ctx, trace)
 	var progressMu sync.Mutex
-	report := func(line string) {
+	report := func(event research.Event) {
 		if progress != nil {
 			progressMu.Lock()
 			defer progressMu.Unlock()
-			progress(line)
+			progress(event)
 		}
 	}
 
@@ -360,7 +447,7 @@ func (a *App) Research(ctx context.Context, caller Caller, question string, o Ov
 				if err := args.Validate(s.Config); err != nil {
 					return fetch.Result{}, err
 				}
-				return a.fetcher.Run(ctx, a.fetchRuntime(s), args), nil
+				return a.fetcher.Run(ctx, a.fetchRuntime(s, Override{}), args), nil
 			},
 		}
 		// Every request the agent makes counts against the model's limits.
@@ -375,27 +462,48 @@ func (a *App) Research(ctx context.Context, caller Caller, question string, o Ov
 	return result, err
 }
 
-// StartResearch runs research in the background and returns the task id to
-// poll with ResearchTask.
+// ResearchBudget is what a research task runs on, kept with the task.
+type ResearchBudget struct {
+	Model              string `json:"model"`
+	Reading            string `json:"reading"`
+	MaxSteps           int    `json:"max_steps"`
+	MaxDurationSeconds int    `json:"max_duration_seconds"`
+	MaxTokens          int64  `json:"max_tokens"`
+	MaxContextTokens   int64  `json:"max_context_tokens"`
+}
+
+// StartResearch runs research in the background and returns the id of the
+// task that holds its progress and its result.
 func (a *App) StartResearch(ctx context.Context, caller Caller, question string, o Override) (string, error) {
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return "", fmt.Errorf("question is required")
 	}
-	s, err := a.Snapshot().with(o)
+	s, err := a.Snapshot().with(config.ToolResearch, o)
 	if err != nil {
 		return "", err
 	}
 	if !ResearchAvailable(s) {
 		return "", fmt.Errorf("research is not enabled")
 	}
+	r := s.Config.Research
 	id := store.NewToken("rs_")
-	if err := a.Store.CreateTask(ctx, id, question); err != nil {
+	if err := a.Store.CreateTask(ctx, id, question, ResearchBudget{
+		Model: r.Model, Reading: r.Reading, MaxSteps: r.MaxSteps, MaxDurationSeconds: r.MaxDurationSeconds,
+		MaxTokens: r.MaxTokens, MaxContextTokens: r.MaxContextTokens,
+	}); err != nil {
 		return "", err
 	}
+	run, cancel := context.WithCancelCause(a.background)
+	a.running.Store(id, cancel)
 	a.tasks.Go(func() {
-		result, err := a.Research(a.background, caller, question, o, func(line string) {
-			a.Store.SetTaskProgress(a.background, id, line)
+		defer a.running.Delete(id)
+		defer cancel(nil)
+		result, err := a.Research(run, caller, question, o, func(event research.Event) {
+			if event.Kind != "" {
+				a.Store.AddTaskStep(a.background, id, store.TaskStep{Step: event.Step, Kind: event.Kind, Text: event.Text, Line: event.Line()})
+			}
+			a.Store.SetTaskSpent(a.background, id, event.Spent, event.Draft)
 		})
 		// A run that failed before its first step has no totals to show.
 		var stats any
@@ -403,11 +511,30 @@ func (a *App) StartResearch(ctx context.Context, caller Caller, question string,
 			totals.Report = ""
 			stats = totals
 		}
-		if ferr := a.Store.FinishTask(context.Background(), id, result.Report, stats, err); ferr != nil {
+		status, message := store.TaskDone, ""
+		switch {
+		case context.Cause(run) == errCanceled:
+			status, message = store.TaskCanceled, errCanceled.Error()
+		case err != nil:
+			status, message = store.TaskFailed, err.Error()
+		}
+		if ferr := a.Store.FinishTask(context.Background(), id, status, result.Report, message, stats); ferr != nil {
 			slog.Error("store research result", "task", id, "error", ferr)
 		}
 	})
 	return id, nil
+}
+
+var errCanceled = errors.New("the task was stopped")
+
+// CancelResearch stops a research task under way. It reports whether the
+// task was running.
+func (a *App) CancelResearch(id string) bool {
+	cancel, ok := a.running.Load(id)
+	if ok {
+		cancel.(context.CancelCauseFunc)(errCanceled)
+	}
+	return ok
 }
 
 // RunMaintenance prunes logs, sessions and old research tasks until ctx ends.

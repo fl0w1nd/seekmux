@@ -71,7 +71,10 @@ CREATE TABLE IF NOT EXISTS research_tasks (
 	result     TEXT NOT NULL DEFAULT '',
 	error      TEXT NOT NULL DEFAULT '',
 	steps      TEXT NOT NULL DEFAULT '[]',
-	stats      TEXT NOT NULL DEFAULT ''
+	stats      TEXT NOT NULL DEFAULT '',
+	budget     TEXT NOT NULL DEFAULT '',
+	spent      TEXT NOT NULL DEFAULT '',
+	draft      TEXT NOT NULL DEFAULT ''
 );
 `
 
@@ -82,6 +85,9 @@ var added = []struct{ table, column, definition string }{
 	{"request_logs", "cache_write_tokens", "INTEGER NOT NULL DEFAULT 0"},
 	{"research_tasks", "steps", "TEXT NOT NULL DEFAULT '[]'"},
 	{"research_tasks", "stats", "TEXT NOT NULL DEFAULT ''"},
+	{"research_tasks", "budget", "TEXT NOT NULL DEFAULT ''"},
+	{"research_tasks", "spent", "TEXT NOT NULL DEFAULT ''"},
+	{"research_tasks", "draft", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // Open opens, and creates if needed, the database in dir.

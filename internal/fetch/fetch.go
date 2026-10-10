@@ -65,6 +65,9 @@ type Runtime struct {
 	// Client reaches the fetch providers, LLMClient the extract model.
 	Client    *http.Client
 	LLMClient *http.Client
+	// NoCache reads the page and its answer anew and keeps both out of the
+	// caches, for a call whose configuration is its own.
+	NoCache bool
 }
 
 // Service owns the page and answer caches, which outlive configuration changes.
@@ -139,7 +142,7 @@ func (s *Service) Run(ctx context.Context, rt Runtime, args Args) Result {
 }
 
 func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (Page, error) {
-	if page, ok := s.pages.Get(target); ok && (engine == EngineAuto || page.Engine == engine) {
+	if page, ok := s.pages.Get(target); ok && !rt.NoCache && (engine == EngineAuto || page.Engine == engine) {
 		core.TraceFrom(ctx).Note(config.ToolFetch, page.Engine, target, core.AttemptCached)
 		return page, nil
 	}
@@ -170,7 +173,9 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		return Page{}, err
 	}
 	page.Engine = provider
-	s.pages.Set(target, page, time.Duration(cfg.CacheTTLSeconds)*time.Second)
+	if !rt.NoCache {
+		s.pages.Set(target, page, time.Duration(cfg.CacheTTLSeconds)*time.Second)
+	}
 	return page, nil
 }
 
@@ -239,7 +244,7 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 	keyData, _ := json.Marshal([]any{args.URL, offset, end, args.Prompt, cfg.Models, cfg.SystemPrompt, cfg.MaxOutputTokens})
 	key := string(keyData)
 	chat, cached := s.answers.Get(key)
-	if !cached {
+	if !cached || rt.NoCache {
 		system := cfg.SystemPrompt
 		if strings.TrimSpace(system) == "" {
 			system = DefaultSystemPrompt
@@ -281,7 +286,7 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 		if err != nil {
 			return Result{}, err
 		}
-		if !chat.Truncated {
+		if !chat.Truncated && !rt.NoCache {
 			s.answers.Set(key, chat, time.Duration(rt.Config.Fetch.CacheTTLSeconds)*time.Second)
 		}
 	}

@@ -154,6 +154,11 @@
   --animate-slide: slide 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
   --animate-spin: spin 0.8s linear infinite;
+  --animate-fold-down: fold-down 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-fold-up: fold-up 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* A quantity catching up with its new value: meters, counters. */
+  --ease-settle: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @keyframes enter {
@@ -176,6 +181,25 @@
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+/* A region that folds open; Radix measures the height. */
+@keyframes fold-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+  }
+}
+@keyframes fold-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+  }
+  to {
+    height: 0;
+    opacity: 0;
   }
 }
 

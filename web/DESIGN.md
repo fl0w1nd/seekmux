@@ -50,8 +50,13 @@ uppercase, tracked — the micro label on panels, columns and lanes).
 **Shape.** Two radii only: `rounded-ctl` (5px) for controls, `rounded-panel`
 (10px) for containers. Controls are 32px tall, 28px in dense places.
 
-**Motion.** 140ms ease-out for entering layers, 200ms for the drawer; all of
-it is disabled under `prefers-reduced-motion`.
+**Motion.** 140ms ease-out for entering layers, 200ms for the drawer. A region
+that folds open (`animate-fold-down` / `animate-fold-up`) and a quantity that
+moves to a new value (a gauge bar, a number followed with `useTween` from
+`lib/motion.ts`) use `ease-settle`, which arrives fast and comes to rest
+without overshoot. Motion only ever shows a change of state; nothing loops
+except the dot of something that is live. All of it is disabled under
+`prefers-reduced-motion`.
 
 ## Components
 
@@ -62,7 +67,8 @@ it is disabled under `prefers-reduced-motion`.
   `ChoiceList` / `Choice` (a short list of options, one chosen, each with a
   status), `Empty`,
   `Notice`, `Meter`, `CodeBlock`, `Tooltip`, `Table`.
-- `overlays.tsx` — `Dialog`, `Drawer`, toasts (`useToast`), confirmation
+- `overlays.tsx` — `Dialog`, `Drawer`, `Popover` (a few choices or a note
+  anchored to the control that opens it), toasts (`useToast`), confirmation
   (`useConfirm`). Behavior and accessibility come from unstyled Radix
   primitives; every pixel of styling is ours.
 - `inputs.tsx` — `RateLimitInput`, `SecretInput`, `JSONInput`, `ChipInput`
@@ -74,6 +80,14 @@ it is disabled under `prefers-reduced-motion`.
   `ProviderPicker` (auto or one provider, with its health), `ModelOverride`
   (the assigned models or another one, for a single call),
   `Waterfall` (the upstream calls of one request on a shared time axis).
+- `pages/play/kit.tsx` — what the playground pages are built from: `Stage`
+  (the page head and the hairline frame the composer stands on), `Composer`
+  (the main input, a bar of `Chip`s that name a setting and show its value,
+  and a parameter panel that folds open), `Output` (the pane a call answers
+  into, with its result and its upstream calls), `Recent` (past runs, a click
+  takes their arguments back). A chip carries a signal dot when its value is
+  not the configured one, and whatever applies to one call only is marked
+  `仅调试台`.
 
 ## Rules
 

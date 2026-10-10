@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { Dialog as RadixDialog } from "radix-ui";
+import { Dialog as RadixDialog, Popover as RadixPopover } from "radix-ui";
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button, cx, Dot, type Tone } from "./primitives";
 
@@ -65,6 +65,48 @@ export function Drawer({ open, onOpenChange, title, description, children }: Ove
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>
+  );
+}
+
+/* ---------- Popover ---------- */
+
+/**
+ * A small panel anchored to the control that opens it, for a choice made in
+ * place. Pass `open` and `onOpenChange` to close it once the choice is made.
+ */
+export function Popover({
+  trigger,
+  children,
+  open,
+  onOpenChange,
+  align = "start",
+  className = "w-80",
+}: {
+  trigger: ReactNode;
+  children: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  align?: "start" | "center" | "end";
+  className?: string;
+}) {
+  return (
+    <RadixPopover.Root open={open} onOpenChange={onOpenChange}>
+      <RadixPopover.Trigger asChild>{trigger}</RadixPopover.Trigger>
+      <RadixPopover.Portal>
+        <RadixPopover.Content
+          align={align}
+          sideOffset={6}
+          collisionPadding={12}
+          className={cx(
+            "z-50 max-h-(--radix-popover-content-available-height) max-w-[calc(100vw-1.5rem)] animate-in overflow-y-auto",
+            "rounded-panel border border-line-strong bg-overlay shadow-overlay focus-visible:outline-none",
+            className,
+          )}
+        >
+          {children}
+        </RadixPopover.Content>
+      </RadixPopover.Portal>
+    </RadixPopover.Root>
   );
 }
 

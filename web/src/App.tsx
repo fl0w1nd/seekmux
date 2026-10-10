@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
-import { Route, Switch } from "wouter";
+import { Redirect, Route, Switch, useLocation } from "wouter";
 import { api, setUnauthorizedHandler } from "./lib/api";
 import { ConfigProvider } from "./lib/config";
 import { DesignPage } from "./pages/Design";
@@ -10,7 +10,7 @@ import { KeysPage } from "./pages/Keys";
 import { LogsPage } from "./pages/Logs";
 import { ModelsPage } from "./pages/Models";
 import { OverviewPage } from "./pages/Overview";
-import { PlaygroundPage } from "./pages/Playground";
+import { Playground, playPage } from "./pages/play";
 import { ProvidersPage } from "./pages/Providers";
 import { ResearchPage } from "./pages/Research";
 import { SearchPage } from "./pages/Search";
@@ -46,26 +46,39 @@ export function App() {
 
   return (
     <ConfigProvider>
-      <Shell>
-        <Switch>
-          <Route path="/" component={OverviewPage} />
-          <Route path="/logs" component={LogsPage} />
-          <Route path="/play" component={PlaygroundPage} />
-          <Route path="/providers" component={ProvidersPage} />
-          <Route path="/search" component={SearchPage} />
-          <Route path="/dev-search" component={DevSearchPage} />
-          <Route path="/fetch" component={FetchPage} />
-          <Route path="/models" component={ModelsPage} />
-          <Route path="/research" component={ResearchPage} />
-          <Route path="/keys" component={KeysPage} />
-          <Route path="/system" component={SystemPage} />
-          <Route path="/design" component={DesignPage} />
-          <Route>
-            <Empty title="页面不存在" />
-          </Route>
-        </Switch>
-      </Shell>
+      <Pages />
     </ConfigProvider>
+  );
+}
+
+function Pages() {
+  const [location] = useLocation();
+  const play = playPage(location);
+  return (
+    <Shell>
+      {/* Outside the switch: the playground keeps its state while another page is on show. */}
+      <Playground page={play} />
+      <Switch>
+        <Route path="/" component={OverviewPage} />
+        <Route path="/logs" component={LogsPage} />
+        <Route path="/play">
+          <Redirect to="/play/search" replace />
+        </Route>
+        {play && <Route path="/play/:page">{null}</Route>}
+        <Route path="/providers" component={ProvidersPage} />
+        <Route path="/search" component={SearchPage} />
+        <Route path="/dev-search" component={DevSearchPage} />
+        <Route path="/fetch" component={FetchPage} />
+        <Route path="/models" component={ModelsPage} />
+        <Route path="/research" component={ResearchPage} />
+        <Route path="/keys" component={KeysPage} />
+        <Route path="/system" component={SystemPage} />
+        <Route path="/design" component={DesignPage} />
+        <Route>
+          <Empty title="页面不存在" />
+        </Route>
+      </Switch>
+    </Shell>
   );
 }
 

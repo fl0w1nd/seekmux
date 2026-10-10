@@ -20,6 +20,7 @@ import (
 	"github.com/fl0w1nd/seekmux/internal/app"
 	"github.com/fl0w1nd/seekmux/internal/config"
 	"github.com/fl0w1nd/seekmux/internal/fetch"
+	"github.com/fl0w1nd/seekmux/internal/research"
 	"github.com/fl0w1nd/seekmux/internal/search"
 	"github.com/fl0w1nd/seekmux/internal/store"
 )
@@ -152,7 +153,7 @@ func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
 			if err := rateLimited(a, key); err != nil {
 				return failure(err), nil, nil
 			}
-			results, err := a.Search(ctx, caller, args)
+			results, err := a.Search(ctx, caller, args, app.Override{})
 			if err != nil {
 				return failure(err), nil, nil
 			}
@@ -181,7 +182,7 @@ func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
 			if err := rateLimited(a, key); err != nil {
 				return failure(err), nil, nil
 			}
-			result, err := a.DevSearch(ctx, caller, args)
+			result, err := a.DevSearch(ctx, caller, args, app.Override{})
 			if err != nil {
 				return failure(err), nil, nil
 			}
@@ -255,10 +256,14 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 			return failure(err), nil, nil
 		}
 		// Progress notifications double as keep-alives on the response stream.
-		var progress func(string)
+		var progress func(research.Event)
 		if token := req.Params.GetProgressToken(); token != nil {
 			step := 0.0
-			progress = func(line string) {
+			progress = func(event research.Event) {
+				line := event.Line()
+				if line == "" {
+					return
+				}
 				step++
 				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: token, Progress: step, Message: line})
 			}
@@ -310,7 +315,7 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 			switch {
 			case task.Status == store.TaskDone:
 				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: task.Result}}}, nil, nil
-			case task.Status == store.TaskFailed:
+			case task.Status == store.TaskFailed, task.Status == store.TaskCanceled:
 				return failure(fmt.Errorf("research failed: %s", task.Error)), nil, nil
 			case time.Now().After(deadline):
 				return text(map[string]string{

@@ -190,3 +190,44 @@ func (v Values) Bool(key string) bool {
 
 // Int returns false when the option is unset.
 func (v Values) Int(key string) (int, bool) { return asInt(v[key]) }
+
+// Routes returns the routes of a routed tool, and nil for any other.
+func (c *Config) Routes(tool string) []Route {
+	switch tool {
+	case ToolSearch:
+		return c.Search.Routes
+	case ToolDevSearch:
+		return c.DevSearch.Routes
+	case ToolFetch:
+		return c.Fetch.Routes
+	}
+	return nil
+}
+
+// TuneRoute replaces the parameters of provider's route for tool, in place:
+// options holds what differs from the declared defaults, as a route does.
+func (c *Config) TuneRoute(tool, provider string, options, extra map[string]any) error {
+	routes := c.Routes(tool)
+	i := slices.IndexFunc(routes, func(r Route) bool { return r.Provider == provider })
+	if i < 0 {
+		return fmt.Errorf("%s has no provider %q", tool, provider)
+	}
+	routes[i].Options, routes[i].ExtraBody = options, extra
+	normalizeOptions(tool, &routes[i])
+	if err := validateOptions(tool, routes[i]); err != nil {
+		return fmt.Errorf("%s route %q: %w", tool, provider, err)
+	}
+	return nil
+}
+
+// PinRoute leaves provider as the only enabled route of tool, in place.
+func (c *Config) PinRoute(tool, provider string) error {
+	routes := c.Routes(tool)
+	if !slices.ContainsFunc(routes, func(r Route) bool { return r.Provider == provider && r.Enabled }) {
+		return fmt.Errorf("%s has no enabled provider %q", tool, provider)
+	}
+	for i := range routes {
+		routes[i].Enabled = routes[i].Provider == provider
+	}
+	return nil
+}

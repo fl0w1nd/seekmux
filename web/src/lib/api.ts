@@ -353,25 +353,81 @@ export interface ResearchResult {
   cache_write_tokens?: number;
 }
 
-export interface ResearchTask {
+/** What a research task runs on: the configuration with the overrides of its run applied. */
+export interface ResearchBudget {
+  model: string;
+  reading: Research["reading"];
+  max_steps: number;
+  max_duration_seconds: number;
+  max_tokens: number;
+  max_context_tokens: number;
+}
+
+export type ResearchLimit = "steps" | "duration" | "tokens" | "context";
+
+/** How much of its budget a research task has used so far. */
+export interface ResearchSpent {
+  /** The model rounds begun, the one under way included. */
+  steps: number;
+  searches: number;
+  fetches: number;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  /** An estimate of the size of the next request to the model. */
+  context_tokens: number;
+  /** The limit that made the agent stop and report. */
+  exhausted?: ResearchLimit;
+}
+
+/** A research task as the list gives it: without report, steps and draft. */
+export interface ResearchTaskSummary {
   id: string;
   created_at: number;
   updated_at: number;
-  status: "running" | "done" | "failed";
+  status: "running" | "done" | "failed" | "canceled";
   question: string;
   progress?: string;
-  result?: string;
   error?: string;
-  /** Every progress line, timed in ms from created_at. */
-  steps: ResearchStep[];
   /** Set once the run has finished. */
   stats?: Omit<ResearchResult, "report">;
+  /** Absent on a task started before budgets were recorded. */
+  budget?: ResearchBudget;
+  spent?: ResearchSpent;
 }
 
+export interface ResearchTask extends ResearchTaskSummary {
+  result?: string;
+  steps: ResearchStep[];
+  /** The text the model is writing in its current step. */
+  draft?: string;
+  /** The server's clock when it answered, in ms. */
+  now: number;
+}
+
+/**
+ * One thing the agent did, timed in ms from created_at. A task recorded
+ * before steps had a kind carries `line` instead of the other fields.
+ */
 export interface ResearchStep {
   at: number;
-  line: string;
+  /** The model round it belongs to, from 1. */
+  step?: number;
+  kind?: "search" | "fetch" | "note" | "wrap_up";
+  text?: string;
+  line?: string;
 }
+
+/** A provider's parameters for one tool, as a call from the console may replace them. */
+export interface RouteTuning {
+  provider: string;
+  options?: Record<string, unknown>;
+  extra_body?: Record<string, unknown>;
+}
+
+/** The limits of a research run that differ from the configured ones. */
+export type BudgetOverride = Partial<Omit<ResearchBudget, "model">>;
 
 export class APIError extends Error {
   constructor(
@@ -455,13 +511,20 @@ export const api = {
   status: () => get<{ routes: RouteStatus[]; models: ModelStatus[] }>("/api/status"),
   resetBreaker: (key: string) => post("/api/breaker/reset", { key }),
 
-  playSearch: (body: SearchArgs) => post<{ duration_ms: number; results: SearchResult[]; attempts: Attempt[] | null }>("/api/play/search", body),
-  playDevSearch: (body: DevSearchArgs) => post<{ duration_ms: number; result: DevSearchResult; attempts: Attempt[] | null }>("/api/play/dev_search", body),
-  /** `model` answers in place of the extract chain, for this call only. */
-  playFetch: (body: FetchArgs & { model?: string }) => post<{ duration_ms: number; result: FetchResult; attempts: Attempt[] | null }>("/api/play/fetch", body),
+  /** `route` replaces a provider's parameters for this call only. */
+  playSearch: (body: SearchArgs & { route?: RouteTuning }) =>
+    post<{ duration_ms: number; results: SearchResult[]; attempts: Attempt[] | null }>("/api/play/search", body),
+  /** `search_engine` leaves one provider to serve the call; the tool itself has no such argument. */
+  playDevSearch: (body: DevSearchArgs & { search_engine?: string; route?: RouteTuning }) =>
+    post<{ duration_ms: number; result: DevSearchResult; attempts: Attempt[] | null }>("/api/play/dev_search", body),
+  /** `model` answers in place of the extract chain and `no_cache` reads the page anew, for this call only. */
+  playFetch: (body: FetchArgs & { model?: string; no_cache?: boolean; route?: RouteTuning }) =>
+    post<{ duration_ms: number; result: FetchResult; attempts: Attempt[] | null }>("/api/play/fetch", body),
   playModel: (provider: LLMProvider, model: Model) =>
     post<{ duration_ms: number; reply: string }>("/api/play/model", { provider, model }),
-  /** `model` runs the agent in place of the configured model, for this task only. */
-  startResearch: (body: { question: string; model?: string }) => post<{ task_id: string }>("/api/research/tasks", body),
+  /** `model` and `budget` replace the configured model and limits, for this task only. */
+  startResearch: (body: { question: string; model?: string; budget?: BudgetOverride }) => post<{ task_id: string }>("/api/research/tasks", body),
+  researchTasks: () => get<ResearchTaskSummary[]>("/api/research/tasks"),
   researchTask: (id: string) => get<ResearchTask>(`/api/research/tasks/${id}`),
+  cancelResearch: (id: string) => post(`/api/research/tasks/${id}/cancel`),
 };
