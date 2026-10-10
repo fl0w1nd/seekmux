@@ -345,10 +345,16 @@ export interface ResearchResult {
   report: string;
   steps: number;
   budget_exhausted?: boolean;
+  /** The limit that made the agent stop and report. */
+  exhausted?: ResearchLimit;
   searches: number;
   /** Calls to dev_search; absent when there were none. */
   dev_searches?: number;
   fetches: number;
+  /** The pages the agent read. */
+  read?: string[];
+  /** URLs the report cites although the agent never had their text. */
+  unread?: string[];
   input_tokens: number;
   output_tokens: number;
   cache_read_tokens?: number;

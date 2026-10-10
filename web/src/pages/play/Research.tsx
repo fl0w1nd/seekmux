@@ -224,7 +224,7 @@ export function ResearchPlay() {
                   {budget.reading === "raw"
                     ? "研究模型直接读取网页原文，长页面分段读取。最接近一手材料，占用的上下文也最多。"
                     : config.fetch.extract.models.length > 0
-                      ? "由提取模型先按研究模型的提问归纳各网页，仅将答案交给研究模型。节省上下文，准确度取决于提取模型。"
+                      ? "由提取模型先按研究模型的提问归纳各网页，将答案交给研究模型；需要代码或原话时，研究模型仍可按页读取原文。节省上下文，准确度取决于提取模型。"
                       : "尚未配置提取模型，网页仍按原文返回。"}
                 </p>
                 <p className="mt-auto text-xs text-ink-3">
@@ -679,6 +679,7 @@ function Report({ task, spent, rendered }: { task: ResearchTask; spent: Research
   // A run recorded before limits were named only says that one ran out.
   const exhausted = spent.exhausted !== undefined || task.stats?.budget_exhausted === true;
   const body = task.result || task.draft || "";
+  const unread = task.stats?.unread ?? [];
   return (
     <>
       {(task.status === "failed" || task.status === "canceled" || exhausted) && (
@@ -688,6 +689,20 @@ function Report({ task, spent, rendered }: { task: ResearchTask; spent: Research
           {exhausted && task.status !== "canceled" && (
             <Notice tone="warn">{spent.exhausted ? `${limitLabel[spent.exhausted]}预算已用尽` : "预算已用尽"}，Agent 停止检索并基于现有材料撰写报告。</Notice>
           )}
+        </div>
+      )}
+      {unread.length > 0 && (
+        <div className="px-4 pt-4">
+          <Notice tone="warn">
+            报告引用了 {unread.length} 个 Agent 未读取过的链接，相关论断未经原文核对：
+            <ul className="mt-1 flex flex-col gap-0.5">
+              {unread.map((url) => (
+                <li key={url} className="num text-xs break-all">
+                  {url}
+                </li>
+              ))}
+            </ul>
+          </Notice>
         </div>
       )}
       {!task.result && task.draft && (
