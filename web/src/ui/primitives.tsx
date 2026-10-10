@@ -65,12 +65,23 @@ export function Input({ className, mono, ...rest }: InputHTMLAttributes<HTMLInpu
   return <input className={cx(control, fill(className), "h-8", mono && "num", className)} spellCheck={false} autoComplete="off" {...rest} />;
 }
 
-/** A secret field with a toggle to show what was typed or pasted. */
-export function PasswordInput({ className, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { mono?: boolean }) {
+// Marks a field as none of a password manager's business (Bitwarden, 1Password, LastPass, Dashlane).
+const notACredential = { autoComplete: "off", "data-bwignore": true, "data-1p-ignore": true, "data-lpignore": "true", "data-form-type": "other" };
+
+/**
+ * A secret field with a toggle to show what was typed or pasted. `plain` is
+ * for a secret that is not a login credential, such as an API key: a text
+ * field masked by CSS, which password managers do not offer to fill or save.
+ */
+export function PasswordInput({ className, plain, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "type"> & { mono?: boolean; plain?: boolean }) {
   const [shown, setShown] = useState(false);
   return (
     <div className={cx("relative", fill(className), className)}>
-      <Input {...rest} type={shown ? "text" : "password"} className="pr-8" />
+      {plain ? (
+        <Input {...rest} {...notACredential} type="text" className={cx("pr-8", !shown && "[-webkit-text-security:disc]")} />
+      ) : (
+        <Input {...rest} type={shown ? "text" : "password"} className="pr-8" />
+      )}
       <button
         type="button"
         tabIndex={-1}

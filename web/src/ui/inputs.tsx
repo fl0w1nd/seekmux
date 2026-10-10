@@ -81,7 +81,7 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
     <div className="flex items-center gap-2">
       <PasswordInput
         mono
-        autoComplete="new-password"
+        plain
         autoFocus={editing}
         value={value.api_key}
         placeholder={placeholder ?? "粘贴 API key"}
