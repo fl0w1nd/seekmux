@@ -613,7 +613,7 @@ func (s *Server) handlePlayResearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	started := time.Now()
-	result, err := s.app.Research(r.Context(), webui, body.Question, body.override(), nil)
+	result, err := s.app.Research(r.Context(), webui, research.Request{Question: body.Question}, body.override(), nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -639,7 +639,7 @@ func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &body) {
 		return
 	}
-	id, err := s.app.StartResearch(r.Context(), webui, body.Question, body.override())
+	id, err := s.app.StartResearch(r.Context(), webui, research.Request{Question: body.Question}, body.override())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

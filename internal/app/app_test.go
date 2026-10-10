@@ -110,3 +110,29 @@ func TestOverrideTunesAndPinsARouteForOneCall(t *testing.T) {
 		}
 	}
 }
+
+func TestQuickResearchRunsOnAThirdOfTheBudget(t *testing.T) {
+	cfg := config.Default()
+	live := &Snapshot{Config: cfg}
+
+	s, err := live.with(config.ToolResearch, Override{Research: ResearchOverride{Quick: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, want := s.Config.Research, cfg.Research
+	if got.MaxSteps != want.MaxSteps/3 || got.MaxDurationSeconds != want.MaxDurationSeconds/3 || got.MaxTokens != want.MaxTokens/3 {
+		t.Errorf("quick budget = %d steps, %d s, %d tokens of %d, %d, %d", got.MaxSteps, got.MaxDurationSeconds, got.MaxTokens, want.MaxSteps, want.MaxDurationSeconds, want.MaxTokens)
+	}
+	if got.MaxContextTokens != want.MaxContextTokens {
+		t.Errorf("quick changed the context limit to %d", got.MaxContextTokens)
+	}
+
+	// A budget below the floors is left as it is rather than raised.
+	s, err = live.with(config.ToolResearch, Override{Research: ResearchOverride{Quick: true, MaxSteps: 2, MaxDurationSeconds: 30}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Config.Research; got.MaxSteps != 2 || got.MaxDurationSeconds != 30 {
+		t.Errorf("quick raised a small budget to %d steps, %d s", got.MaxSteps, got.MaxDurationSeconds)
+	}
+}

@@ -127,6 +127,9 @@ type ResearchOverride struct {
 	MaxDurationSeconds int    `json:"max_duration_seconds"`
 	MaxTokens          int64  `json:"max_tokens"`
 	MaxContextTokens   int64  `json:"max_context_tokens"`
+	// Quick cuts the run to a third of its steps, time and tokens, for a
+	// question a few pages can answer.
+	Quick bool `json:"quick"`
 }
 
 // RouteOverride holds a route's parameters as they should be for one call.
@@ -137,10 +140,15 @@ type RouteOverride struct {
 }
 
 // The ceilings of an overridden research budget: a run is bounded even when
-// a number is mistyped.
+// a number is mistyped. The floors are what a quick run keeps of a budget
+// that is small already.
 const (
 	maxResearchSteps    = 200
 	maxResearchDuration = 3600
+
+	quickResearchSteps    = 4
+	quickResearchDuration = 60
+	quickResearchTokens   = 100000
 )
 
 func (o ResearchOverride) apply(r *config.Research) error {
@@ -168,6 +176,11 @@ func (o ResearchOverride) apply(r *config.Research) error {
 	}
 	if o.MaxContextTokens > 0 {
 		r.MaxContextTokens = o.MaxContextTokens
+	}
+	if o.Quick {
+		r.MaxSteps = min(r.MaxSteps, max(r.MaxSteps/3, quickResearchSteps))
+		r.MaxDurationSeconds = min(r.MaxDurationSeconds, max(r.MaxDurationSeconds/3, quickResearchDuration))
+		r.MaxTokens = min(r.MaxTokens, max(r.MaxTokens/3, quickResearchTokens))
 	}
 	return nil
 }
@@ -407,14 +420,13 @@ func ResearchAvailable(s *Snapshot) bool {
 }
 
 // Research runs the research agent to completion. progress may be nil.
-func (a *App) Research(ctx context.Context, caller Caller, question string, o Override, progress func(research.Event)) (research.Result, error) {
+func (a *App) Research(ctx context.Context, caller Caller, req research.Request, o Override, progress func(research.Event)) (research.Result, error) {
 	s, err := a.Snapshot().with(config.ToolResearch, o)
 	if err != nil {
 		return research.Result{}, err
 	}
-	question = strings.TrimSpace(question)
-	if question == "" {
-		return research.Result{}, fmt.Errorf("question is required")
+	if err := req.Validate(); err != nil {
+		return research.Result{}, err
 	}
 	if !ResearchAvailable(s) {
 		return research.Result{}, fmt.Errorf("research is not enabled")
@@ -459,14 +471,14 @@ func (a *App) Research(ctx context.Context, caller Caller, question string, o Ov
 			}
 		}
 		// Every request the agent makes counts against the model's limits.
-		result, err = research.Run(ctx, s.Config.Research, model.Limited(a.Limits), tools, question, report)
+		result, err = research.Run(ctx, s.Config.Research, model.Limited(a.Limits), tools, req, report)
 	}
 
-	entry := store.LogEntry{Status: store.StatusOK, Summary: question, Provider: s.Config.Research.Model}
+	entry := store.LogEntry{Status: store.StatusOK, Summary: req.Question, Provider: s.Config.Research.Model}
 	if err != nil {
 		entry.Status, entry.Error = store.StatusError, err.Error()
 	}
-	a.logCall(s, caller, config.ToolResearch, trace, entry, map[string]string{"question": question}, result)
+	a.logCall(s, caller, config.ToolResearch, trace, entry, req, result)
 	return result, err
 }
 
@@ -482,10 +494,9 @@ type ResearchBudget struct {
 
 // StartResearch runs research in the background and returns the id of the
 // task that holds its progress and its result.
-func (a *App) StartResearch(ctx context.Context, caller Caller, question string, o Override) (string, error) {
-	question = strings.TrimSpace(question)
-	if question == "" {
-		return "", fmt.Errorf("question is required")
+func (a *App) StartResearch(ctx context.Context, caller Caller, req research.Request, o Override) (string, error) {
+	if err := req.Validate(); err != nil {
+		return "", err
 	}
 	s, err := a.Snapshot().with(config.ToolResearch, o)
 	if err != nil {
@@ -496,7 +507,7 @@ func (a *App) StartResearch(ctx context.Context, caller Caller, question string,
 	}
 	r := s.Config.Research
 	id := store.NewToken("rs_")
-	if err := a.Store.CreateTask(ctx, id, question, ResearchBudget{
+	if err := a.Store.CreateTask(ctx, id, req.Question, ResearchBudget{
 		Model: r.Model, Reading: r.Reading, MaxSteps: r.MaxSteps, MaxDurationSeconds: r.MaxDurationSeconds,
 		MaxTokens: r.MaxTokens, MaxContextTokens: r.MaxContextTokens,
 	}); err != nil {
@@ -507,16 +518,17 @@ func (a *App) StartResearch(ctx context.Context, caller Caller, question string,
 	a.tasks.Go(func() {
 		defer a.running.Delete(id)
 		defer cancel(nil)
-		result, err := a.Research(run, caller, question, o, func(event research.Event) {
+		result, err := a.Research(run, caller, req, o, func(event research.Event) {
 			if event.Kind != "" {
 				a.Store.AddTaskStep(a.background, id, store.TaskStep{Step: event.Step, Kind: event.Kind, Text: event.Text, Line: event.Line()})
 			}
 			a.Store.SetTaskSpent(a.background, id, event.Spent, event.Draft)
 		})
-		// A run that failed before its first step has no totals to show.
+		// A run that failed before its first step has no totals to show. The
+		// report and the draft are kept in columns of their own.
 		var stats any
-		if totals := result; totals != (research.Result{}) {
-			totals.Report = ""
+		if totals := result; totals.Ran() {
+			totals.Report, totals.Draft = "", ""
 			stats = totals
 		}
 		status, message := store.TaskDone, ""

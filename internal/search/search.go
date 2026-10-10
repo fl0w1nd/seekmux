@@ -79,10 +79,7 @@ func (a *Args) Validate(cfg *config.Config) error {
 		return fmt.Errorf("time_range must be one of: %s", strings.Join(TimeRanges, ", "))
 	}
 	var err error
-	if a.IncludeDomains, err = cleanDomains("include_domains", a.IncludeDomains); err != nil {
-		return err
-	}
-	if a.ExcludeDomains, err = cleanDomains("exclude_domains", a.ExcludeDomains); err != nil {
+	if a.IncludeDomains, a.ExcludeDomains, err = CleanDomains(a.IncludeDomains, a.ExcludeDomains); err != nil {
 		return err
 	}
 	if a.Engine == "" {
@@ -142,6 +139,17 @@ func Run(ctx context.Context, cfg *config.Config, client *http.Client, lim *core
 }
 
 var domainPattern = regexp.MustCompile(`^[\p{L}\p{N}-]+(\.[\p{L}\p{N}-]+)+$`)
+
+// CleanDomains checks the two domain filters of a call and returns them as
+// bare host names.
+func CleanDomains(include, exclude []string) ([]string, []string, error) {
+	include, err := cleanDomains("include_domains", include)
+	if err != nil {
+		return nil, nil, err
+	}
+	exclude, err = cleanDomains("exclude_domains", exclude)
+	return include, exclude, err
+}
 
 // cleanDomains reduces each entry, which callers also write as a URL, to a
 // bare host name.

@@ -29,6 +29,7 @@ How to work:
 - Start by searching. Run several differently worded queries at once rather than one at a time, and use time_range when the question is about recent events.
 - Search results are leads, not evidence. Open the pages that matter with fetch and go by what they actually say. Fetch several pages in the same step when you can.
 - Prefer primary sources: official documentation, source code, standards, papers, first-party announcements. Check a claim that matters against a second independent source.
+- A page that fails to load proves nothing either way. Try another source, and report the point as unverified rather than as absent.
 - Follow up on what you learn: new terms, version numbers, names and dates are better queries than your first guesses.
 - Stop when further searching would no longer change the report. You have a limited budget of steps; when told it is used up, write the report from what you have.
 
@@ -57,16 +58,63 @@ type Tools struct {
 	Fetch     func(ctx context.Context, args fetch.Args) (fetch.Result, error)
 }
 
+// Request is what a caller asks of a run.
+type Request struct {
+	Question string `json:"question"`
+	// IncludeDomains and ExcludeDomains bound every web search of the run,
+	// as search.Args takes them.
+	IncludeDomains []string `json:"include_domains,omitempty"`
+	ExcludeDomains []string `json:"exclude_domains,omitempty"`
+}
+
+// Validate checks the request and puts it in the form Run takes.
+func (r *Request) Validate() error {
+	if r.Question = strings.TrimSpace(r.Question); r.Question == "" {
+		return errors.New("question is required")
+	}
+	var err error
+	r.IncludeDomains, r.ExcludeDomains, err = search.CleanDomains(r.IncludeDomains, r.ExcludeDomains)
+	return err
+}
+
+// prompt is the question as the agent gets it. The agent is told of the
+// domain filters, or it would take a thin result for all there is.
+func (r Request) prompt() string {
+	prompt := r.Question
+	if len(r.IncludeDomains) > 0 {
+		prompt += "\n\nThe caller limited this research: your web searches only return results from " + strings.Join(r.IncludeDomains, ", ") + "."
+	}
+	if len(r.ExcludeDomains) > 0 {
+		prompt += "\n\nThe caller ruled out these sites, which your web searches never return: " + strings.Join(r.ExcludeDomains, ", ") + "."
+	}
+	return prompt
+}
+
 // Result is the outcome of a research run.
 type Result struct {
 	Report string `json:"report"`
 	Steps  int    `json:"steps"`
-	// BudgetExhausted is set when the agent was made to stop and report.
-	BudgetExhausted bool `json:"budget_exhausted,omitempty"`
-	Searches        int  `json:"searches"`
-	DevSearches     int  `json:"dev_searches,omitempty"`
-	Fetches         int  `json:"fetches"`
+	// BudgetExhausted is set when the agent was made to stop and report, and
+	// Exhausted names the limit that did it.
+	BudgetExhausted bool   `json:"budget_exhausted,omitempty"`
+	Exhausted       string `json:"exhausted,omitempty"`
+	Searches        int    `json:"searches"`
+	DevSearches     int    `json:"dev_searches,omitempty"`
+	Fetches         int    `json:"fetches"`
+	// Read lists the pages the agent read, in the order it opened them.
+	Read []string `json:"read,omitempty"`
+	// Unread lists the URLs the report cites although the agent never had
+	// their text: it neither read them nor got passages of them from
+	// dev_search.
+	Unread []string `json:"unread,omitempty"`
+	// Draft is what the model was writing when a run failed.
+	Draft string `json:"draft,omitempty"`
 	core.Usage
+}
+
+// Ran reports whether the run got far enough to have anything to show.
+func (r Result) Ran() bool {
+	return r.Steps > 0 || r.Searches+r.DevSearches+r.Fetches > 0
 }
 
 // The limits of the budget, as Spent.Exhausted names them.
@@ -153,9 +201,9 @@ type fetchInput struct {
 	Prompt string `json:"prompt" description:"What you want from the page: a question or an extraction instruction, with the scope and level of detail you need."`
 }
 
-// Run investigates the question. progress receives an event for every tool
+// Run investigates the question of req, which must have passed Validate. progress receives an event for every tool
 // call the agent makes and whenever the budget it has spent moves.
-func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools, question string, progress func(Event)) (Result, error) {
+func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools, req Request, progress func(Event)) (Result, error) {
 	if progress == nil {
 		progress = func(Event) {}
 	}
@@ -179,6 +227,9 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 		// taken as three bytes to the token.
 		settled, gathered int64
 		drafted           time.Time
+		// known holds the pages whose text the agent was given, by pageKey.
+		known = map[string]bool{}
+		pages []string
 	)
 	report := func(kind, text string, change func()) {
 		mu.Lock()
@@ -202,7 +253,10 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	searchTool := fantasy.NewParallelAgentTool("search", "Search the web and return relevant results.",
 		func(ctx context.Context, in searchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
 			report(EventSearch, strings.Join(in.Queries, " | "), func() { spent.Searches++ })
-			out, err := tools.Search(ctx, search.Args{Queries: in.Queries, MaxResults: 6, TimeRange: in.TimeRange})
+			out, err := tools.Search(ctx, search.Args{
+				Queries: in.Queries, MaxResults: 6, TimeRange: in.TimeRange,
+				IncludeDomains: req.IncludeDomains, ExcludeDomains: req.ExcludeDomains,
+			})
 			if err != nil {
 				return fantasy.NewTextErrorResponse(err.Error()), nil
 			}
@@ -218,6 +272,13 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 			if out.Error != "" {
 				return fantasy.NewTextErrorResponse(out.Error), nil
 			}
+			// A result carries the passages that matched: the agent has read
+			// that much of the page.
+			mu.Lock()
+			for _, item := range out.Results {
+				known[pageKey(item.URL)] = true
+			}
+			mu.Unlock()
 			return jsonResponse(out), nil
 		})
 	read := func(ctx context.Context, args fetch.Args) (fantasy.ToolResponse, error) {
@@ -226,22 +287,38 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 		if err != nil {
 			return fantasy.NewTextErrorResponse(err.Error()), nil
 		}
+		if key := pageKey(args.URL); out.Error == "" {
+			mu.Lock()
+			if !known[key] {
+				pages = append(pages, args.URL)
+			}
+			known[key] = true
+			mu.Unlock()
+		}
 		return jsonResponse(out), nil
 	}
 	// Reading the text itself keeps the agent on primary material; having the
 	// extract models answer per page costs it far less context.
-	fetchTool := fantasy.NewParallelAgentTool("fetch", "Read the text of a web page. A long page comes in parts: when the result has next_offset, call again with it to read on.",
-		func(ctx context.Context, in readInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
-			return read(ctx, fetch.Args{URL: in.URL, Raw: true, Offset: in.Offset})
-		})
-	if cfg.Reading == config.ReadingExtract {
-		fetchTool = fantasy.NewParallelAgentTool("fetch", "Read a web page and get the answer to your prompt from its content.",
-			func(ctx context.Context, in fetchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
-				return read(ctx, fetch.Args{URL: in.URL, Prompt: in.Prompt})
+	page := func(name, description string) fantasy.AgentTool {
+		return fantasy.NewParallelAgentTool(name, description+" A long page comes in parts: when the result has next_offset, call again with it to read on.",
+			func(ctx context.Context, in readInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
+				return read(ctx, fetch.Args{URL: in.URL, Raw: true, Offset: in.Offset})
 			})
 	}
+	readers := []fantasy.AgentTool{page("fetch", "Read the text of a web page.")}
+	if cfg.Reading == config.ReadingExtract {
+		// An answer is only as good as the extract model's reading, so the
+		// text stays within reach for the pages where that is not enough.
+		readers = []fantasy.AgentTool{
+			fantasy.NewParallelAgentTool("fetch", "Read a web page and get the answer to your prompt from its content.",
+				func(ctx context.Context, in fetchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
+					return read(ctx, fetch.Args{URL: in.URL, Prompt: in.Prompt})
+				}),
+			page("read_page", "Read the original text of a web page instead of an answer about it. This costs far more context than fetch: keep it for code, commands and exact wording, and for checking an answer that matters."),
+		}
+	}
 
-	offered := []fantasy.AgentTool{searchTool, fetchTool}
+	offered := []fantasy.AgentTool{searchTool}
 	system := cfg.SystemPrompt
 	if strings.TrimSpace(system) == "" {
 		system = DefaultSystemPrompt
@@ -251,15 +328,16 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 		}
 	}
 	if tools.DevSearch != nil {
-		offered = []fantasy.AgentTool{searchTool, devSearchTool, fetchTool}
+		offered = append(offered, devSearchTool)
 	}
+	offered = append(offered, readers...)
 	system = strings.ReplaceAll(system, "{{date}}", started.Format("2006-01-02"))
 	agent := fantasy.NewAgent(model.Language, fantasy.WithSystemPrompt(system), fantasy.WithTools(offered...))
 
 	var result Result
 	done := trace.Begin("llm", model.Label, "")
 	out, err := agent.Stream(ctx, fantasy.AgentStreamCall{
-		Prompt:          question,
+		Prompt:          req.prompt(),
 		ProviderOptions: model.Options,
 		MaxOutputTokens: model.MaxOutputTokens,
 		// One step past the budget is reserved for the report.
@@ -299,7 +377,7 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 				report("", "", settle)
 				return ctx, fantasy.PrepareStepResult{Messages: model.CachePrefix(opt.Messages)}, nil
 			}
-			result.BudgetExhausted = true
+			result.BudgetExhausted, result.Exhausted = true, limit
 			report(EventWrapUp, limit, func() {
 				settle()
 				spent.Exhausted = limit
@@ -345,8 +423,11 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	})
 	mu.Lock()
 	result.Searches, result.DevSearches, result.Fetches = spent.Searches, spent.DevSearches, spent.Fetches
+	result.Read = pages
+	unfinished := strings.TrimSpace(draft.String())
 	mu.Unlock()
 	if err != nil {
+		result.Draft = unfinished
 		err = llm.Describe(err)
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			err = fmt.Errorf("research did not finish within %s", budget+2*time.Minute)
@@ -360,6 +441,7 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	result.Usage = llm.Usage(out.TotalUsage)
 	trace.AddUsage(result.Usage)
 	result.Report = strings.TrimSpace(out.Response.Content.Text())
+	result.Unread = unread(result.Report, known)
 	report("", "", func() {
 		spent.Steps, spent.Usage = result.Steps, result.Usage
 		draft.Reset()

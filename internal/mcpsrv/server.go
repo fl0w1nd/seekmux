@@ -120,7 +120,8 @@ const devSearchDescription = "Search an index of public code repositories and do
 
 const researchDescription = "Hand a question to a research agent that searches and reads the web on its own, then returns a sourced report. " +
 	"Use it for questions that need many searches and pages to answer; for a quick lookup use `search` and `fetch` yourself. " +
-	"State the question completely, with the context and constraints that matter: the agent knows nothing about your conversation. A run takes minutes."
+	"State the question completely, with the context and constraints that matter: the agent knows nothing about your conversation. A run takes minutes. " +
+	"The report is followed by a note on how the run ended and on any link it cites without having read the page."
 
 func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
 	snap := a.Snapshot()
@@ -230,21 +231,91 @@ func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
 }
 
 type researchArgs struct {
-	Question string `json:"question"`
+	research.Request
+	Effort string `json:"effort"`
 }
+
+// override is the budget the caller chose for the run.
+func (a researchArgs) override() (app.Override, error) {
+	switch a.Effort {
+	case "", effortFull:
+		return app.Override{}, nil
+	case effortQuick:
+		return app.Override{Research: app.ResearchOverride{Quick: true}}, nil
+	}
+	return app.Override{}, fmt.Errorf("effort must be %q or %q", effortQuick, effortFull)
+}
+
+const (
+	effortQuick = "quick"
+	effortFull  = "full"
+)
 
 type taskArgs struct {
 	TaskID string `json:"task_id"`
 }
 
-const questionSchema = `{
+var questionSchema = `{
 	"type": "object",
 	"required": ["question"],
 	"properties": {
 		"question": {"type": "string", "minLength": 1,
-			"description": "The question to research, self-contained: include the context, constraints and the form of answer you need."}
+			"description": "The question to research, self-contained: include the context, constraints and the form of answer you need. Name the URLs of any pages the agent should start from."},
+		"include_domains": {"type": "array", "maxItems": ` + strconv.Itoa(search.MaxDomains) + `, "items": {"type": "string"},
+			"description": "Limit the agent's web searches to these domains and their subdomains, e.g. the documentation site of the library in question."},
+		"exclude_domains": {"type": "array", "maxItems": ` + strconv.Itoa(search.MaxDomains) + `, "items": {"type": "string"},
+			"description": "Keep these domains out of the agent's web searches."},
+		"effort": {"type": "string", "enum": ` + enum([]string{effortQuick, effortFull}) + `, "default": "` + effortFull + `",
+			"description": "quick: a short run on about a third of the budget, for a question a few pages can answer. full: the whole budget."}
 	}
 }`
+
+// limitWords names a research limit to the caller.
+var limitWords = map[string]string{
+	research.LimitSteps:    "step",
+	research.LimitDuration: "time",
+	research.LimitTokens:   "token",
+	research.LimitContext:  "context",
+}
+
+func bullets(urls []string) string {
+	return "\n- " + strings.Join(urls, "\n- ")
+}
+
+// finished is a report with what its text cannot tell the caller: whether
+// the agent was cut short, and which of its citations it never read.
+func finished(report string, r research.Result) *mcp.CallToolResult {
+	// A task kept from before runs recorded their totals has only its report.
+	if !r.Ran() {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: report}}}
+	}
+	var note strings.Builder
+	switch {
+	case r.Exhausted != "":
+		fmt.Fprintf(&note, "Research run: cut short. The %s budget ran out before the agent was done, so it wrote the report from what it had gathered; the report may be incomplete.", limitWords[r.Exhausted])
+	case r.BudgetExhausted:
+		note.WriteString("Research run: cut short. The budget ran out before the agent was done, so it wrote the report from what it had gathered; the report may be incomplete.")
+	default:
+		note.WriteString("Research run: the agent finished on its own.")
+	}
+	fmt.Fprintf(&note, " %d searches, %d page reads.", r.Searches+r.DevSearches, r.Fetches)
+	if len(r.Unread) > 0 {
+		note.WriteString("\n\nCited in the report although the agent never read the page. These links come from search snippets or the model's memory; treat what they are cited for as unverified:" + bullets(r.Unread))
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: report + "\n\n---\n" + note.String()}}}
+}
+
+// unfinished is the error of a run that wrote no report, with what the run
+// leaves the caller to go on.
+func unfinished(message string, read []string, draft string) *mcp.CallToolResult {
+	if len(read) > 0 {
+		message += "\n\nPages the agent had read by then:" + bullets(read)
+	}
+	if draft != "" {
+		message += "\n\nWhat the agent was writing when it stopped, unfinished and possibly only a note to itself:\n" + draft
+	}
+	return failure(errors.New(message))
+}
 
 func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller app.Caller) {
 	mcp.AddTool(server, &mcp.Tool{
@@ -252,6 +323,10 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 		Description: researchDescription + " The call returns when the report is ready; if your client times out on long calls, use `research_start` instead.",
 		InputSchema: schema(questionSchema),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args researchArgs) (*mcp.CallToolResult, any, error) {
+		override, err := args.override()
+		if err != nil {
+			return failure(err), nil, nil
+		}
 		if err := rateLimited(a, key); err != nil {
 			return failure(err), nil, nil
 		}
@@ -268,11 +343,11 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: token, Progress: step, Message: line})
 			}
 		}
-		result, err := a.Research(ctx, caller, args.Question, app.Override{}, progress)
+		result, err := a.Research(ctx, caller, args.Request, override, progress)
 		if err != nil {
-			return failure(err), nil, nil
+			return unfinished(err.Error(), result.Read, result.Draft), nil, nil
 		}
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: result.Report}}}, nil, nil
+		return finished(result.Report, result), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -280,10 +355,14 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 		Description: researchDescription + " Returns a task id immediately; poll `research_result` with it for the report.",
 		InputSchema: schema(questionSchema),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args researchArgs) (*mcp.CallToolResult, any, error) {
+		override, err := args.override()
+		if err != nil {
+			return failure(err), nil, nil
+		}
 		if err := rateLimited(a, key); err != nil {
 			return failure(err), nil, nil
 		}
-		id, err := a.StartResearch(ctx, caller, args.Question, app.Override{})
+		id, err := a.StartResearch(ctx, caller, args.Request, override)
 		if err != nil {
 			return failure(err), nil, nil
 		}
@@ -312,11 +391,16 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 			if !ok {
 				return failure(fmt.Errorf("unknown task_id; tasks are kept for 7 days")), nil, nil
 			}
+			// A task that ended before its first step has no stats.
+			var stats research.Result
+			if len(task.Stats) > 0 {
+				_ = json.Unmarshal(task.Stats, &stats)
+			}
 			switch {
 			case task.Status == store.TaskDone:
-				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: task.Result}}}, nil, nil
+				return finished(task.Result, stats), nil, nil
 			case task.Status == store.TaskFailed, task.Status == store.TaskCanceled:
-				return failure(fmt.Errorf("research failed: %s", task.Error)), nil, nil
+				return unfinished("research failed: "+task.Error, stats.Read, strings.TrimSpace(task.Draft)), nil, nil
 			case time.Now().After(deadline):
 				return text(map[string]string{
 					"status":   task.Status,
