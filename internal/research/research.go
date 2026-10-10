@@ -1,6 +1,6 @@
 // Package research runs the research agent: a model that searches and reads
-// the web through the same search and fetch tools the gateway exposes, then
-// writes a sourced report.
+// the web through the same search, dev_search and fetch tools the gateway
+// exposes, then writes a sourced report.
 package research
 
 import (
@@ -41,12 +41,20 @@ The report:
 
 Today's date is {{date}}.`
 
+// devSearchHint is added to the default prompt when the agent has dev_search.
+const devSearchHint = `
+
+You also have dev_search, which searches the issues, pull requests and READMEs of public code repositories and documentation sites. When the question is about a library, framework, API, tool or an error message, use it alongside search: it finds maintainer answers and documentation passages that web search misses. It does not cover the open web.`
+
 const finalNudge = "The research budget is used up. Do not call any more tools. Write the final report now from what you have gathered, following the report rules."
 
 // Tools are the gateway tools the agent may call.
 type Tools struct {
 	Search func(ctx context.Context, args search.Args) ([]search.QueryResult, error)
-	Fetch  func(ctx context.Context, args fetch.Args) (fetch.Result, error)
+	// DevSearch is nil when no dev_search provider can serve; the agent is
+	// then not offered the tool.
+	DevSearch func(ctx context.Context, args search.DevArgs) (search.DevResult, error)
+	Fetch     func(ctx context.Context, args fetch.Args) (fetch.Result, error)
 }
 
 // Result is the outcome of a research run.
@@ -56,6 +64,7 @@ type Result struct {
 	// BudgetExhausted is set when the agent was made to stop and report.
 	BudgetExhausted bool `json:"budget_exhausted,omitempty"`
 	Searches        int  `json:"searches"`
+	DevSearches     int  `json:"dev_searches,omitempty"`
 	Fetches         int  `json:"fetches"`
 	core.Usage
 }
@@ -71,9 +80,10 @@ const (
 // Spent is how much of its budget a run has used so far.
 type Spent struct {
 	// Steps counts the model rounds begun, the one under way included.
-	Steps    int `json:"steps"`
-	Searches int `json:"searches"`
-	Fetches  int `json:"fetches"`
+	Steps       int `json:"steps"`
+	Searches    int `json:"searches"`
+	DevSearches int `json:"dev_searches,omitempty"`
+	Fetches     int `json:"fetches"`
 	// Usage sums the rounds the model has finished.
 	core.Usage
 	// ContextTokens estimates the size of the next request to the model.
@@ -84,8 +94,9 @@ type Spent struct {
 
 // What an Event reports the agent doing.
 const (
-	EventSearch = "search"
-	EventFetch  = "fetch"
+	EventSearch    = "search"
+	EventDevSearch = "dev_search"
+	EventFetch     = "fetch"
 	// EventNote is what the model said before calling tools in a step.
 	EventNote = "note"
 	// EventWrapUp marks the budget running out; Text names the limit.
@@ -110,7 +121,7 @@ type Event struct {
 // not worth one: totals that moved, or the agent thinking aloud.
 func (e Event) Line() string {
 	switch e.Kind {
-	case EventSearch, EventFetch:
+	case EventSearch, EventDevSearch, EventFetch:
 		return e.Kind + ": " + e.Text
 	case EventWrapUp:
 		return "budget used up, writing the report"
@@ -124,6 +135,12 @@ const maxNote = 1200
 type searchInput struct {
 	Queries   []string `json:"queries" description:"One to three search queries, each worded differently."`
 	TimeRange string   `json:"time_range,omitempty" enum:"day,week,month,year" description:"Limit results to a recent publication window. Omit unless freshness matters."`
+}
+
+type devSearchInput struct {
+	Query string   `json:"query" description:"A natural-language question that names the library, framework or tool."`
+	Types []string `json:"types,omitempty" description:"Only return these kinds of result, among: doc, issue, pull_request, readme. Omit for all."`
+	Repos []string `json:"repos,omitempty" description:"Only search the issues, pull requests and READMEs of these repositories, each as owner/name."`
 }
 
 type readInput struct {
@@ -191,6 +208,18 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 			}
 			return jsonResponse(out), nil
 		})
+	devSearchTool := fantasy.NewParallelAgentTool("dev_search", "Search the issues, pull requests and READMEs of public code repositories and documentation sites. Each result carries the passages that matched.",
+		func(ctx context.Context, in devSearchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
+			report(EventDevSearch, in.Query, func() { spent.DevSearches++ })
+			out, err := tools.DevSearch(ctx, search.DevArgs{Query: in.Query, Types: in.Types, Repos: in.Repos})
+			if err != nil {
+				return fantasy.NewTextErrorResponse(err.Error()), nil
+			}
+			if out.Error != "" {
+				return fantasy.NewTextErrorResponse(out.Error), nil
+			}
+			return jsonResponse(out), nil
+		})
 	read := func(ctx context.Context, args fetch.Args) (fantasy.ToolResponse, error) {
 		report(EventFetch, args.URL, func() { spent.Fetches++ })
 		out, err := tools.Fetch(ctx, args)
@@ -212,12 +241,20 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 			})
 	}
 
+	offered := []fantasy.AgentTool{searchTool, fetchTool}
 	system := cfg.SystemPrompt
 	if strings.TrimSpace(system) == "" {
 		system = DefaultSystemPrompt
+		// A custom prompt is left as written; the tool's description speaks for it there.
+		if tools.DevSearch != nil {
+			system += devSearchHint
+		}
+	}
+	if tools.DevSearch != nil {
+		offered = []fantasy.AgentTool{searchTool, devSearchTool, fetchTool}
 	}
 	system = strings.ReplaceAll(system, "{{date}}", started.Format("2006-01-02"))
-	agent := fantasy.NewAgent(model.Language, fantasy.WithSystemPrompt(system), fantasy.WithTools(searchTool, fetchTool))
+	agent := fantasy.NewAgent(model.Language, fantasy.WithSystemPrompt(system), fantasy.WithTools(offered...))
 
 	var result Result
 	done := trace.Begin("llm", model.Label, "")
@@ -307,7 +344,7 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 		},
 	})
 	mu.Lock()
-	result.Searches, result.Fetches = spent.Searches, spent.Fetches
+	result.Searches, result.DevSearches, result.Fetches = spent.Searches, spent.DevSearches, spent.Fetches
 	mu.Unlock()
 	if err != nil {
 		err = llm.Describe(err)

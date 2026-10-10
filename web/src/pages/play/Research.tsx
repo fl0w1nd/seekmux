@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, FileText, Flag, MessageSquareText, RotateCcw, Search, SlidersHorizontal, Square, Undo2 } from "lucide-react";
+import { Bot, Braces, FileText, Flag, MessageSquareText, RotateCcw, Search, SlidersHorizontal, Square, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { hasOtherModels, ModelOverride } from "../../components/ModelPicker";
@@ -326,6 +326,8 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
         ? "模型正在输出"
         : last?.kind === "search" && last.step === spent.steps
           ? "正在搜索，等待结果"
+          : last?.kind === "dev_search" && last.step === spent.steps
+            ? "正在搜索开发资料，等待结果"
           : last?.kind === "fetch" && last.step === spent.steps
             ? `正在读取 ${host(last.text)}`
             : spent.steps <= 1 && rows.length === 0
@@ -350,7 +352,14 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
             {budget && <span className="text-ink-2">{budget.model}</span>}
             {budget && <span>{budget.reading === "raw" ? "读原文" : "读归纳"}</span>}
             <span>
-              搜索 <Count value={spent.searches} /> · 读取 <Count value={spent.fetches} />
+              搜索 <Count value={spent.searches} />
+              {(spent.dev_searches ?? 0) > 0 && (
+                <>
+                  {" "}
+                  · 开发资料 <Count value={spent.dev_searches ?? 0} />
+                </>
+              )}{" "}
+              · 读取 <Count value={spent.fetches} />
             </span>
             <span>{task.id}</span>
           </div>
@@ -562,7 +571,7 @@ function Gauge({
 
 /* ---------- Process ---------- */
 
-const rowIcon = { search: Search, fetch: FileText, note: MessageSquareText, wrap_up: Flag, line: FileText };
+const rowIcon = { search: Search, dev_search: Braces, fetch: FileText, note: MessageSquareText, wrap_up: Flag, line: FileText };
 
 function Timeline({ rows, live, phase, elapsed }: { rows: Row[]; live: boolean; phase: string | null; elapsed: number }) {
   // The list follows its newest row while the reader stays at its end.
@@ -634,6 +643,14 @@ function RowBody({ row }: { row: Row }) {
               {query}
             </span>
           ))}
+        </div>
+      );
+    case "dev_search":
+      // Told apart from a web search by its icon and its label: it asks a different index.
+      return (
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="tag shrink-0">开发资料</span>
+          <span className="min-w-0 text-xs break-words text-ink">{row.text}</span>
         </div>
       );
     case "fetch": {

@@ -346,6 +346,8 @@ export interface ResearchResult {
   steps: number;
   budget_exhausted?: boolean;
   searches: number;
+  /** Calls to dev_search; absent when there were none. */
+  dev_searches?: number;
   fetches: number;
   input_tokens: number;
   output_tokens: number;
@@ -370,6 +372,8 @@ export interface ResearchSpent {
   /** The model rounds begun, the one under way included. */
   steps: number;
   searches: number;
+  /** Calls to dev_search; absent when there were none. */
+  dev_searches?: number;
   fetches: number;
   input_tokens: number;
   output_tokens: number;
@@ -414,7 +418,7 @@ export interface ResearchStep {
   at: number;
   /** The model round it belongs to, from 1. */
   step?: number;
-  kind?: "search" | "fetch" | "note" | "wrap_up";
+  kind?: "search" | "dev_search" | "fetch" | "note" | "wrap_up";
   text?: string;
   line?: string;
 }

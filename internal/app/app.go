@@ -450,6 +450,14 @@ func (a *App) Research(ctx context.Context, caller Caller, question string, o Ov
 				return a.fetcher.Run(ctx, a.fetchRuntime(s, Override{}), args), nil
 			},
 		}
+		if search.DevAvailable(s.Config) {
+			tools.DevSearch = func(ctx context.Context, args search.DevArgs) (search.DevResult, error) {
+				if err := args.Validate(s.Config); err != nil {
+					return search.DevResult{}, err
+				}
+				return search.RunDev(ctx, s.Config, s.Client, a.Limits, args), nil
+			}
+		}
 		// Every request the agent makes counts against the model's limits.
 		result, err = research.Run(ctx, s.Config.Research, model.Limited(a.Limits), tools, question, report)
 	}
