@@ -1,11 +1,9 @@
 import { Link } from "wouter";
-import type { Route, Tool } from "../lib/api";
+import type { Route, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { optionText } from "../lib/options";
 import { Choice, ChoiceList, ChoiceStatus, type Tone } from "../ui/primitives";
 import { healthLabel, useStatus } from "./Health";
-
-type RoutedTool = Extract<Tool, "search" | "fetch">;
 
 /** The parameters of a route that differ from the provider's defaults, in words. */
 function changes(tool: RoutedTool, route: Route): string[] {

@@ -5,7 +5,7 @@ import { Link } from "wouter";
 import { allModels, hasOtherModels, ModelOverride } from "../components/ModelPicker";
 import { ProviderPicker } from "../components/ProviderPicker";
 import { Waterfall } from "../components/Waterfall";
-import { api, type Attempt, type FetchArgs, type FetchResult, type ResearchStep, type SearchArgs, type SearchResult } from "../lib/api";
+import { api, type Attempt, type DevSearchArgs, type DevSearchItem, type FetchArgs, type FetchResult, type ResearchStep, type SearchArgs, type SearchResult } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { compact, duration } from "../lib/format";
 import { PageHeader } from "../Shell";
@@ -13,7 +13,7 @@ import { ChipInput } from "../ui/inputs";
 import { Markdown } from "../ui/markdown";
 import { Badge, Button, CodeBlock, cx, Dot, Empty, Notice, NumberInput, Section, Segmented, Spinner, TabList, TabPanel, Tabs } from "../ui/primitives";
 
-type Tool = "search" | "fetch" | "research";
+type Tool = "search" | "dev_search" | "fetch" | "research";
 type View = "result" | "detail" | "code";
 
 // The limits of the search tool (search.MaxQueries, search.MaxDomains, maxResults).
@@ -21,6 +21,9 @@ const maxQueries = 3;
 const maxDomains = 10;
 const maxResultsLimit = 100;
 const defaultMaxResults = 5;
+// The limits of the dev_search tool (search.DevMaxResults, search.DevMaxRepos).
+const devMaxResults = 20;
+const devMaxRepos = 10;
 
 const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
@@ -33,6 +36,7 @@ export function PlaygroundPage() {
       onChange={setTool}
       options={[
         { value: "search", label: "搜索" },
+        { value: "dev_search", label: "开发者" },
         { value: "fetch", label: "抓取" },
         { value: "research", label: "研究" },
       ]}
@@ -44,6 +48,9 @@ export function PlaygroundPage() {
       <PageHeader title="调试台" description="直接调用网关工具，路由、限流与故障转移均与 MCP 调用一致，调用记入请求日志。" />
       <div hidden={tool !== "search"}>
         <SearchPlay switcher={switcher} />
+      </div>
+      <div hidden={tool !== "dev_search"}>
+        <DevSearchPlay switcher={switcher} />
       </div>
       <div hidden={tool !== "fetch"}>
         <FetchPlay switcher={switcher} />
@@ -532,6 +539,194 @@ function QueryResult({ result }: { result: SearchResult }) {
             ) : (
               <p className="mt-1 text-xs text-ink-3">提供商未返回摘要。</p>
             )}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/* ---------- Developer search ---------- */
+
+const devTypes = [
+  { value: "doc", label: "文档" },
+  { value: "issue", label: "Issue" },
+  { value: "pull_request", label: "PR" },
+  { value: "readme", label: "README" },
+];
+
+const repo = (text: string) =>
+  text
+    .replace(/^.*github\.com\//, "")
+    .replace(/\.git$/, "")
+    .split("/")
+    .slice(0, 2)
+    .join("/");
+
+function DevSearchPlay({ switcher }: { switcher: ReactNode }) {
+  const { config, provider } = useConfig();
+  const [query, setQuery] = useState("");
+  const [maxResults, setMaxResults] = useState(defaultMaxResults);
+  const [types, setTypes] = useState<string[]>([]);
+  const [repos, setRepos] = useState<string[]>([]);
+  const [view, setView] = useState<View>("result");
+  const [format, setFormat] = useState<"visual" | "json">("visual");
+  const run = useMutation({ mutationFn: api.playDevSearch });
+  const elapsed = useElapsed(run.isPending);
+
+  const args: DevSearchArgs = { query: query.trim() };
+  if (maxResults !== defaultMaxResults) args.maxResults = maxResults;
+  if (types.length > 0) args.types = types;
+  if (repos.length > 0) args.repos = repos;
+
+  const ready = args.query !== "";
+  const submit = () => {
+    if (!ready || run.isPending) return;
+    if (view === "code") setView("result");
+    run.mutate(args);
+  };
+
+  const data = run.data;
+  const routes = config.dev_search.routes.filter((r) => r.enabled);
+
+  return (
+    <Workbench
+      switcher={switcher}
+      composer={
+        <>
+          <Composer meta="用自然语言提问，并写明库或框架的名称" action={<RunButton label="搜索" loading={run.isPending} disabled={!ready} onClick={submit} />}>
+            <textarea
+              rows={4}
+              value={query}
+              spellCheck={false}
+              aria-label="问题"
+              placeholder="how do I configure retries in the go-sdk streamable http client"
+              className={cx(bare, "resize-none pt-2.5 leading-5")}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onModEnter(submit)}
+            />
+          </Composer>
+          <Section title="提供商" summary={routes.map((r) => provider(r.provider).name).join(" · ") || "未启用"} defaultOpen>
+            <p className="text-xs text-ink-3">
+              按{" "}
+              <Link href="/search" className="text-ink-2 underline underline-offset-2 hover:text-ink">
+                搜索页
+              </Link>{" "}
+              的开发者搜索路由执行。检索范围是公开代码仓库的 issue、已合并 PR、README 与文档站，不是开放网页。
+            </p>
+          </Section>
+          <Section title="数量与类型" summary={`${maxResults} 条 · ${types.length > 0 ? devTypes.filter((t) => types.includes(t.value)).map((t) => t.label).join("、") : "全部类型"}`}>
+            <Group label="结果数" hint={`1–${devMaxResults}，默认 ${defaultMaxResults}。每条结果附带匹配段落，篇幅远大于普通搜索的摘要`}>
+              <NumberInput min={1} value={maxResults} aria-label="结果数" onChange={(v) => setMaxResults(Math.min(devMaxResults, Math.max(1, Math.round(v))))} />
+            </Group>
+            <Group label="结果类型" hint="不选即全部">
+              <div className="flex flex-wrap gap-2">
+                {devTypes.map((type) => {
+                  const on = types.includes(type.value);
+                  return (
+                    <button
+                      key={type.value}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setTypes(on ? types.filter((t) => t !== type.value) : [...types, type.value])}
+                      className={cx(
+                        "flex h-7 items-center rounded-ctl border px-2.5 text-xs transition-colors",
+                        on ? "border-signal-text bg-signal/12 text-ink" : "border-line text-ink-3 hover:border-line-strong",
+                      )}
+                    >
+                      {type.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Group>
+          </Section>
+          <Section title="仓库" summary={repos.length > 0 ? `限定 ${repos.length} 个` : "不限"}>
+            <Group label="限定仓库" hint="只检索这些仓库的 issue、PR 与 README；对文档类结果无效">
+              <ChipInput value={repos} onChange={setRepos} max={devMaxRepos} normalize={repo} placeholder="modelcontextprotocol/go-sdk" aria-label="限定仓库" />
+            </Group>
+          </Section>
+        </>
+      }
+      output={
+        <Output
+          view={view}
+          onView={setView}
+          detail={{ label: traceLabel(data?.attempts), content: <TraceView attempts={data?.attempts} total={data?.duration_ms ?? 0} /> }}
+          actions={
+            data && (
+              <Segmented
+                size="sm"
+                value={format}
+                onChange={setFormat}
+                options={[
+                  { value: "visual", label: "可视" },
+                  { value: "json", label: "JSON" },
+                ]}
+              />
+            )
+          }
+          strip={
+            data &&
+            !run.isPending && (
+              <>
+                <span className="num text-ink">{duration(data.duration_ms)}</span>
+                {data.result.search_engine && <Badge tone="signal">{data.result.search_engine}</Badge>}
+                <span>{data.result.results.length} 条结果</span>
+              </>
+            )
+          }
+          result={
+            run.isPending ? (
+              <Waiting label={args.query} elapsed={elapsed} />
+            ) : run.error ? (
+              <Failure error={run.error} />
+            ) : data?.result.error ? (
+              <Failure error={new Error(data.result.error)} />
+            ) : data ? (
+              format === "json" ? (
+                <JSONView value={data.result} />
+              ) : (
+                <DevResults key={run.submittedAt} items={data.result.results} />
+              )
+            ) : (
+              <Start
+                title="输入问题后，此处显示命中的 issue、PR、README 与文档段落"
+                examples={["go-sdk streamable http stateless mode behind a reverse proxy", "sqlite busy_timeout with WAL mode", "vite proxy websocket not forwarded"]}
+                onPick={setQuery}
+              />
+            )
+          }
+          code={<CodeView tool="dev_search" args={args} />}
+        />
+      }
+    />
+  );
+}
+
+const devTypeLabel: Record<string, string> = Object.fromEntries(devTypes.map((t) => [t.value, t.label]));
+
+function DevResults({ items }: { items: DevSearchItem[] }) {
+  if (items.length === 0) return <Empty title="没有结果">可放宽类型或仓库限定后重试。</Empty>;
+  return (
+    <ol>
+      {items.map((item, i) => (
+        <li key={`${item.url}-${i}`} className="flex gap-3 border-b border-line px-4 py-3 last:border-b-0">
+          <span className="tag w-5 shrink-0 pt-0.5">{String(i + 1).padStart(2, "0")}</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-xs text-ink-3">
+              {item.type && <Badge>{devTypeLabel[item.type] ?? item.type}</Badge>}
+              <span className="num truncate text-ink-2">{host(item.url)}</span>
+            </div>
+            <a href={item.url} target="_blank" rel="noreferrer" title={item.url} className="group mt-0.5 flex items-center gap-1.5 text-sm font-medium hover:text-signal-text">
+              <span className="truncate">{item.title || item.url}</span>
+              <ExternalLink className="size-3 shrink-0 text-ink-3 opacity-0 group-hover:opacity-100" />
+            </a>
+            {item.passages?.map((passage, n) => (
+              <div key={n} className="mt-2 max-h-72 overflow-y-auto rounded-ctl border border-line bg-sunken px-3 py-2 text-xs">
+                <Markdown>{passage}</Markdown>
+              </div>
+            )) ?? <p className="mt-1 text-xs text-ink-3">提供商未返回匹配段落。</p>}
           </div>
         </li>
       ))}

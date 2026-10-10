@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
-import type { Route, Tool } from "../lib/api";
+import type { Route, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { Tripped, useStatus } from "./Health";
 import { customized, RouteOptions } from "./RouteOptions";
@@ -13,7 +13,7 @@ import { Badge, Button, cx, NumberInput, Switch, Tooltip } from "../ui/primitive
  * Each lane carries the limits of that provider for this tool, and opens to
  * the provider's own parameters.
  */
-export function RouteList({ tool }: { tool: Extract<Tool, "search" | "fetch"> }) {
+export function RouteList({ tool }: { tool: RoutedTool }) {
   const { config, update, provider } = useConfig();
   const routes = config[tool].routes;
   const status = useStatus();

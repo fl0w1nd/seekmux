@@ -269,6 +269,24 @@ func (a *App) Search(ctx context.Context, caller Caller, args search.Args) ([]se
 	return results, nil
 }
 
+// DevSearch serves the dev_search tool. The error is an invalid-arguments
+// error. The upstream calls land in the trace of ctx when it carries one.
+func (a *App) DevSearch(ctx context.Context, caller Caller, args search.DevArgs) (search.DevResult, error) {
+	s := a.Snapshot()
+	if err := args.Validate(s.Config); err != nil {
+		return search.DevResult{}, err
+	}
+	ctx, trace := traced(ctx)
+	result := search.RunDev(ctx, s.Config, s.Client, a.Limits, args)
+
+	entry := store.LogEntry{Status: store.StatusOK, Summary: args.Query, Provider: result.Engine, Error: result.Error}
+	if result.Error != "" {
+		entry.Status = store.StatusError
+	}
+	a.logCall(s, caller, config.ToolDevSearch, trace, entry, args, result)
+	return result, nil
+}
+
 // Fetch serves the fetch tool. The error is an invalid-arguments error.
 // The upstream calls land in the trace of ctx when it carries one.
 func (a *App) Fetch(ctx context.Context, caller Caller, args fetch.Args, o Override) (fetch.Result, error) {

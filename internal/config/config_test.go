@@ -33,12 +33,13 @@ func TestDefaultIsValidAndComplete(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Search.Routes) != 5 || len(c.Fetch.Routes) != 4 || len(c.Providers) != len(Catalog) {
-		t.Fatalf("routes: %d search, %d fetch, %d providers", len(c.Search.Routes), len(c.Fetch.Routes), len(c.Providers))
+	if len(c.Search.Routes) != 5 || len(c.DevSearch.Routes) != 1 || len(c.Fetch.Routes) != 4 || len(c.Providers) != len(Catalog) {
+		t.Fatalf("routes: %d search, %d dev_search, %d fetch, %d providers", len(c.Search.Routes), len(c.DevSearch.Routes), len(c.Fetch.Routes), len(c.Providers))
 	}
 }
 
-// A database written before Firecrawl served search lacks its search route.
+// A database written before Firecrawl served search has neither its search
+// route nor the dev_search section.
 func TestStoredDocumentGainsNewRoutes(t *testing.T) {
 	old := Default()
 	old.Search.Routes = old.Search.Routes[:4]
@@ -46,6 +47,12 @@ func TestStoredDocumentGainsNewRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	delete(doc, "dev_search")
+	data, _ = json.Marshal(doc)
 
 	c, err := FromStored(data)
 	if err != nil {
@@ -53,6 +60,9 @@ func TestStoredDocumentGainsNewRoutes(t *testing.T) {
 	}
 	if last := c.Search.Routes[len(c.Search.Routes)-1]; len(c.Search.Routes) != 5 || last.Provider != "firecrawl" || last.Enabled || last.RateLimit == "" {
 		t.Fatalf("search routes = %+v", c.Search.Routes)
+	}
+	if r := c.DevSearch.Routes; len(r) != 1 || r[0].Provider != "firecrawl" || !r[0].Enabled || c.DevSearch.TimeoutSeconds <= 0 {
+		t.Fatalf("dev_search = %+v", c.DevSearch)
 	}
 }
 
@@ -149,7 +159,7 @@ func TestYAMLRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if back.Providers["brave"].APIKey != "k" || len(back.Search.Routes) != 5 {
+	if back.Providers["brave"].APIKey != "k" || len(back.Search.Routes) != 5 || len(back.DevSearch.Routes) != 1 {
 		t.Fatalf("round trip lost data: %s", data)
 	}
 	if _, m, ok := back.ModelByID("m"); !ok || m.RateLimit != "5/m" || m.ExtraBody["reasoning_effort"] != "low" || back.Fetch.Extract.Models[0] != "m" {

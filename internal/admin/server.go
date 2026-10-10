@@ -67,6 +67,7 @@ func (s *Server) Handler() http.Handler {
 		"GET /api/stats":               s.handleStats,
 		"POST /api/cache/clear":        s.handleClearCache,
 		"POST /api/play/search":        s.handlePlaySearch,
+		"POST /api/play/dev_search":    s.handlePlayDevSearch,
 		"POST /api/play/fetch":         s.handlePlayFetch,
 		"POST /api/play/research":      s.handlePlayResearch,
 		"POST /api/play/model":         s.handlePlayModel,
@@ -437,6 +438,7 @@ func (s *Server) routeStatuses(cfg *config.Config) []routeStatus {
 		}
 	}
 	add(config.ToolSearch, cfg.Search.Routes)
+	add(config.ToolDevSearch, cfg.DevSearch.Routes)
 	add(config.ToolFetch, cfg.Fetch.Routes)
 	return out
 }
@@ -545,6 +547,20 @@ func (s *Server) handlePlaySearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"duration_ms": time.Since(trace.Start).Milliseconds(), "results": results, "attempts": trace.Attempts()})
+}
+
+func (s *Server) handlePlayDevSearch(w http.ResponseWriter, r *http.Request) {
+	var args search.DevArgs
+	if !readJSON(w, r, &args) {
+		return
+	}
+	trace := core.NewTrace()
+	result, err := s.app.DevSearch(core.WithTrace(r.Context(), trace), webui, args)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, map[string]any{"duration_ms": time.Since(trace.Start).Milliseconds(), "result": result, "attempts": trace.Attempts()})
 }
 
 func (s *Server) handlePlayFetch(w http.ResponseWriter, r *http.Request) {

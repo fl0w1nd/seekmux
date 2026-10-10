@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ProviderOption, Route, Tool } from "../lib/api";
+import type { ProviderOption, Route, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { extraText, optionText } from "../lib/options";
 import { JSONInput } from "../ui/inputs";
@@ -14,7 +14,7 @@ export function customized(route: Route): number {
  * The parameters of one provider for one tool, built from what the server
  * declares. A route keeps only the values that differ from the defaults.
  */
-export function RouteOptions({ tool, index }: { tool: Extract<Tool, "search" | "fetch">; index: number }) {
+export function RouteOptions({ tool, index }: { tool: RoutedTool; index: number }) {
   const { config, update, provider } = useConfig();
   const route = config[tool].routes[index];
   const options = provider(route.provider).options?.[tool] ?? [];

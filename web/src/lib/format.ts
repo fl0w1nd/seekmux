@@ -51,4 +51,4 @@ export function ago(ts: number | undefined): string {
   return `${Math.floor(seconds / 86400)} 天前`;
 }
 
-export const toolLabel: Record<string, string> = { search: "搜索", fetch: "抓取", research: "研究", llm: "模型" };
+export const toolLabel: Record<string, string> = { search: "搜索", dev_search: "开发者搜索", fetch: "抓取", research: "研究", llm: "模型" };

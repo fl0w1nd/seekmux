@@ -5,6 +5,7 @@ package mcpsrv
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -110,6 +111,12 @@ const fetchDescription = "Fetch a web page and answer `prompt` against it. A hel
 	"- Short pages and source-code files are returned as original text instead of an answer.\n" +
 	"- Set `raw` only when you need the original text itself, e.g. to copy a long passage or to double-check an answer."
 
+const devSearchDescription = "Search an index of public code repositories and documentation sites: issues, merged pull requests, READMEs and docs. " +
+	"Each result comes with the passages that matched, so it can often be used without fetching the page.\n" +
+	"- Use it for questions about a library, framework or tool: how to use or configure it, what an error means, whether a bug is known or fixed.\n" +
+	"- Ask in natural language and name the library. For anything else, and for news or recent releases, use `search`.\n" +
+	"- The index holds no source code; to read a file, `fetch` its URL."
+
 const researchDescription = "Hand a question to a research agent that searches and reads the web on its own, then returns a sourced report. " +
 	"Use it for questions that need many searches and pages to answer; for a quick lookup use `search` and `fetch` yourself. " +
 	"State the question completely, with the context and constraints that matter: the agent knows nothing about your conversation. A run takes minutes."
@@ -150,6 +157,38 @@ func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
 				return failure(err), nil, nil
 			}
 			return text(results, true), nil, nil
+		})
+	}
+
+	if allowed(config.ToolDevSearch) && search.DevAvailable(snap.Config) {
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "dev_search",
+			Description: devSearchDescription,
+			InputSchema: schema(`{
+				"type": "object",
+				"required": ["query"],
+				"properties": {
+					"query": {"type": "string", "minLength": 1,
+						"description": "A natural-language question. Example: \"how do I configure retries in the go-sdk streamable HTTP client\""},
+					"maxResults": {"type": "integer", "minimum": 1, "maximum": ` + strconv.Itoa(search.DevMaxResults) + `, "default": 5, "description": "Max results"},
+					"types": {"type": "array", "items": {"type": "string", "enum": ` + enum(search.DevTypes) + `},
+						"description": "Only return these kinds of result. Default: all."},
+					"repos": {"type": "array", "maxItems": ` + strconv.Itoa(search.DevMaxRepos) + `, "items": {"type": "string"},
+						"description": "Only search the issues, pull requests and READMEs of these repositories. Example: [\"modelcontextprotocol/go-sdk\"]"}
+				}
+			}`),
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args search.DevArgs) (*mcp.CallToolResult, any, error) {
+			if err := rateLimited(a, key); err != nil {
+				return failure(err), nil, nil
+			}
+			result, err := a.DevSearch(ctx, caller, args)
+			if err != nil {
+				return failure(err), nil, nil
+			}
+			if result.Error != "" {
+				return failure(errors.New(result.Error)), nil, nil
+			}
+			return text(result, true), nil, nil
 		})
 	}
 

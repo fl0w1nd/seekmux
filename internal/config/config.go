@@ -14,20 +14,22 @@ import (
 )
 
 const (
-	ToolSearch   = "search"
-	ToolFetch    = "fetch"
-	ToolResearch = "research"
+	ToolSearch    = "search"
+	ToolDevSearch = "dev_search"
+	ToolFetch     = "fetch"
+	ToolResearch  = "research"
 
 	LLMOpenAICompatible = "openai-compatible"
 	LLMAnthropic        = "anthropic"
 )
 
 // Tools lists every tool an API key can be scoped to.
-var Tools = []string{ToolSearch, ToolFetch, ToolResearch}
+var Tools = []string{ToolSearch, ToolDevSearch, ToolFetch, ToolResearch}
 
 type Config struct {
 	Providers map[string]*Provider `json:"providers"`
 	Search    Search               `json:"search"`
+	DevSearch DevSearch            `json:"dev_search"`
 	Fetch     Fetch                `json:"fetch"`
 	LLM       LLM                  `json:"llm"`
 	Research  Research             `json:"research"`
@@ -73,6 +75,13 @@ type Search struct {
 	Country  string  `json:"country,omitempty"`
 	Language string  `json:"language,omitempty"`
 	Routes   []Route `json:"routes"`
+}
+
+// DevSearch configures the dev_search tool, which searches an index of
+// repositories and documentation rather than the web.
+type DevSearch struct {
+	TimeoutSeconds float64 `json:"timeout_seconds"`
+	Routes         []Route `json:"routes"`
 }
 
 type Fetch struct {
@@ -318,12 +327,17 @@ var Catalog = []ProviderInfo{
 	},
 	{
 		ID: "firecrawl", Name: "Firecrawl", Website: "https://www.firecrawl.dev/app", KeyRequired: true,
-		DefaultBase:      map[string]string{ToolSearch: "https://api.firecrawl.dev", ToolFetch: "https://api.firecrawl.dev"},
-		DefaultRateLimit: map[string]string{ToolSearch: "5/m", ToolFetch: "5/m"},
+		DefaultBase: map[string]string{
+			ToolSearch: "https://api.firecrawl.dev", ToolDevSearch: "https://api.firecrawl.dev", ToolFetch: "https://api.firecrawl.dev",
+		},
+		DefaultRateLimit: map[string]string{ToolSearch: "5/m", ToolDevSearch: "5/m", ToolFetch: "5/m"},
 		Options: map[string][]Option{
 			ToolSearch: {
 				{Key: "highlights", Type: OptionBool, Default: true},
 				optCountry,
+			},
+			ToolDevSearch: {
+				{Key: "passages", Type: OptionInt, Default: 1, Min: 1, Max: 5},
 			},
 			ToolFetch: {
 				{Key: "max_age_hours", Type: OptionInt, Default: 48, Min: 0, Max: 17520},
@@ -359,7 +373,8 @@ func defaultRoutes(tool string, order ...string) []Route {
 // Default returns the configuration of a fresh install.
 func Default() *Config {
 	c := &Config{
-		Search: Search{TimeoutSeconds: 10, Routes: defaultRoutes(ToolSearch, "brave", "exa", "perplexity", "tavily", "firecrawl")},
+		Search:    Search{TimeoutSeconds: 10, Routes: defaultRoutes(ToolSearch, "brave", "exa", "perplexity", "tavily", "firecrawl")},
+		DevSearch: DevSearch{TimeoutSeconds: 15, Routes: defaultRoutes(ToolDevSearch, "firecrawl")},
 		Fetch: Fetch{
 			TimeoutSeconds:       30,
 			SlowThresholdSeconds: 15,
@@ -407,11 +422,15 @@ func (c *Config) Normalize() {
 	c.Search.Country = cleanFormat(FormatCountry, c.Search.Country)
 	c.Search.Language = cleanFormat(FormatLanguage, c.Search.Language)
 	c.Search.Routes = normalizeRoutes(ToolSearch, c.Search.Routes)
+	c.DevSearch.Routes = normalizeRoutes(ToolDevSearch, c.DevSearch.Routes)
 	c.Fetch.Routes = normalizeRoutes(ToolFetch, c.Fetch.Routes)
 
-	d := struct{ s, f, slow float64 }{10, 30, 15}
+	d := struct{ s, dev, f, slow float64 }{10, 15, 30, 15}
 	if c.Search.TimeoutSeconds <= 0 {
 		c.Search.TimeoutSeconds = d.s
+	}
+	if c.DevSearch.TimeoutSeconds <= 0 {
+		c.DevSearch.TimeoutSeconds = d.dev
 	}
 	if c.Fetch.TimeoutSeconds <= 0 {
 		c.Fetch.TimeoutSeconds = d.f
@@ -524,7 +543,7 @@ func (c *Config) Validate() error {
 	for _, tool := range []struct {
 		name   string
 		routes []Route
-	}{{ToolSearch, c.Search.Routes}, {ToolFetch, c.Fetch.Routes}} {
+	}{{ToolSearch, c.Search.Routes}, {ToolDevSearch, c.DevSearch.Routes}, {ToolFetch, c.Fetch.Routes}} {
 		for _, r := range tool.routes {
 			if _, err := ParseRateLimit(r.RateLimit); err != nil {
 				return fmt.Errorf("%s route %q: %w", tool.name, r.Provider, err)

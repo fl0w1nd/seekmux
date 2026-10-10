@@ -80,6 +80,7 @@ export interface Research {
 export interface Config {
   providers: Record<string, Provider>;
   search: { timeout_seconds: number; country?: string; language?: string; routes: Route[] };
+  dev_search: { timeout_seconds: number; routes: Route[] };
   fetch: {
     timeout_seconds: number;
     slow_threshold_seconds: number;
@@ -98,7 +99,10 @@ export interface Config {
   network: { proxy?: string };
 }
 
-export type Tool = "search" | "fetch" | "research";
+export type Tool = "search" | "dev_search" | "fetch" | "research";
+
+/** The tools served by a priority list of providers. */
+export type RoutedTool = "search" | "dev_search" | "fetch";
 
 export interface ProviderInfo {
   id: string;
@@ -269,6 +273,29 @@ export interface SearchArgs {
   search_engine?: string;
 }
 
+/** The arguments of the dev_search tool, as an MCP client sends them. */
+export interface DevSearchArgs {
+  query: string;
+  maxResults?: number;
+  types?: string[];
+  repos?: string[];
+}
+
+export interface DevSearchItem {
+  type?: string;
+  title?: string;
+  url?: string;
+  /** The parts of the document that matched, as markdown. */
+  passages?: string[];
+}
+
+export interface DevSearchResult {
+  search_engine?: string;
+  query: string;
+  results: DevSearchItem[];
+  error?: string;
+}
+
 /** The arguments of the fetch tool, as an MCP client sends them. */
 export interface FetchArgs {
   url: string;
@@ -424,6 +451,7 @@ export const api = {
   resetBreaker: (key: string) => post("/api/breaker/reset", { key }),
 
   playSearch: (body: SearchArgs) => post<{ duration_ms: number; results: SearchResult[]; attempts: Attempt[] | null }>("/api/play/search", body),
+  playDevSearch: (body: DevSearchArgs) => post<{ duration_ms: number; result: DevSearchResult; attempts: Attempt[] | null }>("/api/play/dev_search", body),
   /** `model` answers in place of the extract chain, for this call only. */
   playFetch: (body: FetchArgs & { model?: string }) => post<{ duration_ms: number; result: FetchResult; attempts: Attempt[] | null }>("/api/play/fetch", body),
   playModel: (provider: LLMProvider, model: Model) =>

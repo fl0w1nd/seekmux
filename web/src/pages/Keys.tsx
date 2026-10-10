@@ -167,6 +167,11 @@ function KeyDialog({
   const [scopes, setScopes] = useState<Tool[]>(initial?.scopes ?? ["search", "fetch"]);
   const [rateLimit, setRateLimit] = useState(initial?.rate_limit ?? "");
 
+  const devSearchReady = config.dev_search.routes.some((route) => {
+    const creds = config.providers[route.provider];
+    return route.enabled && Boolean(creds?.api_key || (creds?.api_key_hint && !creds.clear_api_key));
+  });
+
   const submit = useMutation({
     mutationFn: async () => {
       const body = { name: name.trim(), scopes, rate_limit: rateLimit };
@@ -221,6 +226,7 @@ function KeyDialog({
             })}
           </div>
         </Field>
+        {scopes.includes("dev_search") && !devSearchReady && <Notice>开发者搜索尚无可用的提供商，在「搜索」页启用并配置密钥前，该密钥无法使用此工具。</Notice>}
         {scopes.includes("research") && !config.research.enabled && <Notice>研究工具尚未启用，启用前该密钥无法使用此工具。</Notice>}
         <Field label="调用限流" hint="该密钥全部工具调用合计的频率上限">
           <RateLimitInput value={rateLimit} onChange={setRateLimit} fallback="60/m" />
