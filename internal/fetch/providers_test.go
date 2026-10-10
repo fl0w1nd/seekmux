@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/fl0w1nd/seekmux/internal/config"
@@ -110,5 +111,169 @@ func TestExaReportsAFailedPage(t *testing.T) {
 	_, _, _, err = capture(t, "exa", `{"results":[],"statuses":[{"status":"error","error":{"tag":"CRAWL_LIVECRAWL_TIMEOUT"}}]}`, nil, in)
 	if err == nil || err.Error() != "Exa could not get the page: CRAWL_LIVECRAWL_TIMEOUT" {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func lines(l ...string) string { return strings.Join(l, "\n") }
+
+// The samples are cut from Firecrawl's markdown for
+// https://docs.docker.com/reference/dockerfile/ and https://go.dev/doc/effective_go.
+func TestCleanFirecrawlMarkdown(t *testing.T) {
+	fence := "```"
+	for _, tc := range []struct{ name, in, want string }{
+		{
+			name: "link text wrapped in the page source",
+			in: lines(
+				`**begin with a `+"`FROM`"+` instruction**. This may be after [parser\\`,
+				`directives](https://docs.docker.com/reference/dockerfile/#parser-directives), and globally scoped`,
+				`[ARGs](https://docs.docker.com/reference/dockerfile/#arg).`,
+			),
+			want: lines(
+				`**begin with a `+"`FROM`"+` instruction**. This may be after [parser directives](https://docs.docker.com/reference/dockerfile/#parser-directives), and globally scoped`,
+				`[ARGs](https://docs.docker.com/reference/dockerfile/#arg).`,
+			),
+		},
+		{
+			name: "unbalanced bracket in a code block",
+			in: lines(
+				fence+"dockerfile",
+				`A:`,
+				`[\`,
+				`    {\`,
+				`\`,
+				`EOF\`,
+				`RUN --device=nvidia.com/gpu=all \\`,
+				`    ./llama-cli -m /models/model.gguf\`,
+				fence+`\`,
+				`\`,
+				`### [RUN --mount](https://docs.docker.com/reference/dockerfile/\#run---mount)\`,
+				`\`,
+				fence+`dockerfile\`,
+				`RUN --mount=[type=TYPE][,option=<value>[,option=<value>]...]\`,
+				fence+`\`,
+				`\`,
+				`| Type | Description |\`,
+				`| --- | --- |\`,
+				"| [`bind`](https://docs.docker.com/reference/dockerfile/#run---mounttypebind) (default) | Bind-mount context directories (read-only). |\\",
+				`\`,
+				fence+`powershell\`,
+				`ADD Execute-MyCmdlet.ps1 c:\example\\`,
+				fence,
+			),
+			want: lines(
+				fence+"dockerfile",
+				`A:`,
+				`[`,
+				`    {`,
+				``,
+				`EOF`,
+				`RUN --device=nvidia.com/gpu=all \`,
+				`    ./llama-cli -m /models/model.gguf`,
+				fence,
+				``,
+				`### [RUN --mount](https://docs.docker.com/reference/dockerfile/#run---mount)`,
+				``,
+				fence+`dockerfile`,
+				`RUN --mount=[type=TYPE][,option=<value>[,option=<value>]...]`,
+				fence,
+				``,
+				`| Type | Description |`,
+				`| --- | --- |`,
+				"| [`bind`](https://docs.docker.com/reference/dockerfile/#run---mounttypebind) (default) | Bind-mount context directories (read-only). |",
+				``,
+				fence+`powershell`,
+				`ADD Execute-MyCmdlet.ps1 c:\example\`,
+				fence,
+			),
+		},
+		{
+			name: "bracket closed later in the code block",
+			in: lines(
+				`    str := "["\`,
+				`    for i, elem := range s {\`,
+				`        str += fmt.Sprint(elem)\`,
+				`    }\`,
+				`    return str + "]"`,
+				`}`,
+			),
+			want: lines(
+				`    str := "["`,
+				`    for i, elem := range s {`,
+				`        str += fmt.Sprint(elem)`,
+				`    }`,
+				`    return str + "]"`,
+				`}`,
+			),
+		},
+		{
+			name: "block content inside a link",
+			in: lines(
+				`[![Logo](https://example.com/logo.png)\\`,
+				`\\`,
+				`Title\\`,
+				`\\`,
+				`Description](https://example.com/card)`,
+			),
+			want: `[![Logo](https://example.com/logo.png) Title Description](https://example.com/card)`,
+		},
+		{
+			name: "continuation inside brackets in a code block",
+			in:   lines(fence+"sh", `echo [a \\`, `b](c)`, fence),
+			want: lines(fence+"sh", `echo [a \`, `b](c)`, fence),
+		},
+		{
+			name: "heading anchors",
+			in: lines(
+				`## Introduction [¶](https://go.dev/doc/effective_go\#introduction)`,
+				`## C\# and [F\#](https://example.com/langs\#fsharp)`,
+				`See [embedding](https://go.dev/doc/effective_go#embedding).`,
+			),
+			want: lines(
+				`## Introduction [¶](https://go.dev/doc/effective_go#introduction)`,
+				`## C\# and [F\#](https://example.com/langs#fsharp)`,
+				`See [embedding](https://go.dev/doc/effective_go#embedding).`,
+			),
+		},
+	} {
+		if got := cleanFirecrawlMarkdown(tc.in); got != tc.want {
+			t.Errorf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestCleanFirecrawlMarkdownKeepsBackslashes(t *testing.T) {
+	fence := "```"
+	for _, in := range []string{
+		// Line continuations, with and without brackets on the line.
+		lines(fence+"dockerfile", `RUN apt-get update && \`, `    apt-get install -y curl`, `RUN ["echo", "a"] \`, `# comment`, fence),
+		// Windows paths and a trailing backslash.
+		lines(fence+"console", `COPY testfile.txt c:\\`, `RUN dir c:\`, ` Directory of C:\Users\me[1]`, fence),
+		// LaTeX.
+		lines(`$$`, `\begin{aligned}`, `a &= \frac{1}{2} \\`, `b &= \left[ x \right]`, `\end{aligned}`, `$$`),
+		// Hard breaks in prose, also after a link.
+		lines(`Roses are red\`, `[violets](https://example.com/v) are blue\`, `end`),
+		// Escapes outside heading link destinations.
+		lines(`## Use \# for comments`, `A [link](https://example.com/a\#b) in prose`, fence, `# [x](https://example.com/a\#b)`, fence),
+		// Brackets spanning a bare newline: not Firecrawl's converter, so the
+		// backslash on the first line is the page's own.
+		lines(`RUN [ "sh", "-c", \`, `  "echo",`, `  "hi" ]`),
+		"",
+	} {
+		if got := cleanFirecrawlMarkdown(in); got != in {
+			t.Errorf("changed:\n got %q\nwant %q", got, in)
+		}
+	}
+}
+
+func TestFirecrawlContentIsCleaned(t *testing.T) {
+	reply, _ := json.Marshal(map[string]any{"data": map[string]any{
+		"markdown": "x := \"[\"\\\ny := 1\\\nz := \"]\"\n\n## A [¶](https://example.com/p\\#a)\n",
+	}})
+	_, _, page, err := capture(t, "firecrawl", string(reply), nil, Input{URL: "https://example.com/p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "x := \"[\"\ny := 1\nz := \"]\"\n\n## A [¶](https://example.com/p#a)\n"; page.Content != want {
+		t.Errorf("content = %q, want %q", page.Content, want)
 	}
 }

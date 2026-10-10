@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -186,7 +188,128 @@ func firecrawlFetch(ctx context.Context, c call, in Input) (Page, error) {
 	if m.StatusCode >= 400 {
 		return Page{}, siteError("Firecrawl", m.StatusCode)
 	}
-	return Page{URL: m.SourceURL, Title: m.Title, Description: m.Description, Content: raw.Data.Markdown}, nil
+	return Page{URL: m.SourceURL, Title: m.Title, Description: m.Description, Content: cleanFirecrawlMarkdown(raw.Data.Markdown)}, nil
+}
+
+// cleanFirecrawlMarkdown undoes what Firecrawl's converter does to keep a
+// link on one logical line, which damages pages well beyond their links:
+//
+//   - While a "[" is open, every newline gets a backslash in front of it. The
+//     brackets are counted in code blocks too, so one unbalanced "[" in a code
+//     sample leaves the rest of the page with a backslash on every line: blank
+//     lines, table rows and code fences included.
+//   - A line break inside link text already carries one backslash of its own,
+//     a hard break where the page only wrapped its source.
+//   - "#" in a link destination on a heading line is escaped as "\#".
+//
+// Only those backslashes are removed. One the page wrote itself, like a shell
+// line continuation, comes back as the page had it.
+func cleanFirecrawlMarkdown(md string) string {
+	return unescapeHeadingAnchors(unescapeBracketNewlines(md))
+}
+
+// unescapeBracketNewlines replays Firecrawl's bracket count over md, drops the
+// backslash it put before each newline inside brackets, and joins link text
+// that was broken across lines.
+func unescapeBracketNewlines(md string) string {
+	out := make([]byte, 0, len(md))
+	var (
+		open   []int // per unclosed "[": len(breaks) when it opened
+		breaks []int // offsets in out of the hard breaks left outside code blocks
+		join   []bool
+		fenced bool
+	)
+	for i := 0; i < len(md); i++ {
+		if i == 0 || md[i-1] == '\n' {
+			if isFence(md[i:]) {
+				fenced = !fenced
+			}
+		}
+		switch md[i] {
+		case '[':
+			open = append(open, len(breaks))
+		case ']':
+			if n := len(open); n > 0 {
+				if i+1 < len(md) && md[i+1] == '(' {
+					for b := open[n-1]; b < len(breaks); b++ {
+						join[b] = true
+					}
+				}
+				open = open[:n-1]
+			}
+		case '\n':
+			if len(open) == 0 || i == len(md)-1 {
+				break
+			}
+			if len(out) == 0 || out[len(out)-1] != '\\' {
+				// Not the converter's output after all: it leaves no bare
+				// newline inside brackets.
+				return md
+			}
+			out = out[:len(out)-1]
+			if !fenced && trailingBackslashes(out)%2 == 1 {
+				breaks = append(breaks, len(out)-1)
+				join = append(join, false)
+			}
+		}
+		out = append(out, md[i])
+	}
+	if !slices.Contains(join, true) {
+		return string(out)
+	}
+	joined := make([]byte, 0, len(out))
+	from := 0
+	for b, at := range breaks {
+		if !join[b] {
+			continue
+		}
+		joined = append(joined, out[from:at]...)
+		if n := len(joined); n > 0 && joined[n-1] != ' ' && joined[n-1] != '[' {
+			joined = append(joined, ' ')
+		}
+		from = at + 2
+	}
+	return string(append(joined, out[from:]...))
+}
+
+func trailingBackslashes(b []byte) int {
+	n := 0
+	for n < len(b) && b[len(b)-1-n] == '\\' {
+		n++
+	}
+	return n
+}
+
+func isFence(line string) bool {
+	line = strings.TrimLeft(line, " ")
+	return strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~")
+}
+
+var (
+	headingLine     = regexp.MustCompile(`^ {0,3}#{1,6} `)
+	linkDestination = regexp.MustCompile(`\]\([^()\s]*\)`)
+)
+
+// unescapeHeadingAnchors turns "\#" back into "#" in the link destinations of
+// heading lines.
+func unescapeHeadingAnchors(md string) string {
+	if !strings.Contains(md, `\#`) {
+		return md
+	}
+	lines := strings.Split(md, "\n")
+	fenced := false
+	for i, line := range lines {
+		if isFence(line) {
+			fenced = !fenced
+		}
+		if fenced || !strings.Contains(line, `\#`) || !headingLine.MatchString(line) {
+			continue
+		}
+		lines[i] = linkDestination.ReplaceAllStringFunc(line, func(dest string) string {
+			return strings.ReplaceAll(dest, `\#`, "#")
+		})
+	}
+	return strings.Join(lines, "\n")
 }
 
 func tavilyFetch(ctx context.Context, c call, in Input) (Page, error) {
