@@ -7,7 +7,7 @@ export function SearchPage() {
   const { config, update } = useConfig();
   return (
     <>
-      <PageHeader title="搜索" description="search 与 dev_search 工具的提供商路由。auto 模式按以下顺序尝试：遇到限流、出错或超时时，立即切换到下一个提供商。" />
+      <PageHeader title="搜索" description="search 工具的提供商路由。auto 模式按以下顺序尝试：遇到限流、出错或超时时，立即切换到下一个提供商。" />
       <div className="flex flex-col gap-4">
         <Panel index="01" title="路由优先级" description="按从上到下的顺序依次尝试。调用方也可通过 search_engine 参数指定提供商。各提供商的专有参数在「参数」中设置。" flush>
           <RouteList tool="search" />
@@ -21,17 +21,6 @@ export function SearchPage() {
           </Row>
           <Row label="默认语言" hint="两位语言码，如 zh、en、ja。部分提供商仅优先返回该语言，Perplexity 会剔除其他语言的结果；Exa、Firecrawl 不支持该参数">
             <Input mono className="w-24" maxLength={2} placeholder="不指定" value={config.search.language ?? ""} onChange={(e) => update((d) => void (d.search.language = e.target.value.trim().toLowerCase() || undefined))} />
-          </Row>
-        </Panel>
-        <Panel
-          index="03"
-          title="开发者搜索"
-          description="dev_search 工具的提供商路由。该工具检索公开代码仓库的 issue、已合并 PR、README 与文档站，结果附带匹配段落。仅当至少一个提供商可用，且访问密钥勾选了该工具时，才会出现在 MCP 工具列表中。"
-          flush
-        >
-          <RouteList tool="dev_search" />
-          <Row label="总超时" hint="单次查询（含重试）的时间上限" className="border-t border-line">
-            <NumberInput className="w-24" min={1} suffix="秒" value={config.dev_search.timeout_seconds} onChange={(v) => update((d) => void (d.dev_search.timeout_seconds = v))} />
           </Row>
         </Panel>
       </div>

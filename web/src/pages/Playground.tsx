@@ -609,10 +609,10 @@ function DevSearchPlay({ switcher }: { switcher: ReactNode }) {
           <Section title="提供商" summary={routes.map((r) => provider(r.provider).name).join(" · ") || "未启用"} defaultOpen>
             <p className="text-xs text-ink-3">
               按{" "}
-              <Link href="/search" className="text-ink-2 underline underline-offset-2 hover:text-ink">
-                搜索页
+              <Link href="/dev-search" className="text-ink-2 underline underline-offset-2 hover:text-ink">
+                开发者搜索页
               </Link>{" "}
-              的开发者搜索路由执行。检索范围是公开代码仓库的 issue、已合并 PR、README 与文档站，不是开放网页。
+              的路由优先级执行。检索范围是公开代码仓库的 issue、已合并 PR、README 与文档站，不是开放网页。
             </p>
           </Section>
           <Section title="数量与类型" summary={`${maxResults} 条 · ${types.length > 0 ? devTypes.filter((t) => types.includes(t.value)).map((t) => t.label).join("、") : "全部类型"}`}>

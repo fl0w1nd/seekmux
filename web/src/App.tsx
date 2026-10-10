@@ -4,6 +4,7 @@ import { Route, Switch } from "wouter";
 import { api, setUnauthorizedHandler } from "./lib/api";
 import { ConfigProvider } from "./lib/config";
 import { DesignPage } from "./pages/Design";
+import { DevSearchPage } from "./pages/DevSearch";
 import { FetchPage } from "./pages/Fetch";
 import { KeysPage } from "./pages/Keys";
 import { LogsPage } from "./pages/Logs";
@@ -52,6 +53,7 @@ export function App() {
           <Route path="/play" component={PlaygroundPage} />
           <Route path="/providers" component={ProvidersPage} />
           <Route path="/search" component={SearchPage} />
+          <Route path="/dev-search" component={DevSearchPage} />
           <Route path="/fetch" component={FetchPage} />
           <Route path="/models" component={ModelsPage} />
           <Route path="/research" component={ResearchPage} />

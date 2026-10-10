@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Bot,
   Boxes,
+  Code,
   FileText,
   FlaskConical,
   Gauge,
@@ -51,6 +52,7 @@ const nav = [
     items: [
       { href: "/providers", label: "提供商", icon: Boxes },
       { href: "/search", label: "搜索", icon: Search },
+      { href: "/dev-search", label: "开发者搜索", icon: Code },
       { href: "/fetch", label: "抓取", icon: FileText },
     ],
   },
