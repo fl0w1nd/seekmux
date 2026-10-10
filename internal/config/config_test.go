@@ -33,8 +33,26 @@ func TestDefaultIsValidAndComplete(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Search.Routes) != 4 || len(c.Fetch.Routes) != 4 || len(c.Providers) != len(Catalog) {
+	if len(c.Search.Routes) != 5 || len(c.Fetch.Routes) != 4 || len(c.Providers) != len(Catalog) {
 		t.Fatalf("routes: %d search, %d fetch, %d providers", len(c.Search.Routes), len(c.Fetch.Routes), len(c.Providers))
+	}
+}
+
+// A database written before Firecrawl served search lacks its search route.
+func TestStoredDocumentGainsNewRoutes(t *testing.T) {
+	old := Default()
+	old.Search.Routes = old.Search.Routes[:4]
+	data, err := json.Marshal(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := FromStored(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if last := c.Search.Routes[len(c.Search.Routes)-1]; len(c.Search.Routes) != 5 || last.Provider != "firecrawl" || last.Enabled || last.RateLimit == "" {
+		t.Fatalf("search routes = %+v", c.Search.Routes)
 	}
 }
 
@@ -47,7 +65,7 @@ func TestNormalizeRepairsRoutes(t *testing.T) {
 	for _, r := range c.Search.Routes {
 		got = append(got, r.Provider)
 	}
-	if strings.Join(got, ",") != "exa,brave,perplexity,tavily" {
+	if strings.Join(got, ",") != "exa,brave,perplexity,tavily,firecrawl" {
 		t.Fatalf("routes = %v", got)
 	}
 	if c.Search.Routes[1].Enabled {
@@ -131,7 +149,7 @@ func TestYAMLRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if back.Providers["brave"].APIKey != "k" || len(back.Search.Routes) != 4 {
+	if back.Providers["brave"].APIKey != "k" || len(back.Search.Routes) != 5 {
 		t.Fatalf("round trip lost data: %s", data)
 	}
 	if _, m, ok := back.ModelByID("m"); !ok || m.RateLimit != "5/m" || m.ExtraBody["reasoning_effort"] != "low" || back.Fetch.Extract.Models[0] != "m" {

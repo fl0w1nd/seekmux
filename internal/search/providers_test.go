@@ -76,6 +76,12 @@ func TestDefaultRequests(t *testing.T) {
 	if !reflect.DeepEqual(body, want) {
 		t.Errorf("perplexity body = %v", body)
 	}
+
+	_, body = capture(t, "firecrawl", nil, in)
+	want = map[string]any{"query": "q", "limit": 5.0, "tbs": "qdr:w"}
+	if !reflect.DeepEqual(body, want) {
+		t.Errorf("firecrawl body = %v", body)
+	}
 }
 
 func TestOptionsReachTheRequest(t *testing.T) {
@@ -120,6 +126,14 @@ func TestOptionsReachTheRequest(t *testing.T) {
 	if body["search_type"] != "fast" || body["max_tokens_per_page"] != 128.0 || body["max_tokens"] != 2000.0 || body["country"] != "JP" ||
 		!reflect.DeepEqual(body["search_language_filter"], []any{"ja"}) || !reflect.DeepEqual(body["search_domain_filter"], []any{"a.com", "b.org"}) {
 		t.Errorf("perplexity body = %v", body)
+	}
+
+	_, body = capture(t, "firecrawl", func(cfg *config.Config, r *config.Route) {
+		global(cfg)
+		r.Options = map[string]any{"highlights": false}
+	}, in)
+	if body["country"] != "JP" || body["highlights"] != false || !reflect.DeepEqual(body["includeDomains"], []any{"a.com", "b.org"}) || body["excludeDomains"] != nil {
+		t.Errorf("firecrawl body = %v", body)
 	}
 
 	_, body = capture(t, "perplexity", nil, Input{Query: "q", MaxResults: 5, ExcludeDomains: []string{"c.net"}})

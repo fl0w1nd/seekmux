@@ -19,7 +19,7 @@ export function SearchPage() {
           <Row label="默认地区" hint="两位国家码，如 US、CN、JP。传递给所有支持地区参数的提供商，可在各提供商的「参数」中单独覆盖；留空则不指定">
             <Input mono className="w-24" maxLength={2} placeholder="不指定" value={config.search.country ?? ""} onChange={(e) => update((d) => void (d.search.country = e.target.value.trim().toUpperCase() || undefined))} />
           </Row>
-          <Row label="默认语言" hint="两位语言码，如 zh、en、ja。部分提供商仅优先返回该语言，Perplexity 会剔除其他语言的结果；Exa 不支持该参数">
+          <Row label="默认语言" hint="两位语言码，如 zh、en、ja。部分提供商仅优先返回该语言，Perplexity 会剔除其他语言的结果；Exa、Firecrawl 不支持该参数">
             <Input mono className="w-24" maxLength={2} placeholder="不指定" value={config.search.language ?? ""} onChange={(e) => update((d) => void (d.search.language = e.target.value.trim().toLowerCase() || undefined))} />
           </Row>
         </Panel>

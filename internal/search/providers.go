@@ -66,8 +66,35 @@ type executor func(ctx context.Context, c call, in Input) (Output, error)
 var executors = map[string]executor{
 	"brave":      braveSearch,
 	"exa":        exaSearch,
+	"firecrawl":  firecrawlSearch,
 	"perplexity": perplexitySearch,
 	"tavily":     tavilySearch,
+}
+
+// newCall resolves where and how route reaches its provider for tool.
+func newCall(cfg *config.Config, client *http.Client, tool string, route config.Route) call {
+	info, _ := config.Info(route.Provider)
+	creds := cfg.Providers[route.Provider]
+	return call{
+		client: client, base: cmp.Or(creds.BaseURL, info.DefaultBase[tool]), apiKey: creds.APIKey,
+		opt: config.OptionValues(tool, route), extra: route.ExtraBody,
+	}
+}
+
+// routed wraps run as the provider of route for tool.
+func routed[In, Out any](tool string, route config.Route, c call, run func(context.Context, call, In) (Out, error)) core.Provider[In, Out] {
+	info, _ := config.Info(route.Provider)
+	limit, _ := config.ParseRateLimit(route.RateLimit)
+	return core.Provider[In, Out]{
+		Name:        route.Provider,
+		Key:         route.Provider + ":" + tool,
+		RateLimit:   limit,
+		Concurrency: route.Concurrency,
+		Available:   route.Enabled && (c.apiKey != "" || !info.KeyRequired),
+		Execute: func(ctx context.Context, in In) (Out, error) {
+			return run(ctx, c, in)
+		},
+	}
 }
 
 // Providers builds the search providers of cfg in priority order.
@@ -78,30 +105,14 @@ func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, O
 		if !ok {
 			continue
 		}
-		info, _ := config.Info(route.Provider)
-		creds := cfg.Providers[route.Provider]
-		base := creds.BaseURL
-		if base == "" {
-			base = info.DefaultBase[config.ToolSearch]
-		}
-		limit, _ := config.ParseRateLimit(route.RateLimit)
-		c := call{client: client, base: base, apiKey: creds.APIKey, opt: config.OptionValues(config.ToolSearch, route), extra: route.ExtraBody}
+		c := newCall(cfg, client, config.ToolSearch, route)
 		if _, ok := c.opt[config.OptionCountry]; ok {
 			c.country = cmp.Or(c.opt.Str(config.OptionCountry), cfg.Search.Country)
 		}
 		if _, ok := c.opt[config.OptionLanguage]; ok {
 			c.language = cmp.Or(c.opt.Str(config.OptionLanguage), cfg.Search.Language)
 		}
-		out = append(out, core.Provider[Input, Output]{
-			Name:        route.Provider,
-			Key:         route.Provider + ":" + config.ToolSearch,
-			RateLimit:   limit,
-			Concurrency: route.Concurrency,
-			Available:   route.Enabled && (creds.APIKey != "" || !info.KeyRequired),
-			Execute: func(ctx context.Context, in Input) (Output, error) {
-				return run(ctx, c, in)
-			},
-		})
+		out = append(out, routed(config.ToolSearch, route, c, run))
 	}
 	return out
 }
@@ -292,6 +303,57 @@ func exaSearch(ctx context.Context, c call, in Input) (Output, error) {
 			description = strings.Join(r.Highlights, " … ")
 		}
 		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: description, Age: r.PublishedDate})
+	}
+	return out, nil
+}
+
+var firecrawlRanges = map[string]string{"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"}
+
+func firecrawlSearch(ctx context.Context, c call, in Input) (Output, error) {
+	// Without scrapeOptions a result costs nothing beyond the search itself.
+	body := map[string]any{"query": in.Query, "limit": min(in.MaxResults, 100)}
+	if tbs := firecrawlRanges[in.TimeRange]; tbs != "" {
+		body["tbs"] = tbs
+	}
+	if c.country != "" {
+		body["country"] = c.country
+	}
+	if !c.opt.Bool("highlights") {
+		body["highlights"] = false
+	}
+	// Firecrawl takes one of the two filters. Given both, the allowlist goes
+	// to the API and Run drops the excluded hosts.
+	if len(in.IncludeDomains) > 0 {
+		body["includeDomains"] = in.IncludeDomains
+	} else if len(in.ExcludeDomains) > 0 {
+		body["excludeDomains"] = in.ExcludeDomains
+	}
+	maps.Copy(body, c.extra)
+
+	var raw struct {
+		Data struct {
+			Web []struct {
+				Title       string `json:"title"`
+				URL         string `json:"url"`
+				Description string `json:"description"`
+			} `json:"web"`
+		} `json:"data"`
+	}
+	err := core.DoJSON(ctx, c.client, core.Request{
+		Provider: "Firecrawl",
+		Classify: upstream.Firecrawl,
+		Method:   http.MethodPost,
+		URL:      c.base + "/v2/search",
+		Header:   map[string]string{"Authorization": "Bearer " + c.apiKey},
+		Body:     body,
+	}, &raw)
+	if err != nil {
+		return Output{}, err
+	}
+
+	out := Output{Query: in.Query, Web: []Item{}}
+	for _, r := range raw.Data.Web {
+		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: r.Description})
 	}
 	return out, nil
 }

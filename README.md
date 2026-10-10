@@ -14,7 +14,7 @@ It is one small Go binary with a single SQLite file, meant for a cheap server.
 
 | Tool | Providers | Behaviour |
 | --- | --- | --- |
-| `search` | Brave, Exa, Perplexity, Tavily | Tried in your priority order; a provider that is rate limited or failing is skipped. |
+| `search` | Brave, Exa, Firecrawl, Perplexity, Tavily | Tried in your priority order; a provider that is rate limited or failing is skipped. |
 | `fetch` | Exa, Firecrawl, Jina Reader, Tavily | A slow provider is raced by the next one. Given a prompt, a model answers from the page instead of returning all of it. |
 | `research` | any configured model | An agent searches and reads on its own and returns a sourced report. Also available as `research_start` / `research_result` for clients with short timeouts. |
 

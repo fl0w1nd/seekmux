@@ -41,6 +41,9 @@ const text: Record<string, OptionText> = {
   "jina.fetch.cache_tolerance_seconds": { label: "缓存容忍时长", unit: "秒", hint: "可接受的缓存最长时效，0 为不使用缓存。留空为 Jina 默认的 1 小时" },
   "jina.fetch.proxy_country": { label: "代理地区", hint: "经该国家的代理访问页面，两位国家码。需要 API key" },
 
+  "firecrawl.search.highlights": { label: "相关摘录", hint: "摘要取页面中与查询相关的段落；关闭后返回搜索引擎的原始摘要，更短" },
+  "firecrawl.search.country": { label: "地区", hint: "两位国家码，留空则继承默认地区。Firecrawl 不支持语言参数" },
+
   "firecrawl.fetch.max_age_hours": { label: "缓存时长", unit: "小时", hint: "缓存未超过该时长时直接返回，0 为始终重新抓取" },
   "firecrawl.fetch.proxy": { label: "代理", hint: "enhanced 对有反爬措施的站点更可靠，但速度较慢；auto 先使用 basic，失败后切换" },
   "firecrawl.fetch.wait_for_ms": { label: "额外等待", unit: "ms", hint: "页面加载后额外等待该时长再提取内容，适用于内容延迟加载的页面" },

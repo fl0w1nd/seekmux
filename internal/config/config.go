@@ -318,17 +318,23 @@ var Catalog = []ProviderInfo{
 	},
 	{
 		ID: "firecrawl", Name: "Firecrawl", Website: "https://www.firecrawl.dev/app", KeyRequired: true,
-		DefaultBase:      map[string]string{ToolFetch: "https://api.firecrawl.dev"},
-		DefaultRateLimit: map[string]string{ToolFetch: "5/m"},
-		Options: map[string][]Option{ToolFetch: {
-			{Key: "max_age_hours", Type: OptionInt, Default: 48, Min: 0, Max: 17520},
-			{Key: "proxy", Type: OptionEnum, Default: "auto", Values: []string{"auto", "basic", "enhanced"}},
-			{Key: "wait_for_ms", Type: OptionInt, Default: 0, Min: 0, Max: 60000},
-			{Key: "only_main_content", Type: OptionBool, Default: true},
-			{Key: "pdf_mode", Type: OptionEnum, Default: "auto", Values: []string{"auto", "fast", "ocr"}},
-			{Key: "pdf_max_pages", Type: OptionInt, Min: 1, Max: 10000},
-			optCountry,
-		}},
+		DefaultBase:      map[string]string{ToolSearch: "https://api.firecrawl.dev", ToolFetch: "https://api.firecrawl.dev"},
+		DefaultRateLimit: map[string]string{ToolSearch: "5/m", ToolFetch: "5/m"},
+		Options: map[string][]Option{
+			ToolSearch: {
+				{Key: "highlights", Type: OptionBool, Default: true},
+				optCountry,
+			},
+			ToolFetch: {
+				{Key: "max_age_hours", Type: OptionInt, Default: 48, Min: 0, Max: 17520},
+				{Key: "proxy", Type: OptionEnum, Default: "auto", Values: []string{"auto", "basic", "enhanced"}},
+				{Key: "wait_for_ms", Type: OptionInt, Default: 0, Min: 0, Max: 60000},
+				{Key: "only_main_content", Type: OptionBool, Default: true},
+				{Key: "pdf_mode", Type: OptionEnum, Default: "auto", Values: []string{"auto", "fast", "ocr"}},
+				{Key: "pdf_max_pages", Type: OptionInt, Min: 1, Max: 10000},
+				optCountry,
+			},
+		},
 	},
 }
 
@@ -353,7 +359,7 @@ func defaultRoutes(tool string, order ...string) []Route {
 // Default returns the configuration of a fresh install.
 func Default() *Config {
 	c := &Config{
-		Search: Search{TimeoutSeconds: 10, Routes: defaultRoutes(ToolSearch, "brave", "exa", "perplexity", "tavily")},
+		Search: Search{TimeoutSeconds: 10, Routes: defaultRoutes(ToolSearch, "brave", "exa", "perplexity", "tavily", "firecrawl")},
 		Fetch: Fetch{
 			TimeoutSeconds:       30,
 			SlowThresholdSeconds: 15,
