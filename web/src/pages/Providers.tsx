@@ -3,19 +3,20 @@ import { healthLabel, Reenable, useStatus } from "../components/Health";
 import { useConfig } from "../lib/config";
 import { toolLabel } from "../lib/format";
 import { PageHeader } from "../Shell";
-import { SecretInput } from "../ui/inputs";
-import { Badge, Field, Input, Notice, Panel } from "../ui/primitives";
+import { RateLimitInput, SecretInput } from "../ui/inputs";
+import { Badge, Field, Input, Notice, NumberInput, Panel } from "../ui/primitives";
 
 export function ProvidersPage() {
   const { config, update, meta } = useConfig();
   const status = useStatus();
   return (
     <>
-      <PageHeader title="提供商" description="搜索与抓取服务的凭据。同一提供商的密钥适用于其支持的所有工具；优先级与限流在「搜索」「抓取」页按工具设置。" />
+      <PageHeader title="提供商" description="搜索与抓取服务的凭据与限流。同一提供商的密钥和限流由其支持的所有工具共用；优先级与专有参数在各工具的页面设置。" />
       <div className="grid gap-4 lg:grid-cols-2">
         {meta.catalog.map((info, index) => {
           const creds = config.providers[info.id];
-          const tools = Object.keys(info.default_rate_limit);
+          const tools = info.tools;
+          const shared = tools.length > 1 ? `${tools.map((tool) => toolLabel[tool]).join("、")}的调用合并计数` : undefined;
           const off = status?.routes.filter((r) => r.provider === info.id && r.available && r.disabled) ?? [];
           return (
             <Panel
@@ -62,6 +63,24 @@ export function ProvidersPage() {
                 <Field label="API key" hint={info.key_required ? undefined : "可选：留空亦可使用，填写后额度更高"}>
                   <SecretInput value={creds} onChange={(next) => update((d) => void (d.providers[info.id] = next))} />
                 </Field>
+                <div className="flex flex-wrap gap-x-6 gap-y-4">
+                  <Field label="限流" hint={shared}>
+                    <RateLimitInput
+                      value={creds.rate_limit}
+                      fallback={info.default_rate_limit}
+                      onChange={(rate_limit) => update((d) => void (d.providers[info.id].rate_limit = rate_limit))}
+                    />
+                  </Field>
+                  <Field label="并发" hint="同时进行的请求数上限，0 为不限">
+                    <NumberInput
+                      className="w-20"
+                      min={0}
+                      value={creds.concurrency}
+                      onChange={(concurrency) => update((d) => void (d.providers[info.id].concurrency = Math.max(0, Math.round(concurrency))))}
+                      aria-label={`${info.name} 并发上限`}
+                    />
+                  </Field>
+                </div>
                 <details className="group">
                   <summary className="tag list-none normal-case hover:text-ink-2">
                     <span className="group-open:hidden">+ 自定义接口地址</span>

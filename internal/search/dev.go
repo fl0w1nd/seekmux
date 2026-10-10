@@ -71,7 +71,7 @@ func DevProviders(cfg *config.Config, client *http.Client) []core.Provider[DevIn
 	var out []core.Provider[DevInput, []DevItem]
 	for _, route := range cfg.DevSearch.Routes {
 		if run, ok := devExecutors[route.Provider]; ok {
-			out = append(out, routed(config.ToolDevSearch, route, newCall(cfg, client, config.ToolDevSearch, route), run))
+			out = append(out, routed(cfg, config.ToolDevSearch, route, newCall(cfg, client, config.ToolDevSearch, route), run))
 		}
 	}
 	return out

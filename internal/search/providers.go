@@ -82,14 +82,15 @@ func newCall(cfg *config.Config, client *http.Client, tool string, route config.
 }
 
 // routed wraps run as the provider of route for tool.
-func routed[In, Out any](tool string, route config.Route, c call, run func(context.Context, call, In) (Out, error)) core.Provider[In, Out] {
+func routed[In, Out any](cfg *config.Config, tool string, route config.Route, c call, run func(context.Context, call, In) (Out, error)) core.Provider[In, Out] {
 	info, _ := config.Info(route.Provider)
-	limit, _ := config.ParseRateLimit(route.RateLimit)
+	limit, concurrency := cfg.Limits(route.Provider)
 	return core.Provider[In, Out]{
 		Name:        route.Provider,
 		Key:         route.Provider + ":" + tool,
+		LimitKey:    route.Provider,
 		RateLimit:   limit,
-		Concurrency: route.Concurrency,
+		Concurrency: concurrency,
 		Available:   route.Enabled && (c.apiKey != "" || !info.KeyRequired),
 		Execute: func(ctx context.Context, in In) (Out, error) {
 			return run(ctx, c, in)
@@ -112,7 +113,7 @@ func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, O
 		if _, ok := c.opt[config.OptionLanguage]; ok {
 			c.language = cmp.Or(c.opt.Str(config.OptionLanguage), cfg.Search.Language)
 		}
-		out = append(out, routed(config.ToolSearch, route, c, run))
+		out = append(out, routed(cfg, config.ToolSearch, route, c, run))
 	}
 	return out
 }

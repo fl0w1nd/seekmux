@@ -442,3 +442,28 @@ func TestConcurrencyFollowsALoweredLimit(t *testing.T) {
 		t.Fatalf("active = %d", l.Active("k"))
 	}
 }
+
+// One provider serving two tools has one budget, but each tool its own
+// breaker state.
+func TestLimitKeySharesTheBudgetAcrossTools(t *testing.T) {
+	lim := NewLimits()
+	limit := config.RateLimit{Requests: 1, Window: time.Minute}
+	search, fetch := provider("p", limit, ok("search")), provider("p", limit, fail(errors.New("boom")))
+	search.Key, search.LimitKey = "p:search", "p"
+	fetch.Key, fetch.LimitKey = "p:fetch", "p"
+	opt := RunOptions{Timeout: time.Second, Strategy: StrategyFallback, NoWait: true}
+
+	if _, _, err := RunFallback(context.Background(), lim, []Provider[string, string]{search}, "", opt); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RunFallback(context.Background(), lim, []Provider[string, string]{fetch}, "", opt); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("the second tool must find the budget spent, got %v", err)
+	}
+	if used := lim.Rate.Used("p", limit); used != 1 {
+		t.Fatalf("used = %d", used)
+	}
+	lim.Breaker.Disable("p:fetch", ClassAuth, "", 0)
+	if _, off := lim.Breaker.State("p:search"); off {
+		t.Fatal("disabling one tool's route must not disable the other")
+	}
+}

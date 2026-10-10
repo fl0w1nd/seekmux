@@ -137,7 +137,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       setFailure(null);
       setDraft(structuredClone(server.data));
     },
-    provider: (id) => catalog.find((p) => p.id === id) ?? { id, name: id, website: "", key_required: true, default_base_url: {}, default_rate_limit: {} },
+    provider: (id) => catalog.find((p) => p.id === id) ?? { id, name: id, website: "", key_required: true, tools: [], default_base_url: {}, default_rate_limit: "" },
   };
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;
 }

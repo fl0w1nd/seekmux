@@ -3,15 +3,16 @@ import { useState } from "react";
 import { Link } from "wouter";
 import type { Route, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
+import { toolLabel } from "../lib/format";
 import { Tripped, useStatus } from "./Health";
 import { customized, RouteOptions } from "./RouteOptions";
-import { RateLimitInput } from "../ui/inputs";
-import { Badge, Button, cx, NumberInput, Switch, Tooltip } from "../ui/primitives";
+import { Badge, Button, cx, Switch, Tooltip } from "../ui/primitives";
 
 /**
  * The priority lanes of a tool: one provider per lane, tried from the top.
- * Each lane carries the limits of that provider for this tool, and opens to
- * the provider's own parameters.
+ * Each lane shows the limits of its provider, which are set on the providers
+ * page and shared by every tool it serves, and opens to the provider's
+ * parameters for this tool.
  */
 export function RouteList({ tool }: { tool: RoutedTool }) {
   const { config, update, provider } = useConfig();
@@ -39,6 +40,7 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
         const live = route.enabled && !missingKey;
         const health = status?.routes.find((r) => r.key === `${route.provider}:${tool}`);
         const changed = customized(route);
+        const shared = info.tools.filter((t) => t !== tool);
         return (
           <li
             key={route.provider}
@@ -70,16 +72,15 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
               </div>
               <div className="tag mt-0.5 normal-case">{creds?.base_url || info.default_base_url[tool]}</div>
             </div>
-            <label className="flex flex-col gap-1">
-              <span className="tag">限流</span>
-              <RateLimitInput value={route.rate_limit} fallback={info.default_rate_limit[tool]} onChange={(rate_limit) => edit(index, { rate_limit })} />
-            </label>
-            <label className="flex flex-col gap-1">
-              <Tooltip content="同时进行的请求数上限，0 为不限">
-                <span className="tag">并发</span>
-              </Tooltip>
-              <NumberInput className="w-16" value={route.concurrency} onChange={(concurrency) => edit(index, { concurrency: Math.round(concurrency) })} aria-label="并发上限" />
-            </label>
+            <Tooltip content={shared.length > 0 ? `提供商级限流，与${shared.map((t) => toolLabel[t]).join("、")}合并计数。在「提供商」页设置` : "提供商级限流，在「提供商」页设置"}>
+              <Link href="/providers" className="flex flex-col gap-1 text-right hover:text-ink">
+                <span className="tag">限流{shared.length > 0 && " · 共用"}</span>
+                <span className="num text-xs text-ink-2">
+                  {creds?.rate_limit || "不限"}
+                  {creds?.concurrency ? ` · 并发 ${creds.concurrency}` : ""}
+                </span>
+              </Link>
+            </Tooltip>
             <Button
               size="sm"
               variant={open === route.provider ? "secondary" : "ghost"}

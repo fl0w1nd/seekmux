@@ -137,7 +137,7 @@ function Routes({ tool, title, index, routes }: { tool: string; title: string; i
   const { provider } = useConfig();
   const list = routes.filter((r) => r.tool === tool);
   return (
-    <Panel index={index} title={title} description="按优先级排列；限流窗口内已用的配额实时更新。" flush>
+    <Panel index={index} title={title} description="按优先级排列；限流属于提供商，同一提供商在各工具中的用量合并计数，实时更新。" flush>
       <ol>
         {list.map((route, i) => (
           <li key={route.provider} className={cx("flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0", !route.available && "opacity-55")}>

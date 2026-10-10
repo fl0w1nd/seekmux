@@ -95,6 +95,10 @@ func FromLegacyEnv(r io.Reader) (*Config, error) {
 
 	c.Search.Routes = legacyRoutes(env, ToolSearch, "SEARCH_PROVIDERS", c.Search.Routes)
 	c.Fetch.Routes = legacyRoutes(env, ToolFetch, "FETCH_PROVIDERS", c.Fetch.Routes)
+	// The file states limits per route; Normalize folds them into the providers.
+	for _, p := range c.Providers {
+		p.RateLimit, p.Concurrency = nil, 0
+	}
 
 	legacyFloat(env, "SEARCH_TIMEOUT", &c.Search.TimeoutSeconds)
 	legacyFloat(env, "FETCH_TIMEOUT", &c.Fetch.TimeoutSeconds)
@@ -169,13 +173,10 @@ func legacyRoutes(env map[string]string, tool, orderKey string, defaults []Route
 		r := &routes[i]
 		prefix := strings.ToUpper(r.Provider) + "_" + strings.ToUpper(tool)
 		if v := env[prefix+"_RATE_LIMIT"]; v != "" {
-			r.RateLimit = v
-		} else if r.RateLimit == "" {
-			info, _ := Info(r.Provider)
-			r.RateLimit = info.DefaultRateLimit[tool]
+			r.LegacyRateLimit = &v
 		}
 		if n, err := strconv.Atoi(env[prefix+"_CONCURRENCY"]); err == nil && n > 0 {
-			r.Concurrency = n
+			r.LegacyConcurrency = &n
 		}
 	}
 	return routes

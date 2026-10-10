@@ -64,13 +64,14 @@ func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, P
 		if base == "" {
 			base = info.DefaultBase[config.ToolFetch]
 		}
-		limit, _ := config.ParseRateLimit(route.RateLimit)
+		limit, concurrency := cfg.Limits(route.Provider)
 		c := call{client: client, base: base, apiKey: creds.APIKey, opt: config.OptionValues(config.ToolFetch, route), extra: route.ExtraBody}
 		out = append(out, core.Provider[Input, Page]{
 			Name:        route.Provider,
 			Key:         route.Provider + ":" + config.ToolFetch,
+			LimitKey:    route.Provider,
 			RateLimit:   limit,
-			Concurrency: route.Concurrency,
+			Concurrency: concurrency,
 			Available:   route.Enabled && (creds.APIKey != "" || !info.KeyRequired),
 			Execute: func(ctx context.Context, in Input) (Page, error) {
 				page, err := run(ctx, c, in)

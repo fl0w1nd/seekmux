@@ -47,18 +47,26 @@ type Secret struct {
 	ClearAPIKey bool   `json:"clear_api_key,omitempty"`
 }
 
-// Provider holds the credentials of one search/fetch provider.
+// Provider holds the credentials and the limits of one search/fetch provider.
 type Provider struct {
 	Secret
 	BaseURL string `json:"base_url,omitempty"`
+	// RateLimit and Concurrency are shared by every tool the provider serves.
+	// A document that leaves the rate limit out gets it from Normalize; an
+	// empty one means unlimited.
+	RateLimit   *string `json:"rate_limit"`
+	Concurrency int     `json:"concurrency"`
 }
 
 // Route binds a provider to a tool. The position in the list is the priority.
 type Route struct {
-	Provider    string `json:"provider"`
-	Enabled     bool   `json:"enabled"`
-	RateLimit   string `json:"rate_limit"`
-	Concurrency int    `json:"concurrency"`
+	Provider string `json:"provider"`
+	Enabled  bool   `json:"enabled"`
+	// LegacyRateLimit and LegacyConcurrency are the limits a route carried
+	// before they moved to the provider. Normalize folds them into the
+	// provider and clears them.
+	LegacyRateLimit   *string `json:"rate_limit,omitempty"`
+	LegacyConcurrency *int    `json:"concurrency,omitempty"`
 	// Options holds the provider's parameters for this tool that differ from
 	// the defaults its catalog entry declares.
 	Options map[string]any `json:"options,omitempty"`
@@ -239,28 +247,28 @@ type Network struct {
 
 // ProviderInfo describes a built-in search/fetch provider.
 type ProviderInfo struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Website     string            `json:"website"`
-	KeyRequired bool              `json:"key_required"`
-	DefaultBase map[string]string `json:"default_base_url"`
-	// DefaultRateLimit is keyed by tool; a missing tool means unsupported.
-	DefaultRateLimit map[string]string `json:"default_rate_limit"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Website     string `json:"website"`
+	KeyRequired bool   `json:"key_required"`
+	// Tools lists the tools the provider serves.
+	Tools []string `json:"tools"`
+	// DefaultBase is keyed by tool.
+	DefaultBase      map[string]string `json:"default_base_url"`
+	DefaultRateLimit string            `json:"default_rate_limit"`
 	// Options is keyed by tool.
 	Options map[string][]Option `json:"options,omitempty"`
 }
 
-func (p ProviderInfo) Supports(tool string) bool {
-	_, ok := p.DefaultRateLimit[tool]
-	return ok
-}
+func (p ProviderInfo) Supports(tool string) bool { return slices.Contains(p.Tools, tool) }
 
 // Catalog lists the built-in providers in default priority order.
 var Catalog = []ProviderInfo{
 	{
 		ID: "brave", Name: "Brave Search", Website: "https://api-dashboard.search.brave.com", KeyRequired: true,
+		Tools:            []string{ToolSearch},
 		DefaultBase:      map[string]string{ToolSearch: "https://api.search.brave.com"},
-		DefaultRateLimit: map[string]string{ToolSearch: "1/s"},
+		DefaultRateLimit: "1/s",
 		Options: map[string][]Option{ToolSearch: {
 			{Key: "extra_snippets", Type: OptionBool, Default: false},
 			{Key: "safesearch", Type: OptionEnum, Default: "moderate", Values: []string{"off", "moderate", "strict"}},
@@ -270,8 +278,9 @@ var Catalog = []ProviderInfo{
 	},
 	{
 		ID: "exa", Name: "Exa", Website: "https://dashboard.exa.ai", KeyRequired: true,
+		Tools:            []string{ToolSearch, ToolFetch},
 		DefaultBase:      map[string]string{ToolSearch: "https://api.exa.ai", ToolFetch: "https://api.exa.ai"},
-		DefaultRateLimit: map[string]string{ToolSearch: "10/s", ToolFetch: "10/s"},
+		DefaultRateLimit: "10/s",
 		Options: map[string][]Option{
 			ToolSearch: {
 				{Key: "type", Type: OptionEnum, Default: "auto", Values: []string{"instant", "fast", "auto", "deep-lite", "deep"}},
@@ -289,8 +298,9 @@ var Catalog = []ProviderInfo{
 	},
 	{
 		ID: "perplexity", Name: "Perplexity", Website: "https://console.perplexity.ai", KeyRequired: true,
+		Tools:            []string{ToolSearch},
 		DefaultBase:      map[string]string{ToolSearch: "https://api.perplexity.ai"},
-		DefaultRateLimit: map[string]string{ToolSearch: "50/s"},
+		DefaultRateLimit: "50/s",
 		Options: map[string][]Option{ToolSearch: {
 			{Key: "search_type", Type: OptionEnum, Default: "web", Values: []string{"web", "fast"}},
 			{Key: "max_tokens_per_page", Type: OptionInt, Default: 256, Min: 1, Max: 1000000},
@@ -300,8 +310,9 @@ var Catalog = []ProviderInfo{
 	},
 	{
 		ID: "tavily", Name: "Tavily", Website: "https://app.tavily.com", KeyRequired: true,
+		Tools:            []string{ToolSearch, ToolFetch},
 		DefaultBase:      map[string]string{ToolSearch: "https://api.tavily.com", ToolFetch: "https://api.tavily.com"},
-		DefaultRateLimit: map[string]string{ToolSearch: "5/m", ToolFetch: "5/m"},
+		DefaultRateLimit: "5/m",
 		Options: map[string][]Option{
 			ToolSearch: {
 				{Key: "search_depth", Type: OptionEnum, Default: "advanced", Values: []string{"basic", "advanced", "fast", "ultra-fast"}},
@@ -316,8 +327,9 @@ var Catalog = []ProviderInfo{
 	},
 	{
 		ID: "jina", Name: "Jina Reader", Website: "https://jina.ai/reader", KeyRequired: false,
+		Tools:            []string{ToolFetch},
 		DefaultBase:      map[string]string{ToolFetch: "https://r.jina.ai"},
-		DefaultRateLimit: map[string]string{ToolFetch: "5/m"},
+		DefaultRateLimit: "5/m",
 		Options: map[string][]Option{ToolFetch: {
 			{Key: "engine", Type: OptionEnum, Default: "auto", Values: []string{"auto", "browser", "curl"}},
 			{Key: "retain_images", Type: OptionEnum, Default: "none", Values: []string{"all", "alt", "none"}},
@@ -327,10 +339,11 @@ var Catalog = []ProviderInfo{
 	},
 	{
 		ID: "firecrawl", Name: "Firecrawl", Website: "https://www.firecrawl.dev/app", KeyRequired: true,
+		Tools: []string{ToolSearch, ToolDevSearch, ToolFetch},
 		DefaultBase: map[string]string{
 			ToolSearch: "https://api.firecrawl.dev", ToolDevSearch: "https://api.firecrawl.dev", ToolFetch: "https://api.firecrawl.dev",
 		},
-		DefaultRateLimit: map[string]string{ToolSearch: "5/m", ToolDevSearch: "5/m", ToolFetch: "5/m"},
+		DefaultRateLimit: "5/m",
 		Options: map[string][]Option{
 			ToolSearch: {
 				{Key: "highlights", Type: OptionBool, Default: true},
@@ -361,11 +374,10 @@ func Info(id string) (ProviderInfo, bool) {
 	return ProviderInfo{}, false
 }
 
-func defaultRoutes(tool string, order ...string) []Route {
+func defaultRoutes(order ...string) []Route {
 	var routes []Route
 	for _, id := range order {
-		info, _ := Info(id)
-		routes = append(routes, Route{Provider: id, Enabled: true, RateLimit: info.DefaultRateLimit[tool]})
+		routes = append(routes, Route{Provider: id, Enabled: true})
 	}
 	return routes
 }
@@ -373,8 +385,8 @@ func defaultRoutes(tool string, order ...string) []Route {
 // Default returns the configuration of a fresh install.
 func Default() *Config {
 	c := &Config{
-		Search:    Search{TimeoutSeconds: 10, Routes: defaultRoutes(ToolSearch, "brave", "exa", "perplexity", "tavily", "firecrawl")},
-		DevSearch: DevSearch{TimeoutSeconds: 15, Routes: defaultRoutes(ToolDevSearch, "firecrawl")},
+		Search:    Search{TimeoutSeconds: 10, Routes: defaultRoutes("brave", "exa", "perplexity", "tavily", "firecrawl")},
+		DevSearch: DevSearch{TimeoutSeconds: 15, Routes: defaultRoutes("firecrawl")},
 		Fetch: Fetch{
 			TimeoutSeconds:       30,
 			SlowThresholdSeconds: 15,
@@ -382,7 +394,7 @@ func Default() *Config {
 			CacheTTLSeconds:      300,
 			PassthroughLength:    4000,
 			RawPageLength:        40000,
-			Routes:               defaultRoutes(ToolFetch, "jina", "firecrawl", "tavily", "exa"),
+			Routes:               defaultRoutes("jina", "firecrawl", "tavily", "exa"),
 			Extract: Extract{
 				RawOnFailure:         true,
 				MaxInputLength:       150000,
@@ -417,7 +429,9 @@ func (c *Config) Normalize() {
 		}
 		p.APIKey = strings.TrimSpace(p.APIKey)
 		p.BaseURL = strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
+		p.Concurrency = max(p.Concurrency, 0)
 	}
+	c.migrateLimits()
 
 	c.Search.Country = cleanFormat(FormatCountry, c.Search.Country)
 	c.Search.Language = cleanFormat(FormatLanguage, c.Search.Language)
@@ -505,6 +519,50 @@ func positive(v *int, fallback int) {
 	}
 }
 
+// migrateLimits gives every provider whose document states no rate limit the
+// limits its routes carried before limits moved to the provider. The routes
+// now share one budget, so it takes the loosest of their rate limits, which
+// leaves no tool with less than it had, and the lowest of their concurrency
+// caps. A provider without any gets the catalog default.
+func (c *Config) migrateLimits() {
+	for id, p := range c.Providers {
+		if p.RateLimit != nil {
+			*p.RateLimit = strings.TrimSpace(*p.RateLimit)
+			continue
+		}
+		info, _ := Info(id)
+		value, found, loosest := info.DefaultRateLimit, false, RateLimit{}
+		for _, routes := range [][]Route{c.Search.Routes, c.DevSearch.Routes, c.Fetch.Routes} {
+			for _, r := range routes {
+				if r.Provider != id {
+					continue
+				}
+				if n := r.LegacyConcurrency; n != nil && *n > 0 && (p.Concurrency == 0 || *n < p.Concurrency) {
+					p.Concurrency = *n
+				}
+				if r.LegacyRateLimit == nil {
+					continue
+				}
+				text := strings.TrimSpace(*r.LegacyRateLimit)
+				if limit, err := ParseRateLimit(text); err == nil && (!found || loosest.stricter(limit)) {
+					value, found, loosest = text, true, limit
+				}
+			}
+		}
+		p.RateLimit = &value
+	}
+}
+
+// Limits returns the rate limit and the concurrency limit of a provider.
+func (c *Config) Limits(provider string) (RateLimit, int) {
+	p := c.Providers[provider]
+	if p == nil || p.RateLimit == nil {
+		return RateLimit{}, 0
+	}
+	limit, _ := ParseRateLimit(*p.RateLimit)
+	return limit, p.Concurrency
+}
+
 // normalizeRoutes drops unknown or duplicate routes and appends, disabled, any
 // provider that supports the tool but has no route yet.
 func normalizeRoutes(tool string, routes []Route) []Route {
@@ -516,16 +574,13 @@ func normalizeRoutes(tool string, routes []Route) []Route {
 			continue
 		}
 		seen[r.Provider] = true
-		r.RateLimit = strings.TrimSpace(r.RateLimit)
-		if r.Concurrency < 0 {
-			r.Concurrency = 0
-		}
+		r.LegacyRateLimit, r.LegacyConcurrency = nil, nil
 		normalizeOptions(tool, &r)
 		out = append(out, r)
 	}
 	for _, info := range Catalog {
 		if info.Supports(tool) && !seen[info.ID] {
-			out = append(out, Route{Provider: info.ID, RateLimit: info.DefaultRateLimit[tool]})
+			out = append(out, Route{Provider: info.ID})
 		}
 	}
 	return out
@@ -545,9 +600,6 @@ func (c *Config) Validate() error {
 		routes []Route
 	}{{ToolSearch, c.Search.Routes}, {ToolDevSearch, c.DevSearch.Routes}, {ToolFetch, c.Fetch.Routes}} {
 		for _, r := range tool.routes {
-			if _, err := ParseRateLimit(r.RateLimit); err != nil {
-				return fmt.Errorf("%s route %q: %w", tool.name, r.Provider, err)
-			}
 			if err := validateOptions(tool.name, r); err != nil {
 				return fmt.Errorf("%s route %q: %w", tool.name, r.Provider, err)
 			}
@@ -562,6 +614,11 @@ func (c *Config) Validate() error {
 	for id, p := range c.Providers {
 		if err := checkURL(p.BaseURL, "http", "https"); err != nil {
 			return fmt.Errorf("provider %q base_url: %w", id, err)
+		}
+		if p.RateLimit != nil {
+			if _, err := ParseRateLimit(*p.RateLimit); err != nil {
+				return fmt.Errorf("provider %q: %w", id, err)
+			}
 		}
 	}
 

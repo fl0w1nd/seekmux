@@ -45,8 +45,9 @@ docker compose logs seekmux
 The log prints a one-time setup token. Open `http://127.0.0.1:8787`, use the
 token to set the admin password, then:
 
-1. **Providers** — paste the API keys of the services you use.
-2. **Search / Fetch** — order the providers and adjust their limits.
+1. **Providers** — paste the API keys of the services you use and set their
+   rate limits.
+2. **Search / Developer search / Fetch** — order the providers of each tool.
 3. **Models** (optional) — add a model endpoint to enable prompt-based
    extraction and research.
 4. **Access keys** — create a key for your agent.

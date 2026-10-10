@@ -13,6 +13,14 @@ type RateLimit struct {
 	Window   time.Duration
 }
 
+// stricter reports whether l allows fewer calls over time than other.
+func (l RateLimit) stricter(other RateLimit) bool {
+	if l.Requests == 0 || other.Requests == 0 {
+		return l.Requests != 0
+	}
+	return float64(l.Requests)*other.Window.Seconds() < float64(other.Requests)*l.Window.Seconds()
+}
+
 var rateLimitPattern = regexp.MustCompile(`^(\d+)/(\d*)(s|m|h)$`)
 
 var rateLimitUnits = map[string]time.Duration{"s": time.Second, "m": time.Minute, "h": time.Hour}

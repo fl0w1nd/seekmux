@@ -1,6 +1,7 @@
 package core
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -13,14 +14,20 @@ import (
 // Provider is one upstream that can serve a tool call.
 type Provider[In, Out any] struct {
 	Name string
-	// Key identifies the provider's limits, e.g. "brave:search".
-	Key         string
+	// Key identifies the provider's breaker state, e.g. "brave:search".
+	Key string
+	// LimitKey identifies its rate and concurrency limits when they are shared
+	// with other providers, e.g. "brave" for every tool Brave serves. Empty
+	// means Key.
+	LimitKey    string
 	RateLimit   config.RateLimit
 	Concurrency int
 	// Available is false when the provider is disabled or lacks its API key.
 	Available bool
 	Execute   func(ctx context.Context, in In) (Out, error)
 }
+
+func (p Provider[In, Out]) limitKey() string { return cmp.Or(p.LimitKey, p.Key) }
 
 // Limits is the limiter state shared by every runner.
 type Limits struct {
@@ -160,7 +167,7 @@ func report[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out], 
 }
 
 func execute[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out], in In, opt RunOptions) (Out, error) {
-	release, err := lim.Concurrency.Acquire(ctx, p.Key, p.Concurrency)
+	release, err := lim.Concurrency.Acquire(ctx, p.limitKey(), p.Concurrency)
 	if err != nil {
 		var zero Out
 		return zero, err
@@ -211,7 +218,7 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 				continue
 			}
 			if opt.Strategy == StrategyFallback {
-				ok, wait := lim.Rate.TryAcquire(p.Key, p.RateLimit)
+				ok, wait := lim.Rate.TryAcquire(p.limitKey(), p.RateLimit)
 				if !ok {
 					if !limited[p.Name] {
 						limited[p.Name] = true
@@ -222,7 +229,7 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 					}
 					continue
 				}
-			} else if err := lim.Rate.Acquire(ctx, p.Key, p.RateLimit); err != nil {
+			} else if err := lim.Rate.Acquire(ctx, p.limitKey(), p.RateLimit); err != nil {
 				return zero, "", ended(ctx, opt.Timeout, errs)
 			}
 
@@ -264,7 +271,7 @@ func runSingle[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out
 		if err := disabled(ctx, lim, p, opt); err != nil {
 			return zero, "", summarize(append(errs, providerError{p.Name, err}))
 		}
-		if err := lim.Rate.Acquire(ctx, p.Key, p.RateLimit); err != nil {
+		if err := lim.Rate.Acquire(ctx, p.limitKey(), p.RateLimit); err != nil {
 			return zero, "", ended(ctx, opt.Timeout, errs)
 		}
 		out, err := execute(ctx, lim, p, in, opt)
@@ -283,7 +290,7 @@ func runSingle[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out
 		if after, has := RetryAfter(err); has {
 			delay = after
 		}
-		if ok, wait := lim.Rate.Peek(p.Key, p.RateLimit); !ok {
+		if ok, wait := lim.Rate.Peek(p.limitKey(), p.RateLimit); !ok {
 			delay = max(delay, wait)
 		}
 		if err := Sleep(ctx, delay); err != nil {
@@ -345,12 +352,12 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 				continue
 			}
 			if launched {
-				if ok, wait := lim.Rate.Peek(p.Key, p.RateLimit); !ok {
+				if ok, wait := lim.Rate.Peek(p.limitKey(), p.RateLimit); !ok {
 					note(wait)
 				}
 				continue
 			}
-			ok, wait := lim.Rate.TryAcquire(p.Key, p.RateLimit)
+			ok, wait := lim.Rate.TryAcquire(p.limitKey(), p.RateLimit)
 			if !ok {
 				if !limited[p.Name] {
 					limited[p.Name] = true
@@ -365,7 +372,7 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 			go func() {
 				timer := time.AfterFunc(opt.SlowThreshold, func() { slow <- struct{}{} })
 				defer timer.Stop()
-				release, err := lim.Concurrency.Acquire(runCtx, p.Key, p.Concurrency)
+				release, err := lim.Concurrency.Acquire(runCtx, p.limitKey(), p.Concurrency)
 				if err != nil {
 					results <- result{name: p.Name, err: err}
 					return

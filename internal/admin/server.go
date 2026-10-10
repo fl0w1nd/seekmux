@@ -404,13 +404,14 @@ func (s *Server) health(key string) health {
 }
 
 type routeStatus struct {
-	// Key identifies the limits and the breaker state, for /api/breaker/reset.
+	// Key identifies the breaker state, for /api/breaker/reset.
 	Key string `json:"key"`
 	health
-	Tool        string `json:"tool"`
-	Provider    string `json:"provider"`
-	Available   bool   `json:"available"`
-	Enabled     bool   `json:"enabled"`
+	Tool      string `json:"tool"`
+	Provider  string `json:"provider"`
+	Available bool   `json:"available"`
+	Enabled   bool   `json:"enabled"`
+	// The limits and their use are the provider's, shared by all its routes.
 	RateLimit   string `json:"rate_limit"`
 	Used        int    `json:"used"`
 	Limit       int    `json:"limit"`
@@ -423,17 +424,17 @@ func (s *Server) routeStatuses(cfg *config.Config) []routeStatus {
 	add := func(tool string, routes []config.Route) {
 		for _, route := range routes {
 			info, _ := config.Info(route.Provider)
-			limit, _ := config.ParseRateLimit(route.RateLimit)
+			limit, concurrency := cfg.Limits(route.Provider)
 			key := route.Provider + ":" + tool
 			out = append(out, routeStatus{
 				Key: key, health: s.health(key),
 				Tool: tool, Provider: route.Provider, Enabled: route.Enabled,
 				Available:   route.Enabled && (cfg.Providers[route.Provider].APIKey != "" || !info.KeyRequired),
-				RateLimit:   route.RateLimit,
-				Used:        s.app.Limits.Rate.Used(key, limit),
+				RateLimit:   *cfg.Providers[route.Provider].RateLimit,
+				Used:        s.app.Limits.Rate.Used(route.Provider, limit),
 				Limit:       limit.Requests,
-				Active:      s.app.Limits.Concurrency.Active(key),
-				Concurrency: route.Concurrency,
+				Active:      s.app.Limits.Concurrency.Active(route.Provider),
+				Concurrency: concurrency,
 			})
 		}
 	}

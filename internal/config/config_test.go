@@ -58,11 +58,63 @@ func TestStoredDocumentGainsNewRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if last := c.Search.Routes[len(c.Search.Routes)-1]; len(c.Search.Routes) != 5 || last.Provider != "firecrawl" || last.Enabled || last.RateLimit == "" {
+	if last := c.Search.Routes[len(c.Search.Routes)-1]; len(c.Search.Routes) != 5 || last.Provider != "firecrawl" || last.Enabled {
 		t.Fatalf("search routes = %+v", c.Search.Routes)
 	}
 	if r := c.DevSearch.Routes; len(r) != 1 || r[0].Provider != "firecrawl" || !r[0].Enabled || c.DevSearch.TimeoutSeconds <= 0 {
 		t.Fatalf("dev_search = %+v", c.DevSearch)
+	}
+}
+
+// Before limits moved to the provider, every route carried its own.
+func TestRouteLimitsMoveToTheProvider(t *testing.T) {
+	c, err := FromStored([]byte(`{
+		"providers": {"exa": {"api_key": "k"}, "tavily": {"api_key": "k"}, "jina": {"api_key": ""}, "brave": {"api_key": "k"}},
+		"search": {"routes": [
+			{"provider": "exa", "enabled": true, "rate_limit": "10/s", "concurrency": 0},
+			{"provider": "tavily", "enabled": true, "rate_limit": "30/m", "concurrency": 4},
+			{"provider": "brave", "enabled": true, "rate_limit": "", "concurrency": 0}
+		]},
+		"fetch": {"routes": [
+			{"provider": "exa", "enabled": true, "rate_limit": "100/m", "concurrency": 0},
+			{"provider": "tavily", "enabled": true, "rate_limit": "1/s", "concurrency": 2},
+			{"provider": "jina", "enabled": false, "rate_limit": "20/m", "concurrency": 0}
+		]}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]struct {
+		rate        string
+		concurrency int
+	}{
+		"exa":        {"10/s", 0}, // the looser of the two
+		"tavily":     {"1/s", 2},  // and the lower concurrency cap
+		"jina":       {"20/m", 0},
+		"brave":      {"", 0},     // unlimited stays unlimited
+		"firecrawl":  {"5/m", 0},  // had no route: the catalog default
+		"perplexity": {"50/s", 0}, // likewise
+	} {
+		p := c.Providers[id]
+		if p.RateLimit == nil || *p.RateLimit != want.rate || p.Concurrency != want.concurrency {
+			t.Errorf("%s = %v, %d; want %q, %d", id, p.RateLimit, p.Concurrency, want.rate, want.concurrency)
+		}
+	}
+	if c.Providers["exa"].APIKey != "k" || !c.Search.Routes[0].Enabled {
+		t.Fatal("the rest of the document was lost")
+	}
+	data, _ := json.Marshal(c)
+	if strings.Contains(string(data), `"enabled":true,"rate_limit"`) {
+		t.Fatalf("routes still carry limits: %s", data)
+	}
+
+	// A limit the document states is kept, the empty one included.
+	back, err := FromStored(data)
+	if err != nil || *back.Providers["brave"].RateLimit != "" || *back.Providers["exa"].RateLimit != "10/s" {
+		t.Fatalf("second load: %v, %+v", err, back.Providers)
+	}
+	if limit, concurrency := back.Limits("tavily"); limit != (RateLimit{Requests: 1, Window: time.Second}) || concurrency != 2 {
+		t.Fatalf("Limits = %v, %d", limit, concurrency)
 	}
 }
 
@@ -138,7 +190,7 @@ func TestValidateRejectsBrokenReferences(t *testing.T) {
 		t.Fatal("enabled research without a model must fail")
 	}
 	c = Default()
-	c.Search.Routes[0].RateLimit = "fast"
+	*c.Providers["brave"].RateLimit = "fast"
 	if err := c.Validate(); err == nil {
 		t.Fatal("a bad rate limit must fail")
 	}
@@ -196,19 +248,19 @@ SOCKS_PROXY=socks5://127.0.0.1:1080
 		t.Fatal("api keys were not imported")
 	}
 	s := c.Search.Routes
-	if s[0].Provider != "tavily" || s[1].Provider != "brave" || s[1].RateLimit != "2/s" || !s[1].Enabled || s[2].Provider != "exa" || s[2].Enabled {
+	if s[0].Provider != "tavily" || s[1].Provider != "brave" || !s[1].Enabled || s[2].Provider != "exa" || s[2].Enabled {
 		t.Fatalf("search routes = %+v", s)
 	}
 	if c.Search.TimeoutSeconds != 12 || c.Fetch.SmartFallback || c.Fetch.CacheTTLSeconds != 600 {
 		t.Fatalf("settings were not imported: %+v", c.Fetch)
 	}
-	for _, r := range c.Fetch.Routes {
-		if r.Provider == "tavily" && r.RateLimit != "9/m" {
-			t.Errorf("tavily fetch rate limit = %q", r.RateLimit)
+	for id, want := range map[string]string{"brave": "2/s", "tavily": "9/m", "exa": "10/s"} {
+		if got := *c.Providers[id].RateLimit; got != want {
+			t.Errorf("%s rate limit = %q, want %q", id, got, want)
 		}
-		if r.Provider == "jina" && r.Concurrency != 3 {
-			t.Errorf("jina concurrency = %d", r.Concurrency)
-		}
+	}
+	if c.Providers["jina"].Concurrency != 3 {
+		t.Errorf("jina concurrency = %d", c.Providers["jina"].Concurrency)
 	}
 	p, m, ok := c.ModelByID("some-model")
 	if !ok || p.ID != "extract" || m.Name != "some-model" || m.ExtraBody["reasoning_effort"] != "low" || c.Fetch.Extract.Models[0] != "some-model" {

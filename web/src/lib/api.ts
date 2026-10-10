@@ -8,13 +8,15 @@ export interface Secret {
 
 export interface Provider extends Secret {
   base_url?: string;
+  /** Shared by every tool the provider serves; empty means unlimited. */
+  rate_limit: string;
+  /** 0 means unlimited. */
+  concurrency: number;
 }
 
 export interface Route {
   provider: string;
   enabled: boolean;
-  rate_limit: string;
-  concurrency: number;
   /** The provider's parameters for this tool that differ from the declared defaults. */
   options?: Record<string, unknown>;
   /** Merged into the request last. */
@@ -109,8 +111,11 @@ export interface ProviderInfo {
   name: string;
   website: string;
   key_required: boolean;
+  /** The tools the provider serves. */
+  tools: RoutedTool[];
+  /** Keyed by tool. */
   default_base_url: Record<string, string>;
-  default_rate_limit: Record<string, string>;
+  default_rate_limit: string;
   /** Keyed by tool. */
   options?: Record<string, ProviderOption[]>;
 }
