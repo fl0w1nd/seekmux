@@ -11,7 +11,7 @@ export function ResearchPage() {
 
   return (
     <>
-      <ToolIntro>将问题整体交由云端的研究 Agent 处理：Agent 使用本网关的搜索与抓取反复查证，最终返回附带出处的报告。启用后 MCP 将新增 research、research_start、research_result 三个工具。</ToolIntro>
+      <ToolIntro>将问题整体交由云端的研究 Agent 处理：Agent 使用本网关的搜索与抓取反复查证，最终返回附带出处的报告。启用后 MCP 将新增 research、research_start、research_result、research_cancel 四个工具。</ToolIntro>
       <div className="flex flex-col gap-4">
         <Panel index="01" title="开关" flush>
           <Row label="启用研究工具" hint="需先选定下方的研究模型">
@@ -63,7 +63,7 @@ export function ResearchPage() {
           </Row>
         </Panel>
 
-        <Panel index="05" title="后台任务" description="通过 research_start 发起的研究，由 research_result 取回报告。" flush>
+        <Panel index="05" title="后台任务" description="通过 research_start 发起的研究，由 research_result 取回报告，research_cancel 可提前停止。" flush>
           <Row label="单次等待时长" hint="research_result 在任务完成前最长挂起的时间，超时则返回进度并由调用方再次调用。越长重复调用越少；应低于 MCP 客户端的工具调用超时">
             <NumberInput className="w-24" min={5} suffix="秒" value={research.result_wait_seconds} onChange={(v) => update((d) => void (d.research.result_wait_seconds = Math.round(v)))} />
           </Row>

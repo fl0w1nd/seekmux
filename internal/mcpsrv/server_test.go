@@ -99,4 +99,14 @@ func TestResearchResultWaitsAndReportsTheBudget(t *testing.T) {
 	if got := call(); got != "the report" {
 		t.Errorf("finished answer = %q", got)
 	}
+
+	for id, want := range map[string]string{"rs_test": "the task is not running: it ended as done", "rs_none": "unknown task_id"} {
+		result, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "research_cancel", Arguments: map[string]any{"task_id": id}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := result.Content[0].(*mcp.TextContent).Text; !result.IsError || !strings.Contains(got, want) {
+			t.Errorf("cancel %s = %q", id, got)
+		}
+	}
 }

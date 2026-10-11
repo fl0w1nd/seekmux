@@ -17,7 +17,7 @@ It is one small Go binary with a single SQLite file, meant for a cheap server.
 | `search` | Brave, Exa, Firecrawl, Perplexity, Tavily | Tried in your priority order; a provider that is rate limited or failing is skipped. |
 | `dev_search` | Firecrawl | Searches issues, merged pull requests, READMEs and documentation sites instead of the web, and returns the passages that matched. |
 | `fetch` | Exa, Firecrawl, Jina Reader, Tavily | A slow provider is raced by the next one. Given a prompt, a model answers from the page instead of returning all of it. |
-| `research` | any configured model | An agent searches and reads on its own and returns a sourced report. Also available as `research_start` / `research_result`, for agents with other work to do meanwhile and for clients with short timeouts. |
+| `research` | any configured model | An agent searches and reads on its own and returns a sourced report. Also available as `research_start` / `research_result`, for agents with other work to do meanwhile and for clients with short timeouts; `research_cancel` stops a started run. |
 
 Around the tools:
 

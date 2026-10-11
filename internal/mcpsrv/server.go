@@ -455,4 +455,27 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 			}
 		}
 	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "research_cancel",
+		Description: "Stop a research task started with `research_start` whose report you no longer need, so it stops spending its budget.",
+		InputSchema: schema(`{
+			"type": "object",
+			"required": ["task_id"],
+			"properties": {"task_id": {"type": "string", "description": "The task id returned by research_start."}}
+		}`),
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, args taskArgs) (*mcp.CallToolResult, any, error) {
+		id := strings.TrimSpace(args.TaskID)
+		if a.CancelResearch(id) {
+			return text(map[string]string{"task_id": id, "status": store.TaskCanceled}, false), nil, nil
+		}
+		task, ok, err := a.Store.GetTask(ctx, id)
+		if err != nil {
+			return failure(err), nil, nil
+		}
+		if !ok {
+			return failure(fmt.Errorf("unknown task_id; tasks are kept for 7 days")), nil, nil
+		}
+		return failure(fmt.Errorf("the task is not running: it ended as %s", task.Status)), nil, nil
+	})
 }
