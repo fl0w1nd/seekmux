@@ -277,3 +277,40 @@ func TestFirecrawlContentIsCleaned(t *testing.T) {
 		t.Errorf("content = %q, want %q", page.Content, want)
 	}
 }
+
+func TestCleanTavilyMarkdown(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{
+			"doubled code block",
+			"Intro\n\n```\nwindow.renderAt(t) sets t; with ?t= never start.window. renderAt(t) sets  t; with  ? t = never start. Timeline:Timeline:0 to 1.2 s: squash 10%. 0  to 1.2 s: squash 10 %.\n```\n\nOutro",
+			"Intro\n\n```\nwindow.renderAt(t) sets t; with ?t= never start.\nTimeline:\n0 to 1.2 s: squash 10%.\n```\n\nOutro",
+		},
+		{
+			"heading inside doubled code",
+			"```\n# Sound prompt # Sound promptScore this 6 s loop. Score this 6  s loop.\n```",
+			"```\n# Sound prompt\nScore this 6 s loop.\n```",
+		},
+		{
+			"doubled bold",
+			"* ****Experiment 1****: the same shot\n\n****The opening shot.****",
+			"* **Experiment 1**: the same shot\n\n**The opening shot.**",
+		},
+		{"code as the page wrote it", "```sh\nmake build && make test\ncd web && pnpm build\n```", ""},
+		{"short repeating code", "```\n0 0\nyes yes\n```", ""},
+		{"only part of the block is doubled", "```\nprint(\"hello\")print(\"hello\")\nreturn the result\n```", ""},
+		{"only the start of the line is doubled", "```\nfoo(bar, baz);foo(bar, baz); and then some\n```", ""},
+		{"stars inside code", "```\na ****b**** c\n```", ""},
+		{"a rule of stars", "****\n\n**** not bold ****", ""},
+	}
+	for _, c := range cases {
+		want := c.want
+		if want == "" {
+			want = c.in
+		}
+		if got := cleanTavilyMarkdown(c.in); got != want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, got, want)
+		}
+	}
+}

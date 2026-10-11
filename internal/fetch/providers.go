@@ -348,7 +348,112 @@ func tavilyFetch(ctx context.Context, c call, in Input) (Page, error) {
 		return Page{}, &core.TargetError{Provider: "Tavily", Reason: reason}
 	}
 	r := raw.Results[0]
-	return Page{URL: r.URL, Title: r.Title, Content: r.RawContent}, nil
+	return Page{URL: r.URL, Title: r.Title, Content: cleanTavilyMarkdown(r.RawContent)}, nil
+}
+
+// cleanTavilyMarkdown repairs two things Tavily's converter does to a page:
+//
+//   - A code block the page renders with syntax highlighting arrives twice
+//     on one line: each line of the code as written, then the same line
+//     again with spaces between its highlighted tokens, and no line break
+//     between any of them.
+//   - Bold text inside bold markup arrives as "****text****".
+func cleanTavilyMarkdown(md string) string {
+	if !strings.Contains(md, "```") && !strings.Contains(md, "~~~") && !strings.Contains(md, "****") {
+		return md
+	}
+	lines := strings.Split(md, "\n")
+	opened := -1 // index of the fence line of the block being read
+	for i, line := range lines {
+		switch {
+		case !isFence(line):
+			if opened < 0 {
+				lines[i] = doubledBold.ReplaceAllString(line, "**$1**")
+			}
+		case opened < 0:
+			opened = i
+		default:
+			undoubleCode(lines[opened+1 : i])
+			opened = -1
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+var doubledBold = regexp.MustCompile(`\*{4}([^*\s](?:[^*]*[^*\s])?)\*{4}`)
+
+// undoubleCode rewrites the lines of a code block that Tavily doubled. The
+// block is left alone unless every line of it is doubled from end to end.
+func undoubleCode(block []string) {
+	fixed := make([]string, len(block))
+	doubled := false
+	for i, line := range block {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var ok bool
+		if fixed[i], ok = undoubleLine(line); !ok {
+			return
+		}
+		doubled = true
+	}
+	if doubled {
+		copy(block, fixed)
+	}
+}
+
+// minDoubledLength keeps short code that merely repeats itself ("0 0") as it is.
+const minDoubledLength = 16
+
+// undoubleLine splits a line made of pairs, a line of code followed by its
+// copy with different spacing, into the lines of code.
+func undoubleLine(line string) (string, bool) {
+	// The two copies of a pair differ only in their spaces, so they are
+	// compared without them.
+	var text []byte
+	var at []int // offset in line of each byte of text
+	for i := 0; i < len(line); i++ {
+		if line[i] != ' ' && line[i] != '\t' {
+			text = append(text, line[i])
+			at = append(at, i)
+		}
+	}
+	if len(text) < minDoubledLength {
+		return "", false
+	}
+	var code []string
+	for start := 0; start < len(text); {
+		n := repeatLength(text[start:])
+		if n == 0 {
+			return "", false
+		}
+		code = append(code, line[at[start]:at[start+n-1]+1])
+		start += 2 * n
+	}
+	return strings.Join(code, "\n"), true
+}
+
+// repeatLength returns the largest n for which text starts with the same n
+// bytes twice in a row, or 0.
+func repeatLength(text []byte) int {
+	// z[i] is the length of the longest common prefix of text and text[i:].
+	z := make([]int, len(text))
+	best := 0
+	for i, left, right := 1, 0, 0; i <= len(text)/2; i++ {
+		if i < right {
+			z[i] = min(right-i, z[i-left])
+		}
+		for i+z[i] < len(text) && text[z[i]] == text[i+z[i]] {
+			z[i]++
+		}
+		if i+z[i] > right {
+			left, right = i, i+z[i]
+		}
+		if z[i] >= i {
+			best = i
+		}
+	}
+	return best
 }
 
 // exaFetch reads a page through Exa's contents endpoint, which answers from
