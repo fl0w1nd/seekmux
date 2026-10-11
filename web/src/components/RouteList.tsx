@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import type { Route, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { toolLabel } from "../lib/format";
+import { routingRules } from "../lib/routing";
 import { Tripped, useStatus } from "./Health";
 import { customized, RouteOptions } from "./RouteOptions";
 import { Badge, Button, cx, Switch, Tooltip } from "../ui/primitives";
@@ -15,8 +16,10 @@ import { Badge, Button, cx, Switch, Tooltip } from "../ui/primitives";
  * parameters for this tool.
  */
 export function RouteList({ tool }: { tool: RoutedTool }) {
-  const { config, update, provider } = useConfig();
+  const { config, meta, update, provider } = useConfig();
   const routes = config[tool].routes;
+  // A rule keeps using its providers when their fetch route is switched off.
+  const rules = tool === "fetch" ? routingRules(config, meta).filter((rule) => rule.enabled) : [];
   const status = useStatus();
   const [open, setOpen] = useState<string | null>(null);
 
@@ -69,6 +72,15 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
                 ) : (
                   <Badge>已停用</Badge>
                 )}
+                {rules
+                  .filter((rule) => rule.providers.includes(route.provider))
+                  .map((rule) => (
+                    <Tooltip key={rule.id} content={`服务路由规则「${rule.name}」的页面由该提供商抓取，不受此处的顺序与开关影响`}>
+                      <Link href="/routing/rules">
+                        <Badge tone="info">{rule.name}</Badge>
+                      </Link>
+                    </Tooltip>
+                  ))}
               </div>
               <div className="tag mt-0.5 normal-case">{creds?.base_url || info.default_base_url[tool]}</div>
             </div>

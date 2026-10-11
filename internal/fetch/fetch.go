@@ -148,7 +148,16 @@ func (s *Service) Run(ctx context.Context, rt Runtime, args Args) Result {
 }
 
 func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (Page, error) {
-	if page, ok := s.pages.Get(target); ok && !rt.NoCache && (engine == EngineAuto || page.Engine == engine) {
+	// A provider asked for by name is not overruled by a rule either.
+	rule, matched := rt.Config.RuleFor(target)
+	routed := matched && engine == EngineAuto
+	serves := func(provider string) bool {
+		if routed {
+			return slices.Contains(rule.Providers, provider)
+		}
+		return engine == EngineAuto || provider == engine
+	}
+	if page, ok := s.pages.Get(target); ok && !rt.NoCache && serves(page.Engine) {
 		core.TraceFrom(ctx).Note(config.ToolFetch, page.Engine, target, core.AttemptCached)
 		return page, nil
 	}
@@ -162,7 +171,13 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 
 	cfg := rt.Config.Fetch
 	providers := Providers(rt.Config, rt.Client)
-	if engine != EngineAuto {
+	switch {
+	case routed:
+		providers = routedProviders(rt.Config, providers, rule)
+		if countAvailable(providers) == 0 {
+			return Page{}, &RoutedError{Rule: rule, Err: errors.New("no API key is configured")}
+		}
+	case engine != EngineAuto:
 		providers = slices.DeleteFunc(providers, func(p core.Provider[Input, Page]) bool { return p.Name != engine })
 	}
 	opt := core.RunOptions{
@@ -188,9 +203,17 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		if errors.As(err, &gone) && !rt.NoCache {
 			s.gone.Set(target, gone, time.Duration(cfg.CacheTTLSeconds)*time.Second)
 		}
+		// A provider that reached the site reports on the page in its own words.
+		var target *core.TargetError
+		if routed && gone == nil && !errors.As(err, &target) {
+			err = &RoutedError{Rule: rule, Err: err}
+		}
 		return Page{}, err
 	}
 	page.Engine = provider
+	if matched {
+		page.Warning = pageNote(rule, page)
+	}
 	if !rt.NoCache {
 		s.pages.Set(target, page, time.Duration(cfg.CacheTTLSeconds)*time.Second)
 	}
@@ -245,12 +268,16 @@ func rawPage(page Page, offset, budget int, warning string) Result {
 		Content:       content[offset:end],
 		Engine:        page.Engine,
 		ContentLength: len(content),
-		Warning:       warning,
+		Warning:       joinWarnings(page.Warning, warning),
 	}
 	if end < len(content) {
 		result.NextOffset = end
 	}
 	return result
+}
+
+func joinWarnings(warnings ...string) string {
+	return strings.Join(slices.DeleteFunc(warnings, func(w string) bool { return w == "" }), " ")
 }
 
 func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, offset int) (Result, error) {
@@ -318,7 +345,7 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 		ContentLength:   len(content),
 		Answer:          answer,
 		AnswerTruncated: chat.Truncated,
-		Warning:         warning,
+		Warning:         joinWarnings(page.Warning, warning),
 	}
 	if excerpt {
 		result.Covered = []int{offset, end}

@@ -10,6 +10,7 @@ import {
   Microscope,
   Monitor,
   Moon,
+  Route,
   ScanText,
   ScrollText,
   Settings,
@@ -61,6 +62,7 @@ const nav = [
       { href: "/providers", label: "提供商", icon: Boxes },
       { href: "/models", label: "模型接口", icon: Bot },
       { href: "/tools", label: "工具", icon: Wrench },
+      { href: "/routing", label: "服务路由", icon: Route },
     ],
   },
   {

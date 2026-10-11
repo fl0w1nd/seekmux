@@ -165,6 +165,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"version":           s.version,
 		"catalog":           config.Catalog,
+		"rules":             config.BuiltinRules(),
 		"tools":             config.Tools,
 		"defaults":          config.Default(),
 		"reasoning_efforts": config.ReasoningEfforts,
@@ -428,13 +429,12 @@ func (s *Server) routeStatuses(cfg *config.Config) []routeStatus {
 	out := []routeStatus{}
 	add := func(tool string, routes []config.Route) {
 		for _, route := range routes {
-			info, _ := config.Info(route.Provider)
 			limit, concurrency := cfg.Limits(route.Provider)
 			key := route.Provider + ":" + tool
 			out = append(out, routeStatus{
 				Key: key, health: s.health(key),
 				Tool: tool, Provider: route.Provider, Enabled: route.Enabled,
-				Available:   route.Enabled && (cfg.Providers[route.Provider].APIKey != "" || !info.KeyRequired),
+				Available:   route.Enabled && cfg.HasCredentials(route.Provider),
 				RateLimit:   *cfg.Providers[route.Provider].RateLimit,
 				Used:        s.app.Limits.Rate.Used(route.Provider, limit),
 				Limit:       limit.Requests,

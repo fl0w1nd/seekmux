@@ -23,6 +23,35 @@ export interface Route {
   extra_body?: Record<string, unknown>;
 }
 
+/**
+ * Sends the pages it matches to its own providers in place of the fetch
+ * routes. A provider serves a rule whenever it has its credentials.
+ */
+export interface Rule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** Patterns of the form host[/path-prefix]; a host stands for its subdomains too. */
+  match: string[];
+  providers: string[];
+  /** Comes from a provider capability; never set on a stored rule. */
+  builtin?: boolean;
+}
+
+/** What the configuration changes of a built-in rule, which is off until switched on. */
+export interface BuiltinRule {
+  enabled?: boolean;
+  /** Replaces the rule's own list; absent keeps it. */
+  providers?: string[];
+}
+
+/** A kind of page a provider reads where an ordinary fetch does not. */
+export interface Capability {
+  id: string;
+  name: string;
+  match: string[];
+}
+
 /** How much a model thinks before answering. An empty mode leaves it to the model. */
 export interface Reasoning {
   mode: "" | "off" | "effort" | "budget";
@@ -95,6 +124,8 @@ export interface Config {
     routes: Route[];
     extract: Extract;
   };
+  /** `rules` are tried in order, ahead of the built-in ones; `builtin` is keyed by rule id. */
+  routing: { rules: Rule[]; builtin?: Record<string, BuiltinRule> };
   llm: { providers: LLMProvider[] };
   research: Research;
   /** One circuit-breaker policy for every provider and extract model. */
@@ -120,6 +151,8 @@ export interface ProviderInfo {
   default_rate_limit: string;
   /** Keyed by tool. */
   options?: Record<string, ProviderOption[]>;
+  /** Each one is a built-in routing rule that sends its pages to this provider. */
+  capabilities?: Capability[];
 }
 
 /** One parameter of a provider for a tool; a null default leaves it out of the request. */
@@ -136,6 +169,8 @@ export interface ProviderOption {
 export interface Meta {
   version: string;
   catalog: ProviderInfo[];
+  /** The built-in routing rules, before the configuration changes them. */
+  rules: Rule[];
   tools: Tool[];
   defaults: Config;
   /** The reasoning effort levels each API format accepts. */

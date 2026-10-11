@@ -235,7 +235,8 @@ func (a *App) install(cfg *config.Config) {
 }
 
 // SaveConfig validates, persists and activates cfg. Limiter windows carry
-// over, and so does the page cache unless the fetch routes changed.
+// over, and so does the page cache unless the fetch routes or the routing
+// rules changed.
 func (a *App) SaveConfig(ctx context.Context, cfg *config.Config) error {
 	cfg.Normalize()
 	if err := cfg.Validate(); err != nil {
@@ -252,10 +253,11 @@ func (a *App) SaveConfig(ctx context.Context, cfg *config.Config) error {
 	}
 	prev := a.Snapshot().Config
 	a.install(cfg)
-	if reflect.DeepEqual(prev.Fetch.Routes, cfg.Fetch.Routes) {
+	if reflect.DeepEqual(prev.Fetch.Routes, cfg.Fetch.Routes) && reflect.DeepEqual(prev.Routing, cfg.Routing) {
 		a.fetcher.ClearAnswers()
 	} else {
-		// A provider's options change what it returns for the same URL.
+		// A provider's options change what it returns for the same URL, and
+		// a rule changes which provider reads it.
 		a.fetcher.ClearCache()
 	}
 	return nil

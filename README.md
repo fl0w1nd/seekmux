@@ -24,6 +24,9 @@ Around the tools:
 - **Rate limits and concurrency** per provider and per model, shared by
   everything that uses them.
 - **Failover** between providers, and along a chain of models for extraction.
+- **Service routing**: rules send the pages of a site to the providers that
+  can read them. A built-in rule, off until you switch it on, sends YouTube
+  videos to Tavily, which returns the transcript.
 - **Circuit breaker**: something that keeps failing is skipped for a while.
   A rejected API key or exhausted credits switch a provider off until you
   re-enable it, and the console shows what the provider answered.

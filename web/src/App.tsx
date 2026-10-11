@@ -11,6 +11,7 @@ import { OverviewPage } from "./pages/Overview";
 import { Playground, playPage } from "./pages/play";
 import { ProvidersPage } from "./pages/Providers";
 import { ReportPage } from "./pages/Report";
+import { RoutingPage } from "./pages/Routing";
 import { SystemPage } from "./pages/System";
 import { ToolsPage } from "./pages/Tools";
 import { Logo, Shell } from "./Shell";
@@ -75,6 +76,10 @@ function Pages() {
           <Redirect to="/tools/search" replace />
         </Route>
         <Route path="/tools/:tool" component={ToolsPage} />
+        <Route path="/routing">
+          <Redirect to="/routing/rules" replace />
+        </Route>
+        <Route path="/routing/:tab" component={RoutingPage} />
         {/* The tool pages were top-level before they became tabs. */}
         <Route path="/search">
           <Redirect to="/tools/search" replace />

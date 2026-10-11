@@ -1,10 +1,11 @@
 import { ExternalLink } from "lucide-react";
+import { Link } from "wouter";
 import { healthLabel, Reenable, useStatus } from "../components/Health";
 import { useConfig } from "../lib/config";
 import { toolLabel } from "../lib/format";
 import { PageHeader } from "../Shell";
 import { RateLimitInput, SecretInput } from "../ui/inputs";
-import { Badge, Field, Input, Notice, NumberInput, Panel } from "../ui/primitives";
+import { Badge, Field, Input, Notice, NumberInput, Panel, Tooltip } from "../ui/primitives";
 
 export function ProvidersPage() {
   const { config, update, meta } = useConfig();
@@ -27,6 +28,13 @@ export function ProvidersPage() {
                 <>
                   {tools.map((tool) => (
                     <Badge key={tool}>{toolLabel[tool]}</Badge>
+                  ))}
+                  {info.capabilities?.map((capability) => (
+                    <Tooltip key={capability.id} content={`该提供商能读出 ${capability.name} 页面的专有内容。在服务路由中开启对应规则后，这类页面只交给它抓取`}>
+                      <Link href="/routing/rules">
+                        <Badge tone="info">{capability.name}</Badge>
+                      </Link>
+                    </Tooltip>
                   ))}
                   <a href={info.website} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-ink-3 hover:text-ink">
                     控制台 <ExternalLink className="size-3" />

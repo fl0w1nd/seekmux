@@ -31,6 +31,7 @@ type Config struct {
 	Search    Search               `json:"search"`
 	DevSearch DevSearch            `json:"dev_search"`
 	Fetch     Fetch                `json:"fetch"`
+	Routing   Routing              `json:"routing"`
 	LLM       LLM                  `json:"llm"`
 	Research  Research             `json:"research"`
 	Breaker   Breaker              `json:"breaker"`
@@ -264,6 +265,9 @@ type ProviderInfo struct {
 	DefaultRateLimit string            `json:"default_rate_limit"`
 	// Options is keyed by tool.
 	Options map[string][]Option `json:"options,omitempty"`
+	// Capabilities lists the kinds of page the provider's fetch reads where
+	// an ordinary fetch does not.
+	Capabilities []Capability `json:"capabilities,omitempty"`
 }
 
 func (p ProviderInfo) Supports(tool string) bool { return slices.Contains(p.Tools, tool) }
@@ -330,6 +334,7 @@ var Catalog = []ProviderInfo{
 				{Key: "extract_depth", Type: OptionEnum, Default: "basic", Values: []string{"basic", "advanced"}},
 			},
 		},
+		Capabilities: []Capability{capYouTube},
 	},
 	{
 		ID: "jina", Name: "Jina Reader", Website: "https://jina.ai/reader", KeyRequired: false,
@@ -409,6 +414,7 @@ func Default() *Config {
 				StreamTotalTimeoutMs: 60000,
 			},
 		},
+		Routing:  Routing{Rules: []Rule{}},
 		Research: Research{Reading: ReadingRaw, MaxSteps: 24, MaxDurationSeconds: 420, MaxTokens: 600000, MaxContextTokens: 150000, ResultWaitSeconds: 50},
 		Breaker:  Breaker{Enabled: true, Failures: 3, WindowSeconds: 60, CooldownSeconds: 60},
 		Logs:     Logs{RetentionDays: 14, MaxRows: 20000, CaptureBody: true},
@@ -444,6 +450,7 @@ func (c *Config) Normalize() {
 	c.Search.Routes = normalizeRoutes(ToolSearch, c.Search.Routes)
 	c.DevSearch.Routes = normalizeRoutes(ToolDevSearch, c.DevSearch.Routes)
 	c.Fetch.Routes = normalizeRoutes(ToolFetch, c.Fetch.Routes)
+	c.normalizeRouting()
 
 	d := struct{ s, dev, f, slow float64 }{10, 15, 30, 15}
 	if c.Search.TimeoutSeconds <= 0 {
@@ -561,6 +568,14 @@ func (c *Config) migrateLimits() {
 	}
 }
 
+// HasCredentials reports whether a provider can be called: it has an API key
+// or needs none.
+func (c *Config) HasCredentials(provider string) bool {
+	info, ok := Info(provider)
+	p := c.Providers[provider]
+	return ok && p != nil && (p.APIKey != "" || !info.KeyRequired)
+}
+
 // Limits returns the rate limit and the concurrency limit of a provider.
 func (c *Config) Limits(provider string) (RateLimit, int) {
 	p := c.Providers[provider]
@@ -612,6 +627,9 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("%s route %q: %w", tool.name, r.Provider, err)
 			}
 		}
+	}
+	if err := c.validateRouting(); err != nil {
+		return err
 	}
 	if err := checkFormat(FormatCountry, c.Search.Country); err != nil {
 		return fmt.Errorf("search.country: %w", err)
