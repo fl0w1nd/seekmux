@@ -13,8 +13,17 @@ func TestYouTubeIsRoutedToTheProvidersThatReadItOnceSwitchedOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rules := c.RoutingRules(); len(rules) != 1 || rules[0].ID != "youtube" || rules[0].Enabled {
+	rules := c.RoutingRules()
+	if len(rules) != 3 || rules[0].ID != "youtube" || rules[1].ID != "twitter" || rules[2].ID != "reddit" {
 		t.Fatalf("rules = %+v", rules)
+	}
+	for _, rule := range rules {
+		if rule.Enabled {
+			t.Fatalf("%s is on before anyone switched it on", rule.ID)
+		}
+	}
+	if !slices.Equal(rules[1].Providers, []string{"tavily", "parallel"}) || !slices.Equal(rules[2].Providers, []string{"parallel"}) {
+		t.Fatalf("providers = %v, %v", rules[1].Providers, rules[2].Providers)
 	}
 	if _, ok := c.RuleFor("https://youtu.be/aircAruvnKk"); ok {
 		t.Fatal("a built-in rule must not match until it is switched on")
@@ -37,6 +46,26 @@ func TestYouTubeIsRoutedToTheProvidersThatReadItOnceSwitchedOn(t *testing.T) {
 		}
 		if ok && (rule.ID != "youtube" || !rule.Builtin || !slices.Equal(rule.Providers, []string{"tavily"})) {
 			t.Errorf("%s: rule = %+v", url, rule)
+		}
+	}
+}
+
+func TestTwitterAndRedditAreRoutedOnceSwitchedOn(t *testing.T) {
+	c := Default()
+	c.Routing.Builtin = map[string]BuiltinRule{"twitter": {Enabled: true}, "reddit": {Enabled: true}}
+	for url, want := range map[string]string{
+		"https://x.com/jack/status/20":                   "twitter",
+		"https://mobile.twitter.com/jack/status/20":      "twitter",
+		"https://www.reddit.com/r/golang/comments/abc/x": "reddit",
+		"https://old.reddit.com/r/golang/":               "reddit",
+		"https://redd.it/abc":                            "reddit",
+		"https://max.com/watch":                          "",
+		"https://example.com/x.com":                      "",
+		"https://notreddit.com/r/golang":                 "",
+	} {
+		rule, ok := c.RuleFor(url)
+		if got := rule.ID; (ok && got != want) || (!ok && want != "") {
+			t.Errorf("%s: rule = %q, want %q", url, got, want)
 		}
 	}
 }

@@ -24,6 +24,16 @@ var capYouTube = Capability{
 	Match: []string{"youtube.com/watch", "youtube.com/shorts/", "youtube.com/live/", "youtu.be"},
 }
 
+var capTwitter = Capability{
+	ID: "twitter", Name: "X (Twitter)",
+	Match: []string{"x.com", "twitter.com"},
+}
+
+var capReddit = Capability{
+	ID: "reddit", Name: "Reddit",
+	Match: []string{"reddit.com", "redd.it"},
+}
+
 // Rule sends the pages it matches to its own providers in place of the fetch
 // routes: only those are tried, in this order. A provider serves a rule
 // whenever it has its credentials, whether or not its fetch route is enabled,

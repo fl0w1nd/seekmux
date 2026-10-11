@@ -334,7 +334,7 @@ var Catalog = []ProviderInfo{
 				{Key: "extract_depth", Type: OptionEnum, Default: "basic", Values: []string{"basic", "advanced"}},
 			},
 		},
-		Capabilities: []Capability{capYouTube},
+		Capabilities: []Capability{capYouTube, capTwitter},
 	},
 	{
 		ID: "jina", Name: "Jina Reader", Website: "https://jina.ai/reader", KeyRequired: false,
@@ -389,6 +389,7 @@ var Catalog = []ProviderInfo{
 				{Key: "max_age_hours", Type: OptionInt, Min: 1, Max: 720},
 			},
 		},
+		Capabilities: []Capability{capTwitter, capReddit},
 	},
 	{
 		// AnySearch also answers without a key, but then hands out generated
