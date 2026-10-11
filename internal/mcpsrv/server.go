@@ -128,7 +128,18 @@ const researchDescription = "Hand a question to a research agent that searches a
 func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *mcp.Server {
 	snap := a.Snapshot()
 	caller := app.Caller{Source: app.SourceMCP, KeyID: key.ID, KeyName: key.Name}
-	server := mcp.NewServer(&mcp.Implementation{Name: "seekmux", Title: "SeekMux", Version: version}, nil)
+	// The icons are the console's own, served without a login next to /mcp.
+	base := snap.PublicURL(r)
+	server := mcp.NewServer(&mcp.Implementation{
+		Name:       "seekmux",
+		Title:      "SeekMux",
+		Version:    version,
+		WebsiteURL: base,
+		Icons: []mcp.Icon{
+			{Source: base + "/icon-192.png", MIMEType: "image/png", Sizes: []string{"192x192"}},
+			{Source: base + "/favicon.svg", MIMEType: "image/svg+xml", Sizes: []string{"any"}},
+		},
+	}, nil)
 	allowed := func(tool string) bool { return slices.Contains(key.Scopes, tool) }
 
 	if allowed(config.ToolSearch) {

@@ -111,3 +111,38 @@ func TestResearchResultWaitsAndReportsTheBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestServerInfoAdvertisesIconsAtThePublicAddress(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := app.New(ctx, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	_, secret, err := st.CreateAPIKey(ctx, "test", []string{config.ToolSearch}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := httptest.NewServer(Handler(a, "test"))
+	defer srv.Close()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil)
+	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: srv.URL, HTTPClient: &http.Client{Transport: withKey{secret}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	info := session.InitializeResult().ServerInfo
+	if info.WebsiteURL != srv.URL {
+		t.Errorf("website = %q, want %q", info.WebsiteURL, srv.URL)
+	}
+	if len(info.Icons) != 2 || info.Icons[0].Source != srv.URL+"/icon-192.png" || info.Icons[1].Source != srv.URL+"/favicon.svg" {
+		t.Errorf("icons = %+v", info.Icons)
+	}
+}
