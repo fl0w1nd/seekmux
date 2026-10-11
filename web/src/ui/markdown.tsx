@@ -19,11 +19,14 @@ const components: Components = {
     ) : null,
 };
 
-/** Markdown from a provider or a model, set in the console's type. */
-export function Markdown({ children, className }: { children: string; className?: string }) {
+/**
+ * Markdown from a provider or a model, set in the console's type. `overrides`
+ * replaces how some elements are drawn.
+ */
+export function Markdown({ children, className, overrides }: { children: string; className?: string; overrides?: Components }) {
   return (
     <div className={cx("md", className)}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={overrides ? { ...components, ...overrides } : components}>
         {children}
       </ReactMarkdown>
     </div>

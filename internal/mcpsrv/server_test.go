@@ -96,7 +96,8 @@ func TestResearchResultWaitsAndReportsTheBudget(t *testing.T) {
 	if err := st.FinishTask(ctx, "rs_test", store.TaskDone, "the report", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := call(); got != "the report" {
+	// The report comes with the page that shows it, at the address the call came in on.
+	if got := call(); !strings.HasPrefix(got, "the report\n\n---\n") || !strings.HasSuffix(got, "kept for 14 days): "+srv.URL+"/report/rs_test") {
 		t.Errorf("finished answer = %q", got)
 	}
 

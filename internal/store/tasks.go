@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"time"
 )
 
 const (
@@ -161,15 +160,14 @@ func (s *Store) ListTasks(ctx context.Context, limit int) ([]ResearchTask, error
 	return tasks, rows.Err()
 }
 
-// RecoverTasks fails the tasks a previous process left running and drops
-// tasks older than a week.
+// RecoverTasks fails the tasks a previous process left running.
 func (s *Store) RecoverTasks(ctx context.Context) {
 	_, _ = s.db.ExecContext(ctx,
 		`UPDATE research_tasks SET status = ?, error = 'the server restarted while this task was running', updated_at = ? WHERE status = ?`,
 		TaskFailed, now(), TaskRunning)
-	s.pruneTasks(ctx)
 }
 
-func (s *Store) pruneTasks(ctx context.Context) {
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM research_tasks WHERE created_at < ?`, time.Now().AddDate(0, 0, -7).UnixMilli())
+// pruneTasks drops the tasks, and with them their reports, started before cutoff.
+func (s *Store) pruneTasks(ctx context.Context, cutoff int64) {
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM research_tasks WHERE created_at < ?`, cutoff)
 }

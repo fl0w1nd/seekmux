@@ -492,9 +492,55 @@ type ResearchBudget struct {
 	MaxContextTokens   int64  `json:"max_context_tokens"`
 }
 
+// PublicURL is the address people reach this server at: the configured one,
+// or the one r came in on.
+func (s *Snapshot) PublicURL(r *http.Request) string {
+	if s.Config.Network.PublicURL != "" {
+		return s.Config.Network.PublicURL
+	}
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+// ReportURL is the page that shows the report of a research task to anyone
+// who has the link. The task id is the secret: it cannot be guessed.
+func (s *Snapshot) ReportURL(r *http.Request, id string) string {
+	return s.PublicURL(r) + "/report/" + id
+}
+
+// ReportExpiry is when the task created at the given time, in ms, goes with
+// its report: tasks are kept as long as the logs.
+func (s *Snapshot) ReportExpiry(created int64) time.Time {
+	return time.UnixMilli(created).AddDate(0, 0, s.Config.Logs.RetentionDays)
+}
+
 // StartResearch runs research in the background and returns the id of the
 // task that holds its progress and its result.
 func (a *App) StartResearch(ctx context.Context, caller Caller, req research.Request, o Override) (string, error) {
+	id, err := a.createTask(ctx, &req, o)
+	if err != nil {
+		return "", err
+	}
+	a.tasks.Go(func() { _, _ = a.runTask(a.background, id, caller, req, o, nil) })
+	return id, nil
+}
+
+// ResearchTask runs research to completion as Research does and keeps it as
+// a task, so that its report has a page. It returns the id of the task.
+func (a *App) ResearchTask(ctx context.Context, caller Caller, req research.Request, o Override, progress func(research.Event)) (string, research.Result, error) {
+	id, err := a.createTask(ctx, &req, o)
+	if err != nil {
+		return "", research.Result{}, err
+	}
+	result, err := a.runTask(ctx, id, caller, req, o, progress)
+	return id, result, err
+}
+
+// createTask validates req and records a task for the run it asks for.
+func (a *App) createTask(ctx context.Context, req *research.Request, o Override) (string, error) {
 	if err := req.Validate(); err != nil {
 		return "", err
 	}
@@ -513,36 +559,44 @@ func (a *App) StartResearch(ctx context.Context, caller Caller, req research.Req
 	}); err != nil {
 		return "", err
 	}
-	run, cancel := context.WithCancelCause(a.background)
+	return id, nil
+}
+
+// runTask runs the research of task id until it ends or ctx does, and
+// records its progress and its outcome with the task.
+func (a *App) runTask(ctx context.Context, id string, caller Caller, req research.Request, o Override, progress func(research.Event)) (research.Result, error) {
+	run, cancel := context.WithCancelCause(ctx)
 	a.running.Store(id, cancel)
-	a.tasks.Go(func() {
-		defer a.running.Delete(id)
-		defer cancel(nil)
-		result, err := a.Research(run, caller, req, o, func(event research.Event) {
-			if event.Kind != "" {
-				a.Store.AddTaskStep(a.background, id, store.TaskStep{Step: event.Step, Kind: event.Kind, Text: event.Text, Line: event.Line()})
-			}
-			a.Store.SetTaskSpent(a.background, id, event.Spent, event.Draft)
-		})
-		// A run that failed before its first step has no totals to show. The
-		// report and the draft are kept in columns of their own.
-		var stats any
-		if totals := result; totals.Ran() {
-			totals.Report, totals.Draft = "", ""
-			stats = totals
+	defer a.running.Delete(id)
+	defer cancel(nil)
+	result, err := a.Research(run, caller, req, o, func(event research.Event) {
+		if event.Kind != "" {
+			a.Store.AddTaskStep(a.background, id, store.TaskStep{Step: event.Step, Kind: event.Kind, Text: event.Text, Line: event.Line()})
 		}
-		status, message := store.TaskDone, ""
-		switch {
-		case context.Cause(run) == errCanceled:
-			status, message = store.TaskCanceled, errCanceled.Error()
-		case err != nil:
-			status, message = store.TaskFailed, err.Error()
-		}
-		if ferr := a.Store.FinishTask(context.Background(), id, status, result.Report, message, stats); ferr != nil {
-			slog.Error("store research result", "task", id, "error", ferr)
+		a.Store.SetTaskSpent(a.background, id, event.Spent, event.Draft)
+		if progress != nil {
+			progress(event)
 		}
 	})
-	return id, nil
+	// A run that failed before its first step has no totals to show. The
+	// report and the draft are kept in columns of their own.
+	var stats any
+	if totals := result; totals.Ran() {
+		totals.Report, totals.Draft = "", ""
+		stats = totals
+	}
+	status, message := store.TaskDone, ""
+	switch {
+	case context.Cause(run) == errCanceled:
+		status, message = store.TaskCanceled, errCanceled.Error()
+	case err != nil:
+		status, message = store.TaskFailed, err.Error()
+	}
+	// ctx may be over by now: the caller of a run it waited for has gone.
+	if ferr := a.Store.FinishTask(context.Background(), id, status, result.Report, message, stats); ferr != nil {
+		slog.Error("store research result", "task", id, "error", ferr)
+	}
+	return result, err
 }
 
 var errCanceled = errors.New("the task was stopped")
@@ -557,7 +611,8 @@ func (a *App) CancelResearch(id string) bool {
 	return ok
 }
 
-// RunMaintenance prunes logs, sessions and old research tasks until ctx ends.
+// RunMaintenance prunes logs, sessions and the research tasks as old as the
+// logs it drops, until ctx ends.
 func (a *App) RunMaintenance(ctx context.Context) {
 	ticker := time.NewTicker(time.Hour)
 	defer ticker.Stop()

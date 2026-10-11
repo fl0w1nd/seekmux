@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
-import { Redirect, Route, Switch, useLocation } from "wouter";
+import { Redirect, Route, Switch, useLocation, useRoute } from "wouter";
 import { api, setUnauthorizedHandler } from "./lib/api";
 import { ConfigProvider } from "./lib/config";
 import { DesignPage } from "./pages/Design";
@@ -10,12 +10,19 @@ import { ModelsPage } from "./pages/Models";
 import { OverviewPage } from "./pages/Overview";
 import { Playground, playPage } from "./pages/play";
 import { ProvidersPage } from "./pages/Providers";
+import { ReportPage } from "./pages/Report";
 import { SystemPage } from "./pages/System";
 import { ToolsPage } from "./pages/Tools";
 import { Logo, Shell } from "./Shell";
 import { Button, Empty, Field, Input, Notice, Spinner, PasswordInput } from "./ui/primitives";
 
 export function App() {
+  // A report is read without signing in, so it stands outside the console.
+  const [isReport, params] = useRoute("/report/:id");
+  return isReport ? <ReportPage id={params.id} /> : <Console />;
+}
+
+function Console() {
   const client = useQueryClient();
   const auth = useQuery({ queryKey: ["auth"], queryFn: api.authState });
 

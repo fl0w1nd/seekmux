@@ -85,6 +85,14 @@ The proxy should send `X-Forwarded-For` and `X-Forwarded-Proto`, as most do by
 default: the first keeps login throttling per client, the second marks the
 session cookie as secure.
 
+Every research report also has a web page, `/report/<task id>`, whose link the
+research tools return with the report and the console shows next to it. Anyone
+who has the link can read the report without signing in; the task id is long
+and random, and the page goes when the task does, after the log retention
+(14 days by default). Links start with the address the request came in on, so
+the proxy should pass the `Host` header through; if agents reach the gateway
+at an internal address, set the public one under System → 网络 → 对外地址.
+
 ### Without Docker
 
 Download or build the binary and run it under your service manager:

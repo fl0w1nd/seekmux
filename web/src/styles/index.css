@@ -124,7 +124,8 @@
   --font-sans: "IBM Plex Sans Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", monospace;
 
-  /* Type scale: six sizes, each with its line height. */
+  /* Type scale: seven sizes for the console, each with its line height, and
+     two display sizes for the title and the figures of a report page. */
   --text-*: initial;
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
@@ -140,6 +141,10 @@
   --text-xl--line-height: 1.75rem;
   --text-2xl: 1.75rem;
   --text-2xl--line-height: 2.125rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.75rem;
+  --text-4xl: 3.25rem;
+  --text-4xl--line-height: 3.75rem;
 
   /* Two radii: controls and containers. */
   --radius-*: initial;
@@ -376,6 +381,98 @@
     color: var(--ink);
     font-weight: 500;
     background: var(--raised);
+  }
+}
+
+/* The report page (pages/Report.tsx): the same Markdown set for reading at
+   length, and the ruled ground its head stands on. */
+@layer components {
+  .md.md-report {
+    font-size: var(--text-lg);
+    line-height: 1.85;
+  }
+  .md-report > * + * {
+    margin-top: 1.1em;
+  }
+  .md-report :is(h1, h2, h3, h4, h5, h6) {
+    scroll-margin-top: 2.5rem;
+    letter-spacing: -0.01em;
+  }
+  .md-report h1 {
+    font-size: var(--text-2xl);
+    line-height: var(--text-2xl--line-height);
+    margin-top: 2.2em;
+  }
+  /* A section opens under a rule instead of closing on one. */
+  .md-report h2 {
+    font-size: var(--text-xl);
+    line-height: var(--text-xl--line-height);
+    margin-top: 2.6em;
+    padding: 1.3em 0 0;
+    border-bottom: 0;
+    border-top: 1px solid var(--line);
+  }
+  .md-report h3 {
+    font-size: var(--text-lg);
+    line-height: var(--text-lg--line-height);
+    margin-top: 2em;
+  }
+  .md-report > :first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  /* A report leads with its answer. */
+  .md-report > p:first-child {
+    font-size: var(--text-xl);
+    line-height: 1.7;
+    color: var(--ink);
+  }
+  .md-report li + li {
+    margin-top: 0.45em;
+  }
+  .md-report blockquote {
+    padding: 0.2em 0 0.2em 1.1em;
+    color: var(--ink-2);
+  }
+  .md-report pre {
+    font-size: var(--text-sm);
+    padding: 1rem 1.1rem;
+    border-radius: var(--radius-panel);
+  }
+  .md-report table {
+    font-size: var(--text-base);
+  }
+  .md-report :is(th, td) {
+    padding: 0.55em 0.9em;
+  }
+  .md-report a.md-cite {
+    font-family: var(--font-mono);
+    font-size: 0.72em;
+    line-height: 1.5;
+    padding: 0.15em 0.5em;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--sunken);
+    color: var(--ink-2);
+    text-decoration: none;
+    vertical-align: 0.1em;
+    white-space: nowrap;
+    transition:
+      color 140ms,
+      border-color 140ms;
+  }
+  .md-report a.md-cite:hover {
+    color: var(--ink);
+    border-color: var(--line-strong);
+  }
+
+  .report-backdrop {
+    background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 64px 64px;
+    background-position: center top;
+    opacity: 0.7;
+    mask-image: radial-gradient(ellipse 75% 95% at 80% 0%, black 10%, transparent 72%);
   }
 }
 

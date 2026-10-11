@@ -46,6 +46,8 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("POST /api/auth/login", s.handleLogin)
 	api.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	api.HandleFunc("POST /api/auth/password", s.requireAuth(s.handlePassword))
+	// A report is read by whoever was given its link.
+	api.HandleFunc("GET /api/reports/{id}", s.handleReport)
 
 	for pattern, handler := range map[string]http.HandlerFunc{
 		"GET /api/meta":                        s.handleMeta,
@@ -670,8 +672,60 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	// Now lets the console time a running task by the server's clock.
 	writeJSON(w, struct {
 		store.ResearchTask
-		Now int64 `json:"now"`
-	}{task, time.Now().UnixMilli()})
+		Now       int64  `json:"now"`
+		ReportURL string `json:"report_url"`
+	}{task, time.Now().UnixMilli(), s.app.Snapshot().ReportURL(r, task.ID)})
+}
+
+// report is a research task as the page of its report shows it to anyone
+// holding the link: the question and the report, and nothing of how the run
+// was set up, what it cost or why it failed.
+type report struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	Question  string `json:"question"`
+	CreatedAt int64  `json:"created_at"`
+	// FinishedAt is 0 while the task is running.
+	FinishedAt int64 `json:"finished_at"`
+	// ExpiresAt is when the task is dropped, to the hour.
+	ExpiresAt int64  `json:"expires_at"`
+	Report    string `json:"report"`
+	Searches  int    `json:"searches"`
+	// Read lists the pages the agent read and Unread the links the report
+	// cites although it did not, as research.Result has them.
+	Read   []string `json:"read"`
+	Unread []string `json:"unread"`
+	// CutShort is set when the budget ran out before the agent was done.
+	CutShort bool `json:"cut_short"`
+}
+
+func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
+	task, found, err := s.app.Store.GetTask(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, errors.New("report not found"))
+		return
+	}
+	out := report{
+		ID: task.ID, Status: task.Status, Question: task.Question, CreatedAt: task.CreatedAt,
+		ExpiresAt: s.app.Snapshot().ReportExpiry(task.CreatedAt).UnixMilli(),
+		Read:      []string{}, Unread: []string{},
+	}
+	if task.Status != store.TaskRunning {
+		out.FinishedAt = task.UpdatedAt
+	}
+	if task.Status == store.TaskDone {
+		var stats research.Result
+		if len(task.Stats) > 0 {
+			_ = json.Unmarshal(task.Stats, &stats)
+		}
+		out.Report, out.Searches, out.CutShort = task.Result, stats.Searches+stats.DevSearches, stats.BudgetExhausted
+		out.Read, out.Unread = append(out.Read, stats.Read...), append(out.Unread, stats.Unread...)
+	}
+	writeJSON(w, out)
 }
 
 // handleCancelTask stops a research task under way; the task then ends as

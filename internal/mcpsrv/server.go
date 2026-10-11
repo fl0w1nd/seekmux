@@ -31,7 +31,7 @@ type callerKey struct{}
 func Handler(a *app.App, version string) http.Handler {
 	streamable := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		key, _ := r.Context().Value(callerKey{}).(store.APIKey)
-		return newServer(a, key, version)
+		return newServer(a, key, version, r)
 	}, &mcp.StreamableHTTPOptions{
 		// Every request builds its tool list from the current configuration
 		// and the calling key, so there is no session to keep.
@@ -121,9 +121,11 @@ const devSearchDescription = "Search an index of public code repositories and do
 const researchDescription = "Hand a question to a research agent that searches and reads the web on its own, then returns a sourced report. " +
 	"Use it for questions that need many searches and pages to answer; for a quick lookup use `search` and `fetch` yourself. " +
 	"State the question completely, with the context and constraints that matter: the agent knows nothing about your conversation. A run takes minutes. " +
-	"The report is followed by a note on how the run ended and on any link it cites without having read the page."
+	"The report is followed by a note on how the run ended and on any link it cites without having read the page, " +
+	"and by the address of a web page that shows the report, which you can give the user to read it in full."
 
-func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
+// newServer returns the server for one request r, with the tools its key may call.
+func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *mcp.Server {
 	snap := a.Snapshot()
 	caller := app.Caller{Source: app.SourceMCP, KeyID: key.ID, KeyName: key.Name}
 	server := mcp.NewServer(&mcp.Implementation{Name: "seekmux", Title: "SeekMux", Version: version}, nil)
@@ -225,7 +227,8 @@ func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
 	}
 
 	if allowed(config.ToolResearch) && app.ResearchAvailable(snap) {
-		addResearchTools(server, a, key, caller, time.Duration(snap.Config.Research.ResultWaitSeconds)*time.Second)
+		addResearchTools(server, a, key, caller, time.Duration(snap.Config.Research.ResultWaitSeconds)*time.Second,
+			reportPages{days: snap.Config.Logs.RetentionDays, url: func(id string) string { return snap.ReportURL(r, id) }})
 	}
 	return server
 }
@@ -282,26 +285,45 @@ func bullets(urls []string) string {
 	return "\n- " + strings.Join(urls, "\n- ")
 }
 
+// reportPages words the web pages of research reports for the caller.
+type reportPages struct {
+	// days is how long a task and its report are kept.
+	days int
+	url  func(id string) string
+}
+
+// kept says how long a task can be asked for.
+func (p reportPages) kept() string {
+	return fmt.Sprintf("tasks are kept for %d days", p.days)
+}
+
+// note is the line that hands the page of task id to the caller.
+func (p reportPages) note(id string) string {
+	return fmt.Sprintf("Web page of this report, for the user to read or pass on (no sign-in needed, kept for %d days): %s", p.days, p.url(id))
+}
+
 // finished is a report with what its text cannot tell the caller: whether
-// the agent was cut short, and which of its citations it never read.
-func finished(report string, r research.Result) *mcp.CallToolResult {
-	// A task kept from before runs recorded their totals has only its report.
-	if !r.Ran() {
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: report}}}
-	}
+// the agent was cut short, which of its citations it never read, and page,
+// the line on where the report can be read.
+func finished(report string, r research.Result, page string) *mcp.CallToolResult {
 	var note strings.Builder
-	switch {
-	case r.Exhausted != "":
-		fmt.Fprintf(&note, "Research run: cut short. The %s budget ran out before the agent was done, so it wrote the report from what it had gathered; the report may be incomplete.", limitWords[r.Exhausted])
-	case r.BudgetExhausted:
-		note.WriteString("Research run: cut short. The budget ran out before the agent was done, so it wrote the report from what it had gathered; the report may be incomplete.")
-	default:
-		note.WriteString("Research run: the agent finished on its own.")
+	// A task kept from before runs recorded their totals has only its report.
+	if r.Ran() {
+		switch {
+		case r.Exhausted != "":
+			fmt.Fprintf(&note, "Research run: cut short. The %s budget ran out before the agent was done, so it wrote the report from what it had gathered; the report may be incomplete.", limitWords[r.Exhausted])
+		case r.BudgetExhausted:
+			note.WriteString("Research run: cut short. The budget ran out before the agent was done, so it wrote the report from what it had gathered; the report may be incomplete.")
+		default:
+			note.WriteString("Research run: the agent finished on its own.")
+		}
+		fmt.Fprintf(&note, " %d searches, %d page reads.", r.Searches+r.DevSearches, r.Fetches)
+		if len(r.Unread) > 0 {
+			note.WriteString("\n\nCited in the report although the agent never read the page. These links come from search snippets or the model's memory; treat what they are cited for as unverified:" + bullets(r.Unread))
+		}
+		note.WriteString("\n\n")
 	}
-	fmt.Fprintf(&note, " %d searches, %d page reads.", r.Searches+r.DevSearches, r.Fetches)
-	if len(r.Unread) > 0 {
-		note.WriteString("\n\nCited in the report although the agent never read the page. These links come from search snippets or the model's memory; treat what they are cited for as unverified:" + bullets(r.Unread))
-	}
+	note.WriteString(page)
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: report + "\n\n---\n" + note.String()}}}
 }
 
@@ -350,7 +372,7 @@ func running(task store.ResearchTask) *mcp.CallToolResult {
 // response stream.
 const heartbeat = 15 * time.Second
 
-func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller app.Caller, wait time.Duration) {
+func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller app.Caller, wait time.Duration, pages reportPages) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "research",
 		Description: researchDescription + " The call returns when the report is ready, which is the cheapest way to wait for it. Use `research_start` instead when you have other work to do in the meantime, or after your client cut a `research` call short.",
@@ -376,11 +398,12 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: token, Progress: step, Message: line})
 			}
 		}
-		result, err := a.Research(ctx, caller, args.Request, override, progress)
+		// The run is kept as a task, which is what gives its report a page.
+		id, result, err := a.ResearchTask(ctx, caller, args.Request, override, progress)
 		if err != nil {
 			return unfinished(err.Error(), result.Read, result.Draft), nil, nil
 		}
-		return finished(result.Report, result), nil, nil
+		return finished(result.Report, result, pages.note(id)), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -400,9 +423,10 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 			return failure(err), nil, nil
 		}
 		return text(map[string]string{
-			"task_id": id,
-			"status":  store.TaskRunning,
-			"next":    "Call research_result with this task_id once you need the report; that call waits for the run to finish. A run usually takes a few minutes.",
+			"task_id":    id,
+			"status":     store.TaskRunning,
+			"report_url": pages.url(id),
+			"next":       "Call research_result with this task_id once you need the report; that call waits for the run to finish. A run usually takes a few minutes. report_url is a web page that will show the report once it is written; the user can open it without signing in.",
 		}, false), nil, nil
 	})
 
@@ -428,7 +452,7 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 				return failure(err), nil, nil
 			}
 			if !ok {
-				return failure(fmt.Errorf("unknown task_id; tasks are kept for 7 days")), nil, nil
+				return failure(fmt.Errorf("unknown task_id; %s", pages.kept())), nil, nil
 			}
 			// A task that ended before its first step has no stats.
 			var stats research.Result
@@ -437,7 +461,7 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 			}
 			switch {
 			case task.Status == store.TaskDone:
-				return finished(task.Result, stats), nil, nil
+				return finished(task.Result, stats, pages.note(task.ID)), nil, nil
 			case task.Status == store.TaskFailed, task.Status == store.TaskCanceled:
 				return unfinished("research failed: "+task.Error, stats.Read, strings.TrimSpace(task.Draft)), nil, nil
 			case time.Now().After(deadline):
@@ -474,7 +498,7 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 			return failure(err), nil, nil
 		}
 		if !ok {
-			return failure(fmt.Errorf("unknown task_id; tasks are kept for 7 days")), nil, nil
+			return failure(fmt.Errorf("unknown task_id; %s", pages.kept())), nil, nil
 		}
 		return failure(fmt.Errorf("the task is not running: it ended as %s", task.Status)), nil, nil
 	})

@@ -31,10 +31,10 @@ export function SystemPage() {
 
   return (
     <>
-      <PageHeader title="系统" description="日志保留、自动熔断、出站网络、配置的备份与迁移，以及管理员密码。" />
+      <PageHeader title="系统" description="日志保留、自动熔断、网络、配置的备份与迁移，以及管理员密码。" />
       <div className="flex flex-col gap-4">
         <Panel index="01" title="请求日志" description="日志与配置存储在同一个 SQLite 文件中，每小时按以下规则清理一次。" flush>
-          <Row label="保留天数" hint="早于该天数的日志将被删除">
+          <Row label="保留天数" hint="早于该天数的日志将被删除；研究任务及其报告链接按同一期限失效">
             <NumberInput className="w-24" min={1} suffix="天" value={config.logs.retention_days} onChange={(v) => update((d) => void (d.logs.retention_days = Math.round(v)))} />
           </Row>
           <Row label="最多保留条数" hint="超出后从最早的记录开始删除，用于限制数据库体积">
@@ -64,8 +64,11 @@ export function SystemPage() {
           </Row>
         </Panel>
 
-        <Panel index="03" title="出站网络" flush>
-          <Row label="代理" hint="访问搜索、抓取和模型接口时使用。留空则直连">
+        <Panel index="03" title="网络" flush>
+          <Row label="对外地址" hint="研究报告链接以此开头。留空则沿用请求到达时的地址；Agent 经内网地址接入时需要填写">
+            <Input mono className="w-72" value={config.network.public_url ?? ""} placeholder="https://seekmux.example.com" onChange={(e) => update((d) => void (d.network.public_url = e.target.value.trim() || undefined))} />
+          </Row>
+          <Row label="出站代理" hint="访问搜索、抓取和模型接口时使用。留空则直连">
             <Input mono className="w-72" value={config.network.proxy ?? ""} placeholder="http://127.0.0.1:7890" onChange={(e) => update((d) => void (d.network.proxy = e.target.value.trim() || undefined))} />
           </Row>
           <Row label="页面缓存" hint="抓取的页面在内存中缓存一段时间，供针对同一页面的后续请求复用">

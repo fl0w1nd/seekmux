@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 type step struct {
@@ -138,5 +139,33 @@ func TestOpenAddsTaskHistoryToAnOldDatabase(t *testing.T) {
 	}
 	if got := steps(t, task); len(got) != 0 || task.Stats != nil || task.Budget != nil || task.Spent != nil || task.Draft != "" {
 		t.Fatalf("an old task reads as having no history, got %+v", task)
+	}
+}
+
+func TestTasksAreKeptAsLongAsTheLogs(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	for _, id := range []string{"rs_old", "rs_new"} {
+		if err := s.CreateTask(ctx, id, "q", nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE research_tasks SET created_at = ? WHERE id = 'rs_old'`, time.Now().AddDate(0, 0, -3).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+
+	s.Prune(ctx, 5, 100)
+	if list, _ := s.ListTasks(ctx, 10); len(list) != 2 {
+		t.Fatalf("a task younger than the retention must stay, got %+v", list)
+	}
+	s.Prune(ctx, 2, 100)
+	list, _ := s.ListTasks(ctx, 10)
+	if len(list) != 1 || list[0].ID != "rs_new" {
+		t.Fatalf("a task older than the retention goes with the logs of its day, got %+v", list)
 	}
 }

@@ -44,7 +44,8 @@ signal color instead of sitting next to it as plain gray.
 
 **Type.** Seven sizes, each with a fixed line height: `2xs` 11, `xs` 12,
 `sm` 13, `base` 14, `lg` 16, `xl` 20, `2xl` 28. Body is `base`; controls and
-tables are `sm`. Two utilities: `num` (mono, tabular) and `tag` (mono, 11px,
+tables are `sm`. Two display sizes, `3xl` 36 and `4xl` 52, exist for the report
+page alone: its title and its figures. Nothing in the console uses them. Two utilities: `num` (mono, tabular) and `tag` (mono, 11px,
 uppercase, tracked — the micro label on panels, columns and lanes).
 
 **Shape.** Two radii only: `rounded-ctl` (5px) for controls, `rounded-panel`
@@ -76,6 +77,13 @@ except the dot of something that is live. All of it is disabled under
 - `markdown.tsx` — `Markdown`, for long text from providers and models. It
   never renders raw HTML and turns images into links, since the text is
   untrusted.
+- `pages/Report.tsx` — the report page, the one screen that is read rather
+  than operated and the one a visitor sees without signing in. It keeps the
+  tokens and changes the scale: a display title on a ruled ground
+  (`report-backdrop`), the run's figures as a band, the report in `md-report`
+  (the Markdown styles at reading size, with a link written out as its own
+  address drawn as a short citation marker), its contents alongside, and the
+  pages the agent read as a numbered grid.
 - `components/` — `RouteList` (numbered priority lanes), `ModelRefEditor`,
   `ProviderPicker` (auto or one provider, with its health), `ModelOverride`
   (the assigned models or another one, for a single call),

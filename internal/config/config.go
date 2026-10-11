@@ -246,6 +246,9 @@ type Network struct {
 	// Proxy is an outbound proxy URL (http, https or socks5). Empty means the
 	// process environment decides.
 	Proxy string `json:"proxy,omitempty"`
+	// PublicURL is the address people reach this server at, which the links
+	// it hands out start with. Empty means the address a request came in on.
+	PublicURL string `json:"public_url,omitempty"`
 }
 
 // ProviderInfo describes a built-in search/fetch provider.
@@ -515,6 +518,7 @@ func (c *Config) Normalize() {
 	}
 	c.Research.Model = strings.TrimSpace(c.Research.Model)
 	c.Network.Proxy = strings.TrimSpace(c.Network.Proxy)
+	c.Network.PublicURL = strings.TrimRight(strings.TrimSpace(c.Network.PublicURL), "/")
 }
 
 func positive(v *int, fallback int) {
@@ -681,6 +685,9 @@ func (c *Config) Validate() error {
 	}
 	if err := checkURL(c.Network.Proxy, "http", "https", "socks5", "socks5h"); err != nil {
 		return fmt.Errorf("network.proxy: %w", err)
+	}
+	if err := checkURL(c.Network.PublicURL, "http", "https"); err != nil {
+		return fmt.Errorf("network.public_url: %w", err)
 	}
 	return nil
 }

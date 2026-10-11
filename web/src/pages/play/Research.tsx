@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Braces, FileText, Flag, MessageSquareText, RotateCcw, Search, SlidersHorizontal, Square, Undo2 } from "lucide-react";
+import { Bot, Braces, ExternalLink, FileText, Flag, MessageSquareText, RotateCcw, Search, SlidersHorizontal, Square, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { hasOtherModels, ModelOverride } from "../../components/ModelPicker";
@@ -93,7 +93,7 @@ export function ResearchPlay() {
   });
   const data = taskId !== null ? task.data : undefined;
   const running = data?.status === "running";
-  // A task that is gone, pruned after a week, is nothing to return to.
+  // A task that is gone, pruned with the logs of its day, is nothing to return to.
   const gone = task.error instanceof APIError && task.error.status === 404;
   useEffect(() => {
     if (gone) show(null);
@@ -268,7 +268,7 @@ export function ResearchPlay() {
           </section>
         ))}
 
-      <Tasks tasks={tasks.data} pending={tasks.isPending} active={taskId} onPick={show} />
+      <Tasks tasks={tasks.data} pending={tasks.isPending} days={config.logs.retention_days} active={taskId} onPick={show} />
     </>
   );
 }
@@ -406,6 +406,18 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
             view === "report" &&
             task.result && (
               <>
+                {task.status === "done" && (
+                  <>
+                    <Tooltip content="报告的独立页面，无需登录即可阅读">
+                      <a href={task.report_url} target="_blank" rel="noreferrer">
+                        <Button size="sm" variant="ghost" icon={<ExternalLink />} tabIndex={-1}>
+                          报告页
+                        </Button>
+                      </a>
+                    </Tooltip>
+                    <CopyButton text={task.report_url} label="复制链接" />
+                  </>
+                )}
                 <CopyButton text={task.result} label="复制" />
                 <Segmented
                   size="sm"
@@ -730,13 +742,13 @@ function Report({ task, spent, rendered }: { task: ResearchTask; spent: Research
 
 /* ---------- Past runs ---------- */
 
-function Tasks({ tasks, pending, active, onPick }: { tasks: ResearchTaskSummary[] | undefined; pending: boolean; active: string | null; onPick: (id: string) => void }) {
+function Tasks({ tasks, pending, days, active, onPick }: { tasks: ResearchTaskSummary[] | undefined; pending: boolean; /** How long tasks are kept. */ days: number; active: string | null; onPick: (id: string) => void }) {
   const list = tasks ?? [];
   return (
     <section className="mt-6">
       <header className="mb-2 flex items-baseline justify-between px-1">
         <h2 className="tag">最近的研究</h2>
-        <span className="text-xs text-ink-3">保留 7 天，含经 MCP 发起的任务</span>
+        <span className="text-xs text-ink-3">与日志一同保留 {days} 天，含经 MCP 发起的任务</span>
       </header>
       <div className="rounded-panel border border-line bg-surface">
         {list.length === 0 ? (

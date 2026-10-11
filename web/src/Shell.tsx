@@ -74,7 +74,7 @@ const nav = [
 
 type Theme = "system" | "light" | "dark";
 
-function useTheme(): [Theme, (theme: Theme) => void] {
+export function useTheme(): [Theme, (theme: Theme) => void] {
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem("seekmux-theme");
     return saved === "light" || saved === "dark" ? saved : "system";

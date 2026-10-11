@@ -305,14 +305,15 @@ func (s *Store) ClearLogs(ctx context.Context) error {
 	return err
 }
 
-// Prune applies the log retention and drops expired sessions.
+// Prune applies the log retention, which research tasks and their reports
+// share, and drops expired sessions.
 func (s *Store) Prune(ctx context.Context, retentionDays, maxRows int) {
 	cutoff := time.Now().AddDate(0, 0, -retentionDays).UnixMilli()
 	_, _ = s.db.ExecContext(ctx, `DELETE FROM request_logs WHERE ts < ?`, cutoff)
 	_, _ = s.db.ExecContext(ctx,
 		`DELETE FROM request_logs WHERE id <= (SELECT COALESCE(MAX(id), 0) FROM request_logs) - ?`, maxRows)
 	s.pruneSessions(ctx)
-	s.pruneTasks(ctx)
+	s.pruneTasks(ctx, cutoff)
 }
 
 // ToolStats summarizes the calls of one tool.

@@ -100,7 +100,7 @@ export interface Config {
   /** One circuit-breaker policy for every provider and extract model. */
   breaker: { enabled: boolean; failures: number; window_seconds: number; cooldown_seconds: number };
   logs: { retention_days: number; max_rows: number; capture_body: boolean };
-  network: { proxy?: string };
+  network: { proxy?: string; public_url?: string };
 }
 
 export type Tool = "search" | "dev_search" | "fetch" | "research";
@@ -430,6 +430,29 @@ export interface ResearchTask extends ResearchTaskSummary {
   draft?: string;
   /** The server's clock when it answered, in ms. */
   now: number;
+  /** The page that shows the report to anyone who has the link. */
+  report_url: string;
+}
+
+/** A research task as the page of its report shows it, to readers who are not signed in. */
+export interface PublicReport {
+  id: string;
+  status: ResearchTaskSummary["status"];
+  question: string;
+  created_at: number;
+  /** 0 while the task is running. */
+  finished_at: number;
+  /** When the task and its report are dropped. */
+  expires_at: number;
+  /** Empty unless the task is done. */
+  report: string;
+  searches: number;
+  /** The pages the agent read, in the order it opened them. */
+  read: string[];
+  /** The links the report cites although the agent never read them. */
+  unread: string[];
+  /** The budget ran out before the agent was done. */
+  cut_short: boolean;
 }
 
 /**
@@ -553,4 +576,6 @@ export const api = {
   researchTasks: () => get<ResearchTaskSummary[]>("/api/research/tasks"),
   researchTask: (id: string) => get<ResearchTask>(`/api/research/tasks/${id}`),
   cancelResearch: (id: string) => post(`/api/research/tasks/${id}/cancel`),
+  /** Needs no session: the id is the secret. */
+  report: (id: string) => get<PublicReport>(`/api/reports/${encodeURIComponent(id)}`),
 };
