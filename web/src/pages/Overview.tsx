@@ -11,6 +11,9 @@ import { Badge, cx, Dot, Empty, Meter, Notice, Panel, Segmented, Spinner, Table,
 
 type Window = "1h" | "24h" | "7d";
 
+/** The width of one histogram bucket, e.g. "5 分钟". */
+const stepLabel = (step: number) => (step >= 3600_000 ? `${step / 3600_000} 小时` : `${step / 60_000} 分钟`);
+
 const windows: Record<Window, { label: string; span: number; step: number }> = {
   "1h": { label: "1 小时", span: 3600_000, step: 300_000 },
   "24h": { label: "24 小时", span: 86400_000, step: 3600_000 },
@@ -34,7 +37,7 @@ export function OverviewPage() {
       ) : (
         <div className="flex flex-col gap-4">
           <Kpis data={data} />
-          <Panel index="01" title="请求量" description={`每格 ${windows[window].step >= 3600_000 ? `${windows[window].step / 3600_000} 小时` : `${windows[window].step / 60_000} 分钟`}`}>
+          <Panel index="01" title="请求量" description={`时间粒度：${stepLabel(windows[window].step)}`}>
             <Histogram data={data} window={window} />
           </Panel>
           <div className="grid gap-4 xl:grid-cols-2">
@@ -126,7 +129,7 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
       </div>
       <div className="tag mt-2 flex justify-between normal-case">
         <span>{dateTime(slots[0].ts).slice(5, 16)}</span>
-        <span>峰值 {peak} 次 / 格</span>
+        <span>峰值 {peak} 次 / {stepLabel(step)}</span>
         <span>当前</span>
       </div>
     </div>
@@ -154,7 +157,7 @@ function Routes({ tool, title, index, routes }: { tool: string; title: string; i
                   <span className="num w-20 text-right text-xs text-ink-3">{route.limit > 0 ? `${route.used}/${route.rate_limit}` : "不限流"}</span>
                 </>
               ) : (
-                <span className="text-xs text-ink-3">{route.enabled ? "缺少 API key" : "已停用"}</span>
+                <span className="text-xs text-ink-3">{route.enabled ? "缺少 API Key" : "已停用"}</span>
               )}
             </span>
           </li>
@@ -201,7 +204,7 @@ function Providers({ data, index }: { data: Overview; index: string }) {
   const { provider } = useConfig();
   const rows = data.stats.providers;
   return (
-    <Panel index={index} title="提供商表现" description="按对上游的每次请求统计，包含因故障转移被跳过和在竞速中被取消的请求。" flush>
+    <Panel index={index} title="提供商表现" description="按对上游的每次请求统计，包含因故障转移被跳过和在对冲中被取消的请求" flush>
       {rows.length === 0 ? (
         <Empty title="暂无数据" />
       ) : (
@@ -211,9 +214,9 @@ function Providers({ data, index }: { data: Overview; index: string }) {
               <tr>
                 <Th>用途</Th>
                 <Th className="w-full">提供商</Th>
-                <Th className="text-right">尝试</Th>
+                <Th className="text-right">请求数</Th>
                 <Th className="text-right">成功率</Th>
-                <Th className="text-right">被采用</Th>
+                <Th className="text-right">采纳数</Th>
                 <Th className="text-right">取消</Th>
                 <Th className="text-right">P50</Th>
                 <Th className="text-right">P95</Th>

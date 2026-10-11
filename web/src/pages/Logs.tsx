@@ -97,7 +97,7 @@ export function LogsPage() {
             { value: "", label: "全部状态" },
             { value: "ok", label: "成功" },
             { value: "error", label: "失败" },
-            { value: "fallback", label: "有回退" },
+            { value: "fallback", label: "触发回退" },
           ]}
         />
         <Select className="w-36" value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="按提供商筛选">
@@ -184,7 +184,7 @@ const hopClass: Record<Hop["status"], string> = {
   limited: "text-warn line-through decoration-warn/60",
   canceled: "text-ink-3",
 };
-const hopTitle: Record<Hop["status"], string> = { ok: "成功", cached: "缓存", error: "失败", skipped: "已熔断，跳过", limited: "限流，跳过", canceled: "竞速中被取消" };
+const hopTitle: Record<Hop["status"], string> = { ok: "成功", cached: "缓存", error: "失败", skipped: "熔断跳过", limited: "限流跳过", canceled: "对冲取消" };
 
 /**
  * The way a call took when it did not go straight through: each provider or
@@ -245,7 +245,7 @@ function LogDrawer({ id, onClose }: { id: number | null; onClose: () => void }) 
             <Fact label="总耗时">
               <span className="num">{duration(entry.duration_ms)}</span>
             </Fact>
-            <Fact label="应答方">
+            <Fact label="响应提供商">
               <span className="num">{entry.provider || "—"}</span>
             </Fact>
             <Fact label="调用方">{entry.source === "webui" ? "调试台" : entry.api_key_name || "—"}</Fact>
@@ -278,8 +278,8 @@ function LogDrawer({ id, onClose }: { id: number | null; onClose: () => void }) 
           )}
 
           <section>
-            <h3 className="tag mb-1.5">调用链 · {entry.attempts?.length ?? 0} 条</h3>
-            {entry.attempts?.length ? <Waterfall attempts={entry.attempts} total={entry.duration_ms} /> : <div className="text-xs text-ink-3">本次调用未请求任何上游提供商。</div>}
+            <h3 className="tag mb-1.5">调用链 · {entry.attempts?.length ?? 0} 次请求</h3>
+            {entry.attempts?.length ? <Waterfall attempts={entry.attempts} total={entry.duration_ms} /> : <div className="text-xs text-ink-3">本次调用未请求任何上游提供商</div>}
           </section>
 
           <section>

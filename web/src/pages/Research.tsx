@@ -29,15 +29,15 @@ export function ResearchPage() {
           </div>
         </Panel>
 
-        <Panel index="03" title="阅读方式" description="研究 Agent 读取网页时获得的内容形式。" flush>
+        <Panel index="03" title="内容读取模式" description="研究 Agent 读取网页时获得的内容形式" flush>
           <Row
             label="网页内容"
             hint={
               research.reading === "raw"
-                ? "研究模型直接读取网页原文，长页面分段读取。最接近一手材料，占用的上下文也最多。"
+                ? "研究模型直接读取网页原文，长页面分段读取；最接近一手材料，但上下文消耗最大"
                 : extractReady
-                  ? "由「抓取」页的提取模型先按研究模型的提问归纳各网页，将答案交给研究模型；需要代码或原话时，研究模型仍可按页读取原文。节省上下文，但准确度取决于提取模型。"
-                  : "尚未配置提取模型，网页将按原文返回。请先在「抓取」页选定提取模型。"
+                  ? "由「网页抓取」页的提取模型先按研究模型的提问提炼各网页，仅将结果交给研究模型；需要代码或原话时仍可按页读取原文。节省上下文，准确度取决于提取模型"
+                  : "尚未配置提取模型，网页将按原文返回；请先在「网页抓取」页选定提取模型"
             }
           >
             <Segmented
@@ -58,11 +58,11 @@ export function ResearchPage() {
           <Row label="最长用时" hint="达到 80% 时开始收尾并撰写报告">
             <NumberInput className="w-24" min={30} suffix="秒" value={research.max_duration_seconds} onChange={(v) => update((d) => void (d.research.max_duration_seconds = Math.round(v)))} />
           </Row>
-          <Row label="token 上限" hint="各步输入与输出 token 的累计值，用于约束总花费">
-            <NumberInput className="w-32" min={1000} suffix="token" value={research.max_tokens} onChange={(v) => update((d) => void (d.research.max_tokens = Math.round(v)))} />
+          <Row label="Token 上限" hint="各步输入与输出 Token 的累计值，用于约束总花费">
+            <NumberInput className="w-32" min={1000} suffix="Token" value={research.max_tokens} onChange={(v) => update((d) => void (d.research.max_tokens = Math.round(v)))} />
           </Row>
-          <Row label="上下文上限" hint="单次请求的输入规模；应低于模型的上下文窗口并留出余量，超出后上游将直接拒绝请求">
-            <NumberInput className="w-32" min={1000} suffix="token" value={research.max_context_tokens} onChange={(v) => update((d) => void (d.research.max_context_tokens = Math.round(v)))} />
+          <Row label="上下文上限" hint="单次请求的输入规模上限，应低于模型的上下文窗口并留出余量">
+            <NumberInput className="w-32" min={1000} suffix="Token" value={research.max_context_tokens} onChange={(v) => update((d) => void (d.research.max_context_tokens = Math.round(v)))} />
           </Row>
         </Panel>
 

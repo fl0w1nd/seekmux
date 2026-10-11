@@ -60,7 +60,7 @@ export function ProvidersPage() {
                     </Notice>
                   );
                 })}
-                <Field label="API key" hint={info.key_required ? undefined : "可选：留空亦可使用，填写后额度更高"}>
+                <Field label="API Key" hint={info.key_required ? undefined : "可选：留空亦可使用，填写后额度更高"}>
                   <SecretInput value={creds} onChange={(next) => update((d) => void (d.providers[info.id] = next))} />
                 </Field>
                 <div className="flex flex-wrap gap-x-6 gap-y-4">

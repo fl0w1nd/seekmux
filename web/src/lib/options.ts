@@ -11,13 +11,13 @@ const text: Record<string, OptionText> = {
   country: { label: "地区", hint: "两位国家码，如 US。留空则继承上方的默认地区" },
   language: { label: "语言", hint: "两位语言码，如 zh。留空则继承上方的默认语言" },
 
-  "brave.search.extra_snippets": { label: "额外摘要", hint: "每条结果最多附加 5 段摘录，描述更完整。免费套餐下不生效：请求仍会成功，但不含额外摘录" },
+  "brave.search.extra_snippets": { label: "额外摘要", hint: "每条结果最多附带 5 段摘录，描述更完整；免费套餐下不生效（请求仍会成功）" },
   "brave.search.safesearch": { label: "安全搜索", hint: "成人内容的过滤级别" },
   "brave.search.goggles": { label: "Goggles", hint: "自定义重排规则的 URL 或内联定义，可对站点加权、降权或屏蔽" },
   "brave.search.country": { label: "地区", hint: "两位国家码，留空则继承默认地区。Brave 仅支持部分国家" },
 
   "exa.search.type": { label: "搜索类型", hint: "instant、fast 速度更快；deep 系列执行多步检索，耗时与费用更高" },
-  "exa.search.contents": { label: "摘要形态", hint: "highlights 是与查询相关的摘录，text 是正文开头，summary 是模型生成的摘要（另计费，慢几秒）" },
+  "exa.search.contents": { label: "内容格式", hint: "highlights 是与查询相关的摘录，text 是正文开头，summary 是模型生成的摘要（另计费，慢几秒）" },
   "exa.search.max_characters": { label: "摘要长度上限", unit: "字符", hint: "每条结果的摘录或正文长度，对 summary 无效" },
   "exa.search.max_age_hours": { label: "内容缓存时长", unit: "小时", hint: "缓存超过该时长则重新抓取；0 为始终实时抓取，-1 为仅使用缓存。留空由 Exa 决定" },
   "exa.search.country": { label: "地区", hint: "两位国家码，留空则继承默认地区。Exa 不支持语言参数" },
@@ -38,8 +38,8 @@ const text: Record<string, OptionText> = {
 
   "jina.fetch.engine": { label: "抓取引擎", hint: "browser 使用无头浏览器渲染，curl 直接请求、速度更快，auto 自动选择" },
   "jina.fetch.retain_images": { label: "图片", hint: "none 移除图片，alt 仅保留替代文字，all 保留图片链接" },
-  "jina.fetch.cache_tolerance_seconds": { label: "缓存容忍时长", unit: "秒", hint: "可接受的缓存最长时效，0 为不使用缓存。留空为 Jina 默认的 1 小时" },
-  "jina.fetch.proxy_country": { label: "代理地区", hint: "经该国家的代理访问页面，两位国家码。需要 API key" },
+  "jina.fetch.cache_tolerance_seconds": { label: "缓存最大时效", unit: "秒", hint: "可接受的缓存最长时效，0 为不使用缓存。留空为 Jina 默认的 1 小时" },
+  "jina.fetch.proxy_country": { label: "代理地区", hint: "经该国家的代理访问页面，两位国家码。需要 API Key" },
 
   "firecrawl.search.highlights": { label: "相关摘录", hint: "摘要取页面中与查询相关的段落；关闭后返回搜索引擎的原始摘要，更短" },
   "firecrawl.search.country": { label: "地区", hint: "两位国家码，留空则继承默认地区。Firecrawl 不支持语言参数" },

@@ -256,7 +256,7 @@ export function DesignPage() {
           </Specimen>
           <Specimen label="Feedback">
             <Button onClick={() => toast("配置已保存并生效")}>成功提示</Button>
-            <Button onClick={() => toast("保存失败：exa 缺少 API key", "err")}>错误提示</Button>
+            <Button onClick={() => toast("保存失败：exa 缺少 API Key", "err")}>错误提示</Button>
             <Button onClick={() => void confirm({ title: "清空全部日志？", body: "这个操作不能撤销。", confirm: "清空", danger: true })}>确认框</Button>
             <Popover trigger={<Button>浮层</Button>} className="w-72 p-3">
               <p className="text-sm">锚定在触发它的控件上，用于少量选项或一段说明。</p>

@@ -121,9 +121,9 @@ export function KeysPage() {
         />
       )}
 
-      <Dialog open={created !== null} onOpenChange={(open) => !open && setCreated(null)} title={`密钥「${created?.name}」已创建`} width="max-w-2xl" footer={<Button variant="primary" onClick={() => setCreated(null)}>我已保存</Button>}>
+      <Dialog open={created !== null} onOpenChange={(open) => !open && setCreated(null)} title={`密钥「${created?.name}」已创建`} width="max-w-2xl" footer={<Button variant="primary" onClick={() => setCreated(null)}>完成</Button>}>
         <div className="flex flex-col gap-4">
-          <Notice tone="warn">密钥仅显示一次。服务端只保存其哈希，关闭后无法再次查看。</Notice>
+          <Notice tone="warn">密钥仅显示一次，关闭后将无法再次查看，请妥善保存。</Notice>
           <CodeBlock copy wrap>
             {created?.secret ?? ""}
           </CodeBlock>
@@ -201,7 +201,7 @@ function KeyDialog({
       }
     >
       <div className="flex flex-col gap-4">
-        <Field label="名称" hint="用于在日志中区分调用方，例如设备名或 Agent 名">
+        <Field label="名称" hint="用于在日志中标识调用方，例如设备或 Agent 名称">
           <Input autoFocus value={name} maxLength={64} placeholder="macbook · claude code" onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label="可用工具">
@@ -226,7 +226,7 @@ function KeyDialog({
             })}
           </div>
         </Field>
-        {scopes.includes("dev_search") && !devSearchReady && <Notice>开发者搜索尚无可用的提供商，在「开发者搜索」页启用路由并为提供商配置密钥前，该密钥无法使用此工具。</Notice>}
+        {scopes.includes("dev_search") && !devSearchReady && <Notice>开发搜索尚无可用的提供商，在「开发搜索」页启用路由并为提供商配置密钥前，该密钥无法使用此工具。</Notice>}
         {scopes.includes("research") && !config.research.enabled && <Notice>研究工具尚未启用，启用前该密钥无法使用此工具。</Notice>}
         <Field label="调用限流" hint="该密钥全部工具调用合计的频率上限">
           <RateLimitInput value={rateLimit} onChange={setRateLimit} fallback="60/m" />

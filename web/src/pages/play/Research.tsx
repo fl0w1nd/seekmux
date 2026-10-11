@@ -209,7 +209,7 @@ export function ResearchPlay() {
                 </div>
                 <p className="text-xs text-ink-3">任一项耗尽时，Agent 停止检索并基于现有材料撰写报告。</p>
               </OptionGroup>
-              <OptionGroup title="阅读方式" local>
+              <OptionGroup title="内容读取模式" local>
                 <Segmented
                   stretch
                   size="sm"
@@ -222,9 +222,9 @@ export function ResearchPlay() {
                 />
                 <p className="text-xs text-ink-3">
                   {budget.reading === "raw"
-                    ? "研究模型直接读取网页原文，长页面分段读取。最接近一手材料，占用的上下文也最多。"
+                    ? "研究模型直接读取网页原文，长页面分段读取；最接近一手材料，但上下文消耗最大"
                     : config.fetch.extract.models.length > 0
-                      ? "由提取模型先按研究模型的提问归纳各网页，将答案交给研究模型；需要代码或原话时，研究模型仍可按页读取原文。节省上下文，准确度取决于提取模型。"
+                      ? "由提取模型先按研究模型的提问提炼各网页，仅将结果交给研究模型；需要代码或原话时仍可按页读取原文。节省上下文，准确度取决于提取模型"
                       : "尚未配置提取模型，网页仍按原文返回。"}
                 </p>
                 <p className="mt-auto text-xs text-ink-3">
@@ -454,7 +454,7 @@ function Gauges({ spent, budget, elapsed, live }: { spent: ResearchSpent; budget
         live={live}
         spent={spent.exhausted === "steps"}
         cells={budget && budget.max_steps <= 48 ? budget.max_steps : undefined}
-        foot={!budget ? "模型推理的轮数" : spent.exhausted && live ? "已停止检索，撰写报告" : live ? `还可再走 ${budget.max_steps - steps} 步` : `上限 ${budget.max_steps} 步`}
+        foot={!budget ? "模型推理的轮数" : spent.exhausted && live ? "已停止检索，撰写报告" : live ? `剩余 ${budget.max_steps - steps} 步` : `上限 ${budget.max_steps} 步`}
       />
       <Gauge
         label="用时"
@@ -465,7 +465,7 @@ function Gauges({ spent, budget, elapsed, live }: { spent: ResearchSpent; budget
         steady
         spent={spent.exhausted === "duration"}
         mark={0.8}
-        foot={!maxMs ? "自开始以来" : live && elapsed < wrapUp ? `${stopwatch(wrapUp)} 起收尾` : live ? "已过收尾线" : `${stopwatch(wrapUp)} 为收尾线`}
+        foot={!maxMs ? "自开始以来" : live && elapsed < wrapUp ? `${stopwatch(wrapUp)} 进入收尾` : live ? "已进入收尾" : `收尾阈值 ${stopwatch(wrapUp)}`}
       />
       <Gauge
         label="Token"
@@ -477,7 +477,7 @@ function Gauges({ spent, budget, elapsed, live }: { spent: ResearchSpent; budget
         foot={
           <>
             输入 <Count value={spent.input_tokens} format={compact} /> · 输出 <Count value={spent.output_tokens} format={compact} />
-            {cached > 0 && ` · 缓存读 ${percent(cached, spent.input_tokens)}`}
+            {cached > 0 && ` · 缓存命中 ${percent(cached, spent.input_tokens)}`}
           </>
         }
       />

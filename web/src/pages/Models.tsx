@@ -56,7 +56,7 @@ export function ModelsPage() {
     <>
       <PageHeader
         title="模型接口"
-        description="大模型接口及其下属模型。模型在此独立定义：参数与限流随模型生效，「抓取」和「深度研究」仅按 ID 引用；引用同一模型的功能共用其限流。"
+        description="大模型接口及其下属模型。模型在此独立定义：参数与限流随模型生效，「网页抓取」和「深度研究」仅按 ID 引用；引用同一模型的功能共用其限流。"
         actions={
           <Button variant="primary" icon={<Plus />} onClick={() => setEditing({ kind: "provider", index: -1 })}>
             添加接口
@@ -67,7 +67,7 @@ export function ModelsPage() {
       {providers.length === 0 ? (
         <Panel>
           <Empty icon={<Bot />} title="尚无模型接口">
-            添加 OpenAI 兼容或 Anthropic 格式的接口，并在其下登记模型。完成后 fetch 才能使用模型提取页面内容，研究工具才能运行。
+            添加 OpenAI 兼容或 Anthropic 格式的接口，并在其下添加模型。完成后，网页抓取可用模型提取内容，深度研究也才能运行
           </Empty>
         </Panel>
       ) : (
@@ -102,7 +102,7 @@ export function ModelsPage() {
                       icon={<Trash2 />}
                       aria-label={`删除接口 ${p.name || p.id}`}
                       disabled={inUse}
-                      title={inUse ? "其下的模型正在使用中，请先在抓取或深度研究页解除指派" : undefined}
+                      title={inUse ? "该接口下有模型已被关联，请先在网页抓取或深度研究页解除关联" : undefined}
                       onClick={async () => {
                         if (await confirm({ title: `删除接口 ${p.name || p.id}？`, body: "接口及其下属模型将一并删除，立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers.splice(pi, 1));
                       }}
@@ -111,7 +111,7 @@ export function ModelsPage() {
                 }
               >
                 {p.models.length === 0 ? (
-                  <div className="px-4 py-5 text-xs text-ink-3">该接口下尚无模型。添加模型后方可指派给提取或研究。</div>
+                  <div className="px-4 py-5 text-xs text-ink-3">该接口下尚无模型，添加后即可关联到提取或研究</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
@@ -155,7 +155,7 @@ export function ModelsPage() {
                               <Td>
                                 <span className="flex gap-1">
                                   {roles.length === 0 ? (
-                                    <span className="text-xs text-ink-3">未指派</span>
+                                    <span className="text-xs text-ink-3">未关联</span>
                                   ) : (
                                     roles.map((role) => (
                                       <Badge key={role} tone="signal">
@@ -174,7 +174,7 @@ export function ModelsPage() {
                                     icon={<Trash2 />}
                                     aria-label={`删除模型 ${m.id}`}
                                     disabled={roles.length > 0}
-                                    title={roles.length > 0 ? "正在使用中，请先在抓取或深度研究页解除指派" : undefined}
+                                    title={roles.length > 0 ? "已被关联，请先在网页抓取或深度研究页解除关联" : undefined}
                                     onClick={async () => {
                                       if (await confirm({ title: `删除模型 ${m.id}？`, body: "立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers[pi].models.splice(mi, 1));
                                     }}
@@ -291,7 +291,7 @@ function ProviderDialog({
         >
           <Input mono value={form.base_url} placeholder={form.type === "anthropic" ? "https://api.anthropic.com" : "https://…/v1"} onChange={(e) => set({ base_url: e.target.value.trim() })} />
         </Field>
-        <Field label="API key">
+        <Field label="API Key">
           <SecretInput value={form} onChange={setForm} />
         </Field>
         <details className="group">
@@ -409,7 +409,7 @@ function ModelDialog({
 
         <ReasoningEditor type={provider.type} value={form.reasoning} onChange={(reasoning) => set({ reasoning })} />
 
-        <Field label="最大输出 token" hint={provider.type === "anthropic" ? "模型的输出上限，研究与抓取均受其约束。0 按 32000 发送（该接口要求指定上限）；抓取可在抓取页另设更小的值" : "模型的输出上限，研究与抓取均受其约束。0 为不限制；抓取可在抓取页另设更小的值"} className="max-w-md">
+        <Field label="最大输出 Token" hint={provider.type === "anthropic" ? "模型的最大输出 Token，研究与抓取均受其约束。0 按 32000 发送（该接口要求指定上限）；抓取可在「网页抓取」页单独设置更小的值" : "模型的最大输出 Token，研究与抓取均受其约束。0 为不限制；抓取可在「网页抓取」页单独设置更小的值"} className="max-w-md">
           <NumberInput value={form.max_output_tokens ?? 0} onChange={(n) => set({ max_output_tokens: Math.round(n) || undefined })} />
         </Field>
         <Field label="附加请求字段" hint="原样并入请求体的 JSON；最后合并，会覆盖上方的同名设置。用于界面未提供的参数">
@@ -430,7 +430,7 @@ function ReasoningEditor({ type, value, onChange }: { type: LLMType; value: Reas
     "": "不发送任何推理参数，采用模型的默认行为。",
     off: type === "anthropic" ? "发送 thinking: disabled。" : "发送 reasoning_effort: none；不支持该取值的模型会报错，可改用「模型默认」。",
     effort: type === "anthropic" ? "自适应思考，并用 effort 控制投入程度。" : "发送 reasoning_effort。",
-    budget: "固定的思考 token 预算；只接受自适应思考的新模型会自动改用自适应。",
+    budget: "固定的思考 Token 预算；只接受自适应思考的新模型会自动改用自适应。",
   };
   return (
     <div className="rounded-ctl border border-line px-3 py-2.5">
@@ -459,7 +459,7 @@ function ReasoningEditor({ type, value, onChange }: { type: LLMType; value: Reas
               ))}
             </Select>
           )}
-          {value.mode === "budget" && <NumberInput className="w-32" min={1024} suffix="token" value={value.budget_tokens ?? 4096} onChange={(n) => onChange({ mode: "budget", budget_tokens: Math.round(n) })} aria-label="思考预算" />}
+          {value.mode === "budget" && <NumberInput className="w-32" min={1024} suffix="Token" value={value.budget_tokens ?? 4096} onChange={(n) => onChange({ mode: "budget", budget_tokens: Math.round(n) })} aria-label="思考预算" />}
         </div>
       </div>
       <div className="mt-1 text-xs text-ink-3">{hints[value.mode]}</div>

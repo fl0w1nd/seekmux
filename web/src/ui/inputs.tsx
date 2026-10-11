@@ -33,7 +33,7 @@ export function RateLimitInput({ value, onChange, fallback = "5/m" }: { value: s
   return (
     <div className="flex items-center gap-1.5 text-xs text-ink-3">
       <NumberInput className="w-16" min={1} value={limit.requests} onChange={(requests) => emit({ requests })} aria-label="请求数" />
-      <span>次 / 每</span>
+      <span>次 /</span>
       <NumberInput className="w-14" min={1} value={limit.every} onChange={(every) => emit({ every })} aria-label="时间窗口" />
       <Select className="w-20" value={limit.unit} onChange={(e) => emit({ unit: e.target.value as Unit })} aria-label="时间单位">
         {Object.entries(units).map(([unit, label]) => (
@@ -71,10 +71,10 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
         <Button
           variant="ghost"
           onClick={async () => {
-            if (await confirm({ title: "清除该密钥？", body: "清除后立即生效，恢复需重新填入密钥。", confirm: "清除", danger: true })) onChange({ ...value, api_key: "", clear_api_key: true });
+            if (await confirm({ title: "清空此 API Key？", body: "清空后立即生效，恢复需重新填入密钥。", confirm: "确认清空", danger: true })) onChange({ ...value, api_key: "", clear_api_key: true });
           }}
         >
-          清除
+          清空
         </Button>
       </div>
     );
@@ -86,7 +86,7 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
         plain
         autoFocus={editing}
         value={value.api_key}
-        placeholder={placeholder ?? "粘贴 API key"}
+        placeholder={placeholder ?? "粘贴 API Key"}
         onChange={(e) => onChange({ ...value, api_key: e.target.value.trim(), clear_api_key: false })}
         onBlur={() => setEditing(false)}
       />
@@ -219,7 +219,7 @@ export function JSONInput({
             setError("");
             onChange(parsed as Record<string, unknown>);
           } catch {
-            setError("须为 JSON 对象；修正前不会保存此处的改动");
+            setError("请输入合法的 JSON 对象，修正前改动不会保存");
           }
         }}
       />

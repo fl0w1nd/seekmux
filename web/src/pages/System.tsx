@@ -54,12 +54,12 @@ export function SystemPage() {
           <Row label="启用自动熔断" hint="关闭后会立即恢复所有已熔断的提供商和模型">
             <Switch checked={config.breaker.enabled} onCheckedChange={(v) => update((d) => void (d.breaker.enabled = v))} aria-label="启用自动熔断" />
           </Row>
-          <Row label="触发条件" hint="仅统计超时、连接失败、限流（429）、鉴权失败和 5xx；请求本身被拒绝（400、404）不计入。期间成功一次即重新计数">
+          <Row label="触发条件" hint="仅统计超时、连接失败、限流、鉴权失败和 5xx 错误；期间成功一次即重新计数">
             <NumberInput className="w-24" min={10} suffix="秒内" disabled={!config.breaker.enabled} value={config.breaker.window_seconds} onChange={(v) => update((d) => void (d.breaker.window_seconds = Math.round(v)))} aria-label="统计窗口" />
             <span className="text-xs text-ink-3">连续失败</span>
             <NumberInput className="w-20" min={1} suffix="次" disabled={!config.breaker.enabled} value={config.breaker.failures} onChange={(v) => update((d) => void (d.breaker.failures = Math.round(v)))} aria-label="连续失败次数" />
           </Row>
-          <Row label="禁用时长" hint="到期后放行一次试探请求：成功即恢复，失败则再次禁用同样时长。也可在概览页手动恢复">
+          <Row label="禁用时长" hint="熔断后的冷却时长。期满后放行一次试探请求，也可在概览页手动恢复">
             <NumberInput className="w-24" min={5} suffix="秒" disabled={!config.breaker.enabled} value={config.breaker.cooldown_seconds} onChange={(v) => update((d) => void (d.breaker.cooldown_seconds = Math.round(v)))} />
           </Row>
         </Panel>
@@ -75,8 +75,8 @@ export function SystemPage() {
           </Row>
         </Panel>
 
-        <Panel index="04" title="配置文件" description="数据库是配置的唯一来源；YAML 用于备份、迁移和纳入版本管理。" flush>
-          <Row label="导出为 YAML" hint="导出的文件包含明文 API key，请妥善保管">
+        <Panel index="04" title="配置文件" description="配置以数据库为准；YAML 用于备份、迁移和版本管理" flush>
+          <Row label="导出为 YAML" hint="导出的文件包含明文 API Key，请妥善保管">
             <a href="/api/config/export" download>
               <Button icon={<Download />} tabIndex={-1}>
                 导出

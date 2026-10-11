@@ -43,7 +43,7 @@ export function Logo({ className }: { className?: string }) {
 
 const nav = [
   {
-    group: "观测",
+    group: "监控",
     items: [
       { href: "/", label: "概览", icon: Gauge },
       { href: "/logs", label: "请求日志", icon: ScrollText },
@@ -63,9 +63,9 @@ const nav = [
     group: "网关",
     items: [
       { href: "/providers", label: "提供商", icon: Boxes },
-      { href: "/search", label: "搜索", icon: Search },
-      { href: "/dev-search", label: "开发者搜索", icon: Code },
-      { href: "/fetch", label: "抓取", icon: FileText },
+      { href: "/search", label: "网页搜索", icon: Search },
+      { href: "/dev-search", label: "开发搜索", icon: Code },
+      { href: "/fetch", label: "网页抓取", icon: FileText },
     ],
   },
   {
@@ -182,11 +182,11 @@ export function Shell({ children }: { children: ReactNode }) {
           <div className="flex max-w-2xl animate-in items-center gap-4 rounded-panel border border-line-strong bg-overlay py-2 pr-2 pl-4 shadow-overlay">
             <span className="flex min-w-0 items-start gap-2.5 text-sm">
               <Dot tone="err" className="mt-2" />
-              <span className="min-w-0 break-words">改动未能保存：{error}</span>
+              <span className="min-w-0 break-words">配置保存失败：{error}</span>
             </span>
             <span className="flex shrink-0 gap-2">
               <Button variant="ghost" onClick={discard}>
-                撤销改动
+                放弃修改
               </Button>
               <Button variant="primary" onClick={retry}>
                 重试

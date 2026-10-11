@@ -102,7 +102,7 @@ export function FetchPlay() {
 
   return (
     <>
-      <Stage title="抓取页面" description="调用 fetch 工具：读取一个页面，由提取模型按问题作答，或直接返回原文。调用记入请求日志。">
+      <Stage title="抓取页面" description="调用 fetch 工具：读取一个页面，由提取模型按问题提炼回答，或直接返回原文。调用记入请求日志。">
         <Composer
           open={open}
           tools={
@@ -124,7 +124,7 @@ export function FetchPlay() {
                   <ModelOverride assigned={chain} value={model} onChange={setModel} />
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pt-2 pb-0.5 text-xs text-ink-3">
                     <LocalTag />
-                    所选模型单独作答，失败时不切换备用模型。
+                    使用所选模型提取，不触发故障转移
                   </p>
                 </Popover>
               )}
@@ -155,7 +155,7 @@ export function FetchPlay() {
                     页添加。
                   </Notice>
                 )}
-                {canExtract && chain.length === 0 && <Notice tone="info">抓取工具尚未指派提取模型，Agent 仅能获得原文。此处用所选模型试用提取回答。</Notice>}
+                {canExtract && chain.length === 0 && <Notice tone="info">抓取工具尚未关联提取模型，Agent 仅能获得原文。此处用所选模型试用提取。</Notice>}
                 <p className="text-xs text-ink-3">
                   {extract ? "提取回答：提取模型读取整页内容，仅返回与问题相关的部分，这是 Agent 的默认调用方式。" : "原文：返回页面的 Markdown 原文，较长的页面分段返回。"}
                 </p>

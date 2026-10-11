@@ -8,7 +8,7 @@ export function DevSearchPage() {
   return (
     <>
       <PageHeader
-        title="开发者搜索"
+        title="开发搜索"
         description="dev_search 工具检索公开代码仓库的 issue、已合并 PR、README 与文档站，而非开放网页；每条结果附带匹配的原文段落，通常无需再抓取页面。"
       />
       <div className="flex flex-col gap-4">

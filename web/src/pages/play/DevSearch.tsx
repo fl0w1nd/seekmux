@@ -245,7 +245,7 @@ function DevResults({ items }: { items: DevSearchItem[] }) {
               <div key={n} className="mt-2 max-h-72 overflow-y-auto rounded-ctl border border-line bg-sunken px-3 py-2 text-xs">
                 <Markdown>{passage}</Markdown>
               </div>
-            )) ?? <p className="mt-1 text-xs text-ink-3">提供商未返回匹配段落。</p>}
+            )) ?? <p className="mt-1 text-xs text-ink-3">提供商未返回匹配段落</p>}
           </div>
         </li>
       ))}

@@ -3,14 +3,14 @@ import { duration, toolLabel } from "../lib/format";
 import { cx, type Tone } from "../ui/primitives";
 
 const statusTone: Record<Attempt["status"], Tone> = { ok: "ok", error: "err", canceled: "neutral", cached: "info", skipped: "warn", limited: "warn" };
-const statusLabel: Record<Attempt["status"], string> = { ok: "成功", error: "失败", canceled: "已取消", cached: "缓存命中", skipped: "已熔断，跳过", limited: "限流，跳过" };
+const statusLabel: Record<Attempt["status"], string> = { ok: "成功", error: "失败", canceled: "已取消", cached: "缓存命中", skipped: "熔断跳过", limited: "限流跳过" };
 const bar: Record<Attempt["status"], string> = { ok: "bg-ok", error: "bg-err", canceled: "bg-ink-3", cached: "bg-info", skipped: "bg-warn", limited: "bg-warn" };
 /** Notes about a provider that was not called: they have no duration. */
 const note = (status: Attempt["status"]) => status === "cached" || status === "skipped" || status === "limited";
 /** Why a provider was passed over; the gateway words the rate limit in English. */
 function reason(a: Attempt): string | undefined {
   const slot = a.status === "limited" ? a.error?.match(/next slot in (\S+)$/) : null;
-  return slot ? `已达速率上限，下一个名额在 ${slot[1]} 后释放` : a.error;
+  return slot ? `已达速率限制，配额将在 ${slot[1]} 后恢复` : a.error;
 }
 const text: Record<Tone, string> = { ok: "text-ok", err: "text-err", neutral: "text-ink-3", info: "text-info", warn: "text-warn", signal: "text-signal-text" };
 

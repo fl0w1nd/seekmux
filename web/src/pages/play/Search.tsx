@@ -127,7 +127,7 @@ export function SearchPlay() {
                   <>
                     {over && (
                       <Notice tone="warn">
-                        已输入 {queries.length} 条查询，单次调用最多执行 {maxQueries} 条。Agent 以相同参数调用时，超出部分将被忽略，因此此处仅列出实际执行的前 {maxQueries} 条。
+                        已输入 {queries.length} 条查询，单次最多执行前 {maxQueries} 条，超出部分已被忽略
                       </Notice>
                     )}
                     <LocalNotice items={[tuning.changed && `${provider(engine).name} 的临时参数`]} />
@@ -304,7 +304,7 @@ function QueryResult({ result }: { result: SearchResult }) {
             {item.description ? (
               <p className="mt-1 line-clamp-4 text-xs whitespace-pre-line text-ink-2">{item.description}</p>
             ) : (
-              <p className="mt-1 text-xs text-ink-3">提供商未返回摘要。</p>
+              <p className="mt-1 text-xs text-ink-3">提供商未返回摘要</p>
             )}
           </div>
         </li>

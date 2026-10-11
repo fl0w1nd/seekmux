@@ -312,7 +312,7 @@ export function ProviderParams({ tool, engine, tuning, note }: { tool: RoutedToo
     <OptionGroup title={`${provider(engine).name} 的参数`} local action={tuning.changed && <ResetButton onClick={tuning.reset} />}>
       <OptionFields key={tuning.version} tool={tool} provider={engine} value={tuning.value} onChange={tuning.set} columns="sm:grid-cols-2" />
       <p className="text-xs text-ink-3">
-        {tuning.changed ? "已偏离配置，" : "初始值取自配置，"}改动只随调试台的调用发出。{note} 要让 MCP 调用也生效，请到{" "}
+        {tuning.changed ? "已自定义参数，" : "初始值取自配置，"}改动只随调试台的调用发出。{note} 要让 MCP 调用也生效，请到{" "}
         <Link href={page} className="text-ink-2 underline underline-offset-2 hover:text-ink">
           路由页
         </Link>{" "}
@@ -385,7 +385,7 @@ export function Failure({ error }: { error: Error }) {
 export function JSONView({ value }: { value: unknown }) {
   return (
     <div className="flex flex-col gap-3 p-4">
-      <p className="text-xs text-ink-3">MCP 工具返回给 Agent 的原始内容。</p>
+      <p className="text-xs text-ink-3">MCP 工具返回给 Agent 的原始内容</p>
       <CodeBlock copy wrap>
         {JSON.stringify(value, null, 2)}
       </CodeBlock>
@@ -411,7 +411,7 @@ export function traceLabel(attempts: Attempt[] | null | undefined): ReactNode {
 
 export function TraceView({ attempts, total }: { attempts: Attempt[] | null | undefined; total: number }) {
   if (attempts === undefined) return <Empty title="运行后，此处按时间轴显示本次调用的上游请求" />;
-  if (!attempts || attempts.length === 0) return <div className="p-4 text-xs text-ink-3">本次调用未请求任何上游提供商。</div>;
+  if (!attempts || attempts.length === 0) return <div className="p-4 text-xs text-ink-3">本次调用未请求任何上游提供商</div>;
   // A provider that was passed over, or a cache hit, is a note and not a call.
   const failed = count(attempts, "error");
   const skipped = count(attempts, "skipped", "limited");

@@ -12,17 +12,17 @@ export function FetchPage() {
 
   return (
     <>
-      <PageHeader title="抓取" description="fetch 工具先通过提供商获取页面，再由提取模型针对调用方的 prompt 作答，仅将答案返回给 Agent。" />
+      <PageHeader title="网页抓取" description="fetch 工具先通过提供商获取页面，再由提取模型按 Prompt 提炼回答，仅向 Agent 返回提取结果。" />
       <div className="flex flex-col gap-4">
         <Panel index="01" title="路由优先级" description="按从上到下的顺序依次尝试。调用方也可通过 fetch_engine 参数指定提供商。各提供商的专有参数在「参数」中设置，修改后页面缓存将被清空。" flush>
           <RouteList tool="fetch" />
         </Panel>
 
         <Panel index="02" title="行为" flush>
-          <Row label="竞速回退" hint="当前提供商响应过慢时，同时向下一个提供商发起请求，采用先成功的结果">
-            <Switch checked={fetch.smart_fallback} onCheckedChange={(v) => update((d) => void (d.fetch.smart_fallback = v))} aria-label="竞速回退" />
+          <Row label="慢请求对冲" hint="提供商响应过慢时，并行向下一个提供商发起对冲请求，采纳首个成功的结果">
+            <Switch checked={fetch.smart_fallback} onCheckedChange={(v) => update((d) => void (d.fetch.smart_fallback = v))} aria-label="慢请求对冲" />
           </Row>
-          <Row label="慢请求阈值" hint="超过该时间仍未返回时，向下一个提供商发起竞速请求">
+          <Row label="慢请求阈值" hint="超过该时间仍未返回时，向下一个提供商发起对冲请求">
             <NumberInput className="w-24" min={1} suffix="秒" disabled={!fetch.smart_fallback} value={fetch.slow_threshold_seconds} onChange={(v) => update((d) => void (d.fetch.slow_threshold_seconds = v))} />
           </Row>
           <Row label="总超时" hint="获取单个页面的时间上限">
@@ -39,31 +39,31 @@ export function FetchPage() {
           </Row>
         </Panel>
 
-        <Panel index="03" title="提取模型" description="读取整个页面并回答 prompt 的辅助模型，建议选用成本低、速度快、上下文长的模型。可配置多个：首选失败或被限流时，请求转交下一个。">
+        <Panel index="03" title="提取模型" description="读取整个页面并按 Prompt 提炼回答的辅助模型，建议选用成本低、速度快、上下文长的模型。可配置多个：首选失败或被限流时，请求转交下一个。">
           <div className="flex flex-col gap-4">
             {!configured && <Notice tone="warn">未配置提取模型：fetch 将直接返回页面原文，占用调用方更多上下文。</Notice>}
             <ModelChain value={extract.models} onChange={(ids) => update((d) => void (d.fetch.extract.models = ids))} />
             <div className="flex items-center justify-between gap-6 rounded-ctl border border-line px-3 py-2.5">
               <div>
-                <div className="text-sm">全部不可用时回退为原文</div>
-                <div className="text-xs text-ink-3">链上的模型全部失败或被限流时，不等待、不报错，直接返回页面原文并附带说明。关闭后将等待限流窗口释放，全部失败时返回错误</div>
+                <div className="text-sm">全部故障时降级为原文</div>
+                <div className="text-xs text-ink-3">所有模型故障或限流时直接返回原文；关闭则等待限流恢复，全部失败时报错</div>
               </div>
-              <Switch checked={extract.raw_on_failure} onCheckedChange={(v) => update((d) => void (d.fetch.extract.raw_on_failure = v))} aria-label="全部不可用时回退为原文" />
+              <Switch checked={extract.raw_on_failure} onCheckedChange={(v) => update((d) => void (d.fetch.extract.raw_on_failure = v))} aria-label="全部故障时降级为原文" />
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-              <Field label="单次输入上限" hint="超出的页面分段作答">
+              <Field label="单次输入上限" hint="超出的页面分段提取">
                 <NumberInput min={1} suffix="字符" value={extract.max_input_length} onChange={(v) => update((d) => void (d.fetch.extract.max_input_length = Math.round(v)))} />
               </Field>
-              <Field label="首包超时" hint="流未开始时重试">
+              <Field label="首字超时" hint="未收到首个 Token 时重试">
                 <NumberInput min={1} suffix="ms" value={extract.first_chunk_timeout_ms} onChange={(v) => update((d) => void (d.fetch.extract.first_chunk_timeout_ms = Math.round(v)))} />
               </Field>
-              <Field label="首包重试次数">
+              <Field label="首字重试次数">
                 <NumberInput min={1} value={extract.max_retries} onChange={(v) => update((d) => void (d.fetch.extract.max_retries = Math.round(v)))} />
               </Field>
-              <Field label="最大输出 token" hint="0 为沿用模型自身的上限">
-                <NumberInput min={0} suffix="token" value={extract.max_output_tokens ?? 0} onChange={(v) => update((d) => void (d.fetch.extract.max_output_tokens = Math.round(v) || undefined))} />
+              <Field label="最大输出 Token" hint="0 为沿用模型自身的上限">
+                <NumberInput min={0} suffix="Token" value={extract.max_output_tokens ?? 0} onChange={(v) => update((d) => void (d.fetch.extract.max_output_tokens = Math.round(v) || undefined))} />
               </Field>
-              <Field label="流总超时" hint="超时后返回已生成的部分">
+              <Field label="流式总超时" hint="超时后返回已生成的部分">
                 <NumberInput min={1} suffix="ms" value={extract.stream_total_timeout_ms} onChange={(v) => update((d) => void (d.fetch.extract.stream_total_timeout_ms = Math.round(v)))} />
               </Field>
             </div>
