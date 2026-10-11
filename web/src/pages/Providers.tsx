@@ -4,6 +4,7 @@ import { healthLabel, Reenable, useStatus } from "../components/Health";
 import { useConfig } from "../lib/config";
 import { toolLabel } from "../lib/format";
 import { PageHeader } from "../Shell";
+import { BrandIcon } from "../ui/brand";
 import { RateLimitInput, SecretInput } from "../ui/inputs";
 import { Badge, Field, Input, Notice, NumberInput, Panel, Tooltip } from "../ui/primitives";
 
@@ -23,7 +24,12 @@ export function ProvidersPage() {
             <Panel
               key={info.id}
               index={String(index + 1).padStart(2, "0")}
-              title={info.name}
+              title={
+                <span className="flex items-center gap-2 self-center">
+                  <BrandIcon id={info.id} className="size-5" />
+                  {info.name}
+                </span>
+              }
               actions={
                 <>
                   {tools.map((tool) => (
@@ -32,7 +38,10 @@ export function ProvidersPage() {
                   {info.capabilities?.map((capability) => (
                     <Tooltip key={capability.id} content={`该提供商能读出 ${capability.name} 页面的专有内容。在服务路由中开启对应规则后，这类页面只交给它抓取`}>
                       <Link href="/routing/rules">
-                        <Badge tone="info">{capability.name}</Badge>
+                        <Badge tone="info">
+                          <BrandIcon id={capability.id} className="size-3" />
+                          {capability.name}
+                        </Badge>
                       </Link>
                     </Tooltip>
                   ))}

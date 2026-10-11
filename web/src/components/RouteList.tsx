@@ -7,6 +7,7 @@ import { toolLabel } from "../lib/format";
 import { routingRules } from "../lib/routing";
 import { Tripped, useStatus } from "./Health";
 import { customized, RouteOptions } from "./RouteOptions";
+import { BrandIcon } from "../ui/brand";
 import { Badge, Button, cx, Switch, Tooltip } from "../ui/primitives";
 
 /**
@@ -56,6 +57,7 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
             </span>
             <div className="min-w-40 flex-1">
               <div className="flex items-center gap-2 text-sm font-medium">
+                <BrandIcon id={info.id} className="size-4" />
                 {info.name}
                 {missingKey ? (
                   <Link href="/providers">
@@ -77,7 +79,10 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
                   .map((rule) => (
                     <Tooltip key={rule.id} content={`服务路由规则「${rule.name}」的页面由该提供商抓取，不受此处的顺序与开关影响`}>
                       <Link href="/routing/rules">
-                        <Badge tone="info">{rule.name}</Badge>
+                        <Badge tone="info">
+                          {rule.builtin && <BrandIcon id={rule.id} className="size-3" />}
+                          {rule.name}
+                        </Badge>
                       </Link>
                     </Tooltip>
                   ))}

@@ -3,6 +3,7 @@ import type { Route, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { toolPage } from "../lib/format";
 import { optionText } from "../lib/options";
+import { BrandIcon } from "../ui/brand";
 import { Choice, ChoiceList, ChoiceStatus, type Tone } from "../ui/primitives";
 import { healthLabel, useStatus } from "./Health";
 
@@ -49,7 +50,12 @@ export function ProviderPicker({ tool, value, onChange }: { tool: RoutedTool; va
             checked={value === route.provider}
             disabled={!state.usable}
             onSelect={() => onChange(route.provider)}
-            title={name}
+            title={
+              <span className="flex items-center gap-2">
+                <BrandIcon id={route.provider} className="size-4" />
+                {name}
+              </span>
+            }
             status={<ChoiceStatus tone={state.tone}>{state.label}</ChoiceStatus>}
             detail={
               value === route.provider &&

@@ -74,6 +74,10 @@ except the dot of something that is live. All of it is disabled under
   primitives; every pixel of styling is ours.
 - `inputs.tsx` — `RateLimitInput`, `SecretInput`, `JSONInput`, `ChipInput`
   (a short list of words such as domains).
+- `brand.tsx` — `BrandIcon`, the logo of a provider (or of a built-in rule's
+  capability, such as YouTube) by id. The one place colors outside the tokens
+  are allowed: a logo keeps its own color. Add a mark here when a provider is
+  added to the catalog; an id without one renders nothing.
 - `markdown.tsx` — `Markdown`, for long text from providers and models. It
   never renders raw HTML and turns images into links, since the text is
   untrusted.

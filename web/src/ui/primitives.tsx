@@ -275,7 +275,7 @@ export function Badge({ tone = "neutral", dot, children, className }: { tone?: T
       )}
     >
       {dot && <Dot tone={tone} />}
-      <span className={tone === "neutral" ? undefined : toneText[tone]}>{children}</span>
+      <span className={cx("inline-flex items-center gap-1", tone !== "neutral" && toneText[tone])}>{children}</span>
     </span>
   );
 }

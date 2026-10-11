@@ -7,6 +7,7 @@ import { useConfig } from "../lib/config";
 import { bytes, duration, percent } from "../lib/format";
 import { cleanPattern, newRuleID, routingRules, ruleForDomain, validPattern } from "../lib/routing";
 import { PageHeader } from "../Shell";
+import { BrandIcon } from "../ui/brand";
 import { ChipInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
 import { Badge, Button, cx, Empty, Field, Input, Notice, Panel, Segmented, Spinner, Switch, Table, TabList, TabPanel, Tabs, Td, Th } from "../ui/primitives";
@@ -114,6 +115,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
               </span>
               <div className="min-w-48 flex-1">
                 <div className="flex items-center gap-2 text-sm font-medium">
+                  {rule.builtin && <BrandIcon id={rule.id} className="size-4" />}
                   {rule.name}
                   {rule.builtin && <Badge>内置</Badge>}
                   {!rule.enabled ? (
@@ -134,7 +136,15 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
               </div>
               <div className="flex flex-col gap-1 text-right">
                 <span className="tag">提供商</span>
-                <span className="text-xs text-ink-2">{rule.providers.map((id) => provider(id).name).join(" → ")}</span>
+                <span className="flex items-center justify-end gap-1.5 text-xs text-ink-2">
+                  {rule.providers.map((id, i) => (
+                    <Fragment key={id}>
+                      {i > 0 && <span className="text-ink-3">→</span>}
+                      <BrandIcon id={id} className="size-3.5" />
+                      {provider(id).name}
+                    </Fragment>
+                  ))}
+                </span>
               </div>
               <Button size="sm" variant="ghost" icon={<Pencil />} onClick={() => onEdit(rule)}>
                 编辑
@@ -252,8 +262,14 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
                     )}
                   </span>
                   <span className="flex flex-1 items-center gap-2 text-sm">
+                    <BrandIcon id={id} className="size-4" />
                     {provider(id).name}
-                    {builtin?.providers.includes(id) && <Badge tone="info">{builtin.name}</Badge>}
+                    {builtin?.providers.includes(id) && (
+                      <Badge tone="info">
+                        <BrandIcon id={builtin.id} className="size-3" />
+                        {builtin.name}
+                      </Badge>
+                    )}
                     {!usable(id) && (
                       <Badge tone="warn" dot>
                         缺少密钥
@@ -421,7 +437,10 @@ function Domains({ onRoute }: { onRoute: (rule: Rule) => void }) {
                       <Td className="w-0 text-right" onClick={(e) => e.stopPropagation()}>
                         {rule ? (
                           <Link href="/routing/rules">
-                            <Badge tone="info">{rule.name}</Badge>
+                            <Badge tone="info">
+                              {rule.builtin && <BrandIcon id={rule.id} className="size-3" />}
+                              {rule.name}
+                            </Badge>
                           </Link>
                         ) : (
                           <Button size="sm" variant="ghost" onClick={() => onRoute(suggest(d))}>
@@ -448,7 +467,12 @@ function ProviderRow({ stats, name, longest }: { stats: DomainProviderStats; nam
   const short = read && stats.avg_bytes < longest * 0.3;
   return (
     <tr className="bg-sunken/60">
-      <Td className="pl-9! text-xs text-ink-2">{name}</Td>
+      <Td className="pl-9! text-xs text-ink-2">
+        <span className="flex items-center gap-1.5">
+          <BrandIcon id={stats.provider} className="size-3.5" />
+          {name}
+        </span>
+      </Td>
       <Counts stats={stats} />
       <Td className="num text-right text-xs">{read ? duration(stats.avg_ms) : "—"}</Td>
       <Td className="num text-right text-xs">{read ? bytes(stats.avg_bytes) : "—"}</Td>
