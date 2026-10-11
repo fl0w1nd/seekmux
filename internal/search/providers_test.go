@@ -3,12 +3,14 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fl0w1nd/seekmux/internal/config"
 )
@@ -75,6 +77,25 @@ func TestDefaultRequests(t *testing.T) {
 	want = map[string]any{"query": "q", "max_results": 5.0, "max_tokens_per_page": 256.0, "search_recency_filter": "week"}
 	if !reflect.DeepEqual(body, want) {
 		t.Errorf("perplexity body = %v", body)
+	}
+
+	_, body = capture(t, "parallel", nil, in)
+	policy, _ := body["advanced_settings"].(map[string]any)["source_policy"].(map[string]any)
+	if _, err := time.Parse(time.DateOnly, fmt.Sprint(policy["after_date"])); err != nil || len(policy) != 1 {
+		t.Errorf("parallel source policy = %v", policy)
+	}
+	delete(body["advanced_settings"].(map[string]any), "source_policy")
+	want = map[string]any{"objective": "q", "search_queries": []any{"q"}, "mode": "advanced", "advanced_settings": map[string]any{
+		"max_results": 5.0, "excerpt_settings": map[string]any{"max_chars_per_result": 1500.0},
+	}}
+	if !reflect.DeepEqual(body, want) {
+		t.Errorf("parallel body = %v", body)
+	}
+
+	// AnySearch has no time range.
+	_, body = capture(t, "anysearch", nil, in)
+	if want = map[string]any{"query": "q", "max_results": 5.0}; !reflect.DeepEqual(body, want) {
+		t.Errorf("anysearch body = %v", body)
 	}
 
 	_, body = capture(t, "firecrawl", nil, in)
@@ -199,5 +220,41 @@ func TestDomainFilters(t *testing.T) {
 		if err := (&Args{Queries: []string{"q"}, IncludeDomains: bad}).Validate(cfg); err == nil {
 			t.Errorf("%v must be rejected", bad)
 		}
+	}
+}
+
+func TestParallelAndAnySearchResults(t *testing.T) {
+	replies := map[string]string{
+		"parallel": `{"results":[{"url":"https://a.example/p","title":"A","publish_date":"2026-01-02","excerpts":["one","two"]}]}`,
+		"anysearch": `{"code":0,"data":{"results":[
+			{"title":"A","url":"https://a.example/p","snippet":"one","content":"one date: Aug 25, 2026"},
+			{"title":"B","url":"https://b.example/p","snippet":"two","content":"two"},
+			{"title":"C","url":"https://c.example/p","content":"## C\n\nthree"}]}}`,
+	}
+	want := map[string][]Item{
+		"parallel": {{Title: "A", URL: "https://a.example/p", Description: "one\ntwo", Age: "2026-01-02"}},
+		"anysearch": {
+			{Title: "A", URL: "https://a.example/p", Description: "one", Age: "Aug 25, 2026"},
+			{Title: "B", URL: "https://b.example/p", Description: "two"},
+			{Title: "C", URL: "https://c.example/p", Description: "## C\n\nthree"},
+		},
+	}
+	for provider, reply := range replies {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(reply))
+		}))
+		cfg := config.Default()
+		cfg.Providers[provider].APIKey = "key"
+		cfg.Providers[provider].BaseURL = server.URL
+		for _, p := range Providers(cfg, server.Client()) {
+			if p.Name != provider {
+				continue
+			}
+			out, err := p.Execute(context.Background(), Input{Query: "q", MaxResults: 5})
+			if err != nil || !reflect.DeepEqual(out.Web, want[provider]) {
+				t.Errorf("%s: results = %+v, err = %v", provider, out.Web, err)
+			}
+		}
+		server.Close()
 	}
 }

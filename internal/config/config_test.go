@@ -33,7 +33,7 @@ func TestDefaultIsValidAndComplete(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Search.Routes) != 5 || len(c.DevSearch.Routes) != 1 || len(c.Fetch.Routes) != 4 || len(c.Providers) != len(Catalog) {
+	if len(c.Search.Routes) != 7 || len(c.DevSearch.Routes) != 1 || len(c.Fetch.Routes) != 6 || len(c.Providers) != len(Catalog) {
 		t.Fatalf("routes: %d search, %d dev_search, %d fetch, %d providers", len(c.Search.Routes), len(c.DevSearch.Routes), len(c.Fetch.Routes), len(c.Providers))
 	}
 }
@@ -59,7 +59,7 @@ func TestStoredDocumentGainsNewRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if last := c.Search.Routes[len(c.Search.Routes)-1]; len(c.Search.Routes) != 5 || last.Provider != "firecrawl" || last.Enabled {
+	if last := c.Search.Routes[len(c.Search.Routes)-1]; len(c.Search.Routes) != 7 || last.Provider != "anysearch" || last.Enabled {
 		t.Fatalf("search routes = %+v", c.Search.Routes)
 	}
 	if r := c.DevSearch.Routes; len(r) != 1 || r[0].Provider != "firecrawl" || !r[0].Enabled || c.DevSearch.TimeoutSeconds <= 0 {
@@ -131,7 +131,7 @@ func TestNormalizeRepairsRoutes(t *testing.T) {
 	for _, r := range c.Search.Routes {
 		got = append(got, r.Provider)
 	}
-	if strings.Join(got, ",") != "exa,brave,perplexity,tavily,firecrawl" {
+	if strings.Join(got, ",") != "exa,brave,perplexity,tavily,firecrawl,parallel,anysearch" {
 		t.Fatalf("routes = %v", got)
 	}
 	if c.Search.Routes[1].Enabled {
@@ -215,7 +215,7 @@ func TestYAMLRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if back.Providers["brave"].APIKey != "k" || len(back.Search.Routes) != 5 || len(back.DevSearch.Routes) != 1 {
+	if back.Providers["brave"].APIKey != "k" || len(back.Search.Routes) != 7 || len(back.DevSearch.Routes) != 1 {
 		t.Fatalf("round trip lost data: %s", data)
 	}
 	if _, m, ok := back.ModelByID("m"); !ok || m.RateLimit != "5/m" || m.ExtraBody["reasoning_effort"] != "low" || back.Fetch.Extract.Models[0] != "m" {

@@ -64,9 +64,11 @@ type call struct {
 type executor func(ctx context.Context, c call, in Input) (Output, error)
 
 var executors = map[string]executor{
+	"anysearch":  anysearchSearch,
 	"brave":      braveSearch,
 	"exa":        exaSearch,
 	"firecrawl":  firecrawlSearch,
+	"parallel":   parallelSearch,
 	"perplexity": perplexitySearch,
 	"tavily":     tavilySearch,
 }
@@ -355,6 +357,134 @@ func firecrawlSearch(ctx context.Context, c call, in Input) (Output, error) {
 	out := Output{Query: in.Query, Web: []Item{}}
 	for _, r := range raw.Data.Web {
 		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: r.Description})
+	}
+	return out, nil
+}
+
+func parallelAfterDate(timeRange string, now time.Time) string {
+	now = now.UTC()
+	switch timeRange {
+	case "day":
+		now = now.AddDate(0, 0, -1)
+	case "week":
+		now = now.AddDate(0, 0, -7)
+	case "month":
+		now = now.AddDate(0, -1, 0)
+	case "year":
+		now = now.AddDate(-1, 0, 0)
+	default:
+		return ""
+	}
+	return now.Format(time.DateOnly)
+}
+
+func parallelSearch(ctx context.Context, c call, in Input) (Output, error) {
+	// Unbounded, the excerpts of a result run to about three thousand
+	// characters.
+	perResult, _ := c.opt.Int("max_chars_per_result")
+	settings := map[string]any{
+		"max_results":      min(in.MaxResults, 20),
+		"excerpt_settings": map[string]any{"max_chars_per_result": perResult},
+	}
+	if c.country != "" {
+		settings["location"] = strings.ToLower(c.country)
+	}
+	// Parallel ignores the denylist when there is an allowlist. Given both,
+	// the allowlist goes to the API and Run drops the excluded hosts.
+	policy := map[string]any{}
+	if len(in.IncludeDomains) > 0 {
+		policy["include_domains"] = in.IncludeDomains
+	} else if len(in.ExcludeDomains) > 0 {
+		policy["exclude_domains"] = in.ExcludeDomains
+	}
+	if after := parallelAfterDate(in.TimeRange, time.Now()); after != "" {
+		policy["after_date"] = after
+	}
+	if len(policy) > 0 {
+		settings["source_policy"] = policy
+	}
+	body := map[string]any{
+		"objective":         in.Query,
+		"search_queries":    []string{in.Query},
+		"mode":              c.opt.Str("mode"),
+		"advanced_settings": settings,
+	}
+	maps.Copy(body, c.extra)
+
+	var raw struct {
+		Results []struct {
+			Title    string   `json:"title"`
+			URL      string   `json:"url"`
+			Excerpts []string `json:"excerpts"`
+			Date     string   `json:"publish_date"`
+		} `json:"results"`
+	}
+	err := core.DoJSON(ctx, c.client, core.Request{
+		Provider: "Parallel",
+		Method:   http.MethodPost,
+		URL:      c.base + "/v1/search",
+		Header:   map[string]string{"x-api-key": c.apiKey},
+		Body:     body,
+	}, &raw)
+	if err != nil {
+		return Output{}, err
+	}
+
+	out := Output{Query: in.Query, Web: []Item{}}
+	for _, r := range raw.Results {
+		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: strings.Join(r.Excerpts, "\n"), Age: r.Date})
+	}
+	return out, nil
+}
+
+// AnySearch has no time range and no domain filters: Run drops the hosts the
+// filters rule out, and the time range goes unapplied.
+func anysearchSearch(ctx context.Context, c call, in Input) (Output, error) {
+	body := map[string]any{"query": in.Query, "max_results": min(in.MaxResults, 10)}
+	if v := c.opt.Str("zone"); v != "auto" {
+		body["zone"] = v
+	}
+	if c.language != "" {
+		body["language"] = c.language
+	}
+	maps.Copy(body, c.extra)
+
+	var raw struct {
+		Data struct {
+			Results []struct {
+				Title   string `json:"title"`
+				URL     string `json:"url"`
+				Snippet string `json:"snippet"`
+				Content string `json:"content"`
+			} `json:"results"`
+		} `json:"data"`
+	}
+	err := core.DoJSON(ctx, c.client, core.Request{
+		Provider: "AnySearch",
+		Classify: upstream.AnySearch,
+		Method:   http.MethodPost,
+		URL:      c.base + "/v1/search",
+		Header:   map[string]string{"Authorization": "Bearer " + c.apiKey},
+		Body:     body,
+	}, &raw)
+	if err != nil {
+		return Output{}, err
+	}
+
+	out := Output{Query: in.Query, Web: []Item{}}
+	for _, r := range raw.Data.Results {
+		description, age := r.Snippet, ""
+		// The content is the snippet again, followed by the date when the
+		// result has one: "... date: Aug 25, 2026".
+		if rest, ok := strings.CutPrefix(r.Content, r.Snippet); ok && r.Snippet != "" {
+			age, _ = strings.CutPrefix(rest, " date: ")
+			if age == rest {
+				age = ""
+			}
+		} else if r.Content != "" {
+			description = r.Content
+		}
+		out.Web = append(out.Web, Item{Title: r.Title, URL: r.URL, Description: description, Age: age})
 	}
 	return out, nil
 }

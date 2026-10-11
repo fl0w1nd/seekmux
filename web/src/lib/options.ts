@@ -52,6 +52,14 @@ const text: Record<string, OptionText> = {
   "firecrawl.fetch.pdf_mode": { label: "PDF 解析", hint: "fast 仅提取内嵌文字，ocr 逐页识别，auto 先 fast 再 ocr" },
   "firecrawl.fetch.pdf_max_pages": { label: "PDF 页数上限", unit: "页", hint: "PDF 按页计费，每页 1 credit。留空则不限制" },
   "firecrawl.fetch.country": { label: "地区", hint: "从该国家访问页面，两位国家码" },
+
+  "parallel.search.mode": { label: "搜索模式", hint: "turbo、fast 约 1 秒返回；basic 约 2 秒；advanced 质量最高，约 3 秒" },
+  "parallel.search.max_chars_per_result": { label: "摘要长度上限", unit: "字符", hint: "每条结果的摘录长度。摘录取自页面中与查询相关的段落" },
+  "parallel.search.country": { label: "地区", hint: "两位国家码，留空则继承默认地区。Parallel 不支持语言参数" },
+  "parallel.fetch.max_age_hours": { label: "内容缓存时长", unit: "小时", hint: "缓存超过该时长则重新抓取，实时抓取更慢。留空由 Parallel 决定" },
+
+  "anysearch.search.zone": { label: "区域", hint: "cn 面向中国大陆的内容源，intl 面向国际内容源，auto 由 AnySearch 决定" },
+  "anysearch.search.language": { label: "语言", hint: "两位语言码，留空则继承默认语言。AnySearch 不支持地区参数、时间范围和域名过滤，域名过滤由网关在结果中执行" },
 };
 
 export function optionText(provider: string, tool: string, key: string): OptionText {

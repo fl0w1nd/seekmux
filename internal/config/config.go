@@ -374,6 +374,36 @@ var Catalog = []ProviderInfo{
 			},
 		},
 	},
+	{
+		ID: "parallel", Name: "Parallel", Website: "https://platform.parallel.ai", KeyRequired: true,
+		Tools:            []string{ToolSearch, ToolFetch},
+		DefaultBase:      map[string]string{ToolSearch: "https://api.parallel.ai", ToolFetch: "https://api.parallel.ai"},
+		DefaultRateLimit: "10/s",
+		Options: map[string][]Option{
+			ToolSearch: {
+				{Key: "mode", Type: OptionEnum, Default: "advanced", Values: []string{"turbo", "fast", "basic", "advanced"}},
+				{Key: "max_chars_per_result", Type: OptionInt, Default: 1500, Min: 100, Max: 100000},
+				optCountry,
+			},
+			ToolFetch: {
+				{Key: "max_age_hours", Type: OptionInt, Min: 1, Max: 720},
+			},
+		},
+	},
+	{
+		// AnySearch also answers without a key, but then hands out generated
+		// credentials in the body of a 402, which would end up in the logs.
+		ID: "anysearch", Name: "AnySearch", Website: "https://anysearch.com/console/api-keys", KeyRequired: true,
+		Tools:            []string{ToolSearch, ToolFetch},
+		DefaultBase:      map[string]string{ToolSearch: "https://api.anysearch.com", ToolFetch: "https://api.anysearch.com"},
+		DefaultRateLimit: "20/m",
+		Options: map[string][]Option{
+			ToolSearch: {
+				{Key: "zone", Type: OptionEnum, Default: "auto", Values: []string{"auto", "cn", "intl"}},
+				optLanguage,
+			},
+		},
+	},
 }
 
 func Info(id string) (ProviderInfo, bool) {
@@ -396,7 +426,7 @@ func defaultRoutes(order ...string) []Route {
 // Default returns the configuration of a fresh install.
 func Default() *Config {
 	c := &Config{
-		Search:    Search{TimeoutSeconds: 10, Routes: defaultRoutes("brave", "exa", "perplexity", "tavily", "firecrawl")},
+		Search:    Search{TimeoutSeconds: 10, Routes: defaultRoutes("brave", "exa", "perplexity", "tavily", "firecrawl", "parallel", "anysearch")},
 		DevSearch: DevSearch{TimeoutSeconds: 15, Routes: defaultRoutes("firecrawl")},
 		Fetch: Fetch{
 			TimeoutSeconds:       30,
@@ -405,7 +435,7 @@ func Default() *Config {
 			CacheTTLSeconds:      300,
 			PassthroughLength:    4000,
 			RawPageLength:        40000,
-			Routes:               defaultRoutes("jina", "firecrawl", "tavily", "exa"),
+			Routes:               defaultRoutes("jina", "firecrawl", "tavily", "exa", "parallel", "anysearch"),
 			Extract: Extract{
 				RawOnFailure:         true,
 				MaxInputLength:       150000,

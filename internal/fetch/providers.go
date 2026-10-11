@@ -52,6 +52,8 @@ var executors = map[string]executor{
 	"firecrawl": firecrawlFetch,
 	"tavily":    tavilyFetch,
 	"exa":       exaFetch,
+	"parallel":  parallelFetch,
+	"anysearch": anysearchFetch,
 }
 
 // Providers builds the fetch providers of cfg in priority order.
@@ -512,6 +514,80 @@ func exaFetch(ctx context.Context, c call, in Input) (Page, error) {
 	}
 	r := raw.Results[0]
 	return Page{URL: r.URL, Title: r.Title, Content: r.Text}, nil
+}
+
+// parallelFetch asks for the whole page, which Parallel leaves out unless
+// told otherwise; the excerpts it returns as well go unused.
+func parallelFetch(ctx context.Context, c call, in Input) (Page, error) {
+	settings := map[string]any{"full_content": true}
+	if hours, ok := c.opt.Int("max_age_hours"); ok {
+		settings["fetch_policy"] = map[string]any{"max_age_seconds": hours * 3600}
+	}
+	body := map[string]any{"urls": []string{in.URL}, "advanced_settings": settings}
+	maps.Copy(body, c.extra)
+
+	var raw struct {
+		Results []struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"full_content"`
+		} `json:"results"`
+		Errors []struct {
+			Type       string `json:"error_type"`
+			HTTPStatus int    `json:"http_status_code"`
+		} `json:"errors"`
+	}
+	err := core.DoJSON(ctx, c.client, core.Request{
+		Provider: "Parallel",
+		Method:   http.MethodPost,
+		URL:      c.base + "/v1/extract",
+		Header:   map[string]string{"x-api-key": c.apiKey},
+		Body:     body,
+	}, &raw)
+	if err != nil {
+		return Page{}, err
+	}
+	if len(raw.Results) == 0 {
+		reason := "no content returned"
+		if len(raw.Errors) > 0 {
+			e := raw.Errors[0]
+			if e.HTTPStatus >= 400 {
+				return Page{}, siteError("Parallel", e.HTTPStatus)
+			}
+			if e.Type != "" {
+				reason = e.Type
+			}
+		}
+		return Page{}, &core.TargetError{Provider: "Parallel", Reason: reason}
+	}
+	r := raw.Results[0]
+	return Page{URL: r.URL, Title: r.Title, Content: r.Content}, nil
+}
+
+func anysearchFetch(ctx context.Context, c call, in Input) (Page, error) {
+	body := map[string]any{"url": in.URL}
+	maps.Copy(body, c.extra)
+
+	var raw struct {
+		Data struct {
+			Title   string `json:"title"`
+			URL     string `json:"url"`
+			Content string `json:"content"`
+		} `json:"data"`
+	}
+	err := core.DoJSON(ctx, c.client, core.Request{
+		Provider: "AnySearch",
+		Classify: upstream.AnySearch,
+		Method:   http.MethodPost,
+		URL:      c.base + "/v1/extract",
+		Header:   map[string]string{"Authorization": "Bearer " + c.apiKey},
+		Body:     body,
+	}, &raw)
+	if err != nil {
+		return Page{}, err
+	}
+	d := raw.Data
+	return Page{URL: d.URL, Title: d.Title, Content: d.Content}, nil
 }
 
 func siteError(provider string, status int) error {

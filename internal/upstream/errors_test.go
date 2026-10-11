@@ -49,6 +49,10 @@ func TestClassification(t *testing.T) {
 		{"firecrawl engines", Firecrawl, 500, `{"success":false,"code":"SCRAPE_ALL_ENGINES_FAILED"}`, nil, core.ClassTarget},
 		{"firecrawl action", Firecrawl, 500, `{"success":false,"code":"SCRAPE_ACTION_ERROR"}`, nil, core.ClassBadRequest},
 		{"firecrawl own failure", Firecrawl, 500, `not json`, nil, core.ClassProvider},
+		{"anysearch unreadable page", AnySearch, 422, `{"code":-1,"error_code":"extract_failed"}`, nil, core.ClassTarget},
+		{"anysearch key", AnySearch, 401, `{"code":-1,"error_code":"invalid_api_key"}`, nil, core.ClassAuth},
+		{"anysearch unexplained 403", AnySearch, 403, `{"code":-1}`, nil, core.ClassProvider},
+		{"anysearch quota", AnySearch, 402, `{"code":-1}`, nil, core.ClassQuota},
 		{"firecrawl credits", Firecrawl, 402, `{"success":false}`, nil, core.ClassQuota},
 	}
 	for _, c := range cases {

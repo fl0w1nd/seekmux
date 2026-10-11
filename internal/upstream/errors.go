@@ -140,3 +140,15 @@ func Firecrawl(e *core.HTTPError, _ http.Header) {
 		e.Class = core.ClassTarget
 	}
 }
+
+// AnySearch answers 422 for a page it could not read, whatever the reason:
+// the site refused, the page is missing or it is a format it does not parse.
+func AnySearch(e *core.HTTPError, _ http.Header) {
+	var body struct {
+		Code string `json:"error_code"`
+	}
+	_ = json.Unmarshal([]byte(e.Body), &body)
+	if body.Code == "extract_failed" {
+		e.Class = core.ClassTarget
+	}
+}

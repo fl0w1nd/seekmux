@@ -114,6 +114,30 @@ func TestExaReportsAFailedPage(t *testing.T) {
 	}
 }
 
+func TestParallelAndAnySearchPages(t *testing.T) {
+	in := Input{URL: "https://example.com/a"}
+	header, body, page, err := capture(t, "parallel", `{"results":[{"title":"T","url":"https://example.com/a","excerpts":["he"],"full_content":"hello"}],"errors":[]}`, func(r *config.Route) {
+		r.Options = map[string]any{"max_age_hours": 2}
+	}, in)
+	want := map[string]any{"urls": []any{in.URL}, "advanced_settings": map[string]any{"full_content": true, "fetch_policy": map[string]any{"max_age_seconds": 7200.0}}}
+	if err != nil || page.Content != "hello" || page.Title != "T" || header.Get("x-api-key") != "key" || !reflect.DeepEqual(body, want) {
+		t.Errorf("parallel: page = %+v, err = %v, body = %v", page, err, body)
+	}
+	_, _, _, err = capture(t, "parallel", `{"results":[],"errors":[{"url":"https://example.com/a","error_type":"http_error","http_status_code":404}]}`, nil, in)
+	if err == nil || err.Error() != "Parallel could not get the page: the site answered 404 Not Found" {
+		t.Errorf("parallel: err = %v", err)
+	}
+	_, _, _, err = capture(t, "parallel", `{"results":[],"errors":[{"url":"https://example.com/a","error_type":"connect_error","http_status_code":null}]}`, nil, in)
+	if err == nil || err.Error() != "Parallel could not get the page: connect_error" {
+		t.Errorf("parallel: err = %v", err)
+	}
+
+	header, body, page, err = capture(t, "anysearch", `{"code":0,"data":{"url":"https://example.com/a","title":"T","content":"hello"}}`, nil, in)
+	if err != nil || page.Content != "hello" || page.Title != "T" || header.Get("Authorization") != "Bearer key" || !reflect.DeepEqual(body, map[string]any{"url": in.URL}) {
+		t.Errorf("anysearch: page = %+v, err = %v, body = %v", page, err, body)
+	}
+}
+
 func lines(l ...string) string { return strings.Join(l, "\n") }
 
 // The samples are cut from Firecrawl's markdown for
