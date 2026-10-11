@@ -212,10 +212,16 @@
   html {
     font-family: var(--font-sans);
     font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    /* No double-tap zoom: a tap is a tap. Pinch zoom stays. */
+    touch-action: manipulation;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
   body {
+    overscroll-behavior-y: none;
     background: var(--bg);
     color: var(--ink);
     font-size: var(--text-base);
@@ -249,6 +255,20 @@
   }
   input[type="number"] {
     appearance: textfield;
+  }
+}
+
+/*
+ * A phone zooms the page when a field under 16px takes focus, and does not
+ * zoom back out. The console sets its fields at 13px, so on a touch screen
+ * they are raised to 16px. Unlayered on purpose: it must outrank the
+ * size utilities of the kit.
+ */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]),
+  textarea,
+  select {
+    font-size: 16px;
   }
 }
 

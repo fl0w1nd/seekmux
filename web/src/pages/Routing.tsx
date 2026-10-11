@@ -105,7 +105,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
           return (
             <li key={rule.id} className={cx("flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 last:border-b-0", !rule.enabled && "opacity-60")}>
               <span className={cx("num w-6 text-sm", rule.enabled && ready ? "text-signal-text" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
-              <span className="flex w-7 flex-col">
+              <span className={cx("flex w-7 flex-col", rule.builtin && "max-sm:hidden")}>
                 {!rule.builtin && (
                   <>
                     <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
@@ -113,8 +113,8 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                   </>
                 )}
               </span>
-              <div className="min-w-48 flex-1">
-                <div className="flex items-center gap-2 text-sm font-medium">
+              <div className="min-w-48 flex-1 max-sm:basis-[calc(100%-3rem)]">
+                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                   {rule.builtin && <BrandIcon id={rule.id} className="size-4" />}
                   {rule.name}
                   {rule.builtin && <Badge>内置</Badge>}
@@ -134,9 +134,9 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                 </div>
                 <div className="num mt-1 text-xs break-all text-ink-3">{rule.match.join(" · ")}</div>
               </div>
-              <div className="flex flex-col gap-1 text-right">
+              <div className="flex flex-col gap-1 text-right max-sm:order-1 max-sm:mr-auto max-sm:ml-10 max-sm:text-left">
                 <span className="tag">提供商</span>
-                <span className="flex items-center justify-end gap-1.5 text-xs text-ink-2">
+                <span className="flex flex-wrap items-center justify-end gap-1.5 text-xs text-ink-2 max-sm:justify-start">
                   {rule.providers.map((id, i) => (
                     <Fragment key={id}>
                       {i > 0 && <span className="text-ink-3">→</span>}
@@ -146,10 +146,12 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                   ))}
                 </span>
               </div>
-              <Button size="sm" variant="ghost" icon={<Pencil />} onClick={() => onEdit(rule)}>
+              <Button size="sm" variant="ghost" className="max-sm:order-2" icon={<Pencil />} onClick={() => onEdit(rule)}>
                 编辑
               </Button>
-              <Switch checked={rule.enabled} onCheckedChange={(enabled) => enable(rule, index, enabled)} aria-label={`启用规则 ${rule.name}`} />
+              <span className="flex max-sm:order-2">
+                <Switch checked={rule.enabled} onCheckedChange={(enabled) => enable(rule, index, enabled)} aria-label={`启用规则 ${rule.name}`} />
+              </span>
             </li>
           );
         })}
@@ -261,7 +263,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
                       </>
                     )}
                   </span>
-                  <span className="flex flex-1 items-center gap-2 text-sm">
+                  <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                     <BrandIcon id={id} className="size-4" />
                     {provider(id).name}
                     {builtin?.providers.includes(id) && (

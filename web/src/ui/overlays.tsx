@@ -39,7 +39,7 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-scrim" />
         <RadixDialog.Content
           className={cx(
-            "fixed top-[12vh] left-1/2 z-50 flex max-h-[76vh] w-[calc(100vw-2rem)] -translate-x-1/2 animate-in flex-col",
+            "fixed top-[12dvh] left-1/2 z-50 flex max-h-[76dvh] max-sm:top-[6dvh] max-sm:max-h-[88dvh] w-[calc(100vw-2rem)] -translate-x-1/2 animate-in flex-col",
             "rounded-panel border border-line-strong bg-overlay shadow-overlay",
             width,
           )}
@@ -54,14 +54,27 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
 }
 
 /** A panel that slides in from the right, for inspecting one item of a list. */
-export function Drawer({ open, onOpenChange, title, description, children }: OverlayProps) {
+export function Drawer({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+  side = "right",
+  bodyClassName = "p-5",
+}: OverlayProps & { side?: "left" | "right"; bodyClassName?: string }) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-scrim" />
-        <RadixDialog.Content className="fixed inset-y-0 right-0 z-50 flex w-[min(44rem,100vw)] animate-slide flex-col border-l border-line-strong bg-overlay shadow-overlay">
+        <RadixDialog.Content
+          className={cx(
+            "fixed inset-y-0 z-50 flex animate-slide flex-col border-line-strong bg-overlay pb-[env(safe-area-inset-bottom)] shadow-overlay",
+            side === "right" ? "right-0 w-[min(44rem,100vw)] border-l" : "left-0 w-[min(18rem,85vw)] border-r",
+          )}
+        >
           <Header title={title} description={description} />
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
+          <div className={cx("min-h-0 flex-1 overflow-y-auto", bodyClassName)}>{children}</div>
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

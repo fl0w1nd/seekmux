@@ -276,7 +276,7 @@ function ProviderDialog({
             ]}
           />
         </Field>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="ID" hint={isNew ? "创建后不可修改" : undefined} error={form.id ? idError : undefined}>
             <Input mono value={form.id} disabled={!isNew} placeholder="openrouter" onChange={(e) => set({ id: e.target.value.trim().toLowerCase() })} />
           </Field>
@@ -363,7 +363,7 @@ function ModelDialog({
       }
     >
       <div className="flex flex-col gap-4">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="上游模型名" hint="按接口方的模型名原样填写">
             <Input
               mono

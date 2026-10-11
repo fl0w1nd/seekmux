@@ -90,3 +90,30 @@ func TestAReportIsReadWithoutSigningIn(t *testing.T) {
 		t.Errorf("the task without a session = %d", code)
 	}
 }
+
+func TestTheWebManifestIsServedWithItsOwnType(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := app.New(context.Background(), st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	assets := fstest.MapFS{
+		"index.html":           {Data: []byte("<html></html>")},
+		"manifest.webmanifest": {Data: []byte(`{"name":"SeekMux"}`)},
+	}
+	srv := httptest.NewServer(New(a, "test", assets).Handler())
+	defer srv.Close()
+
+	res, err := http.Get(srv.URL + "/manifest.webmanifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if got := res.Header.Get("Content-Type"); !strings.HasPrefix(got, "application/manifest+json") {
+		t.Errorf("Content-Type = %q", got)
+	}
+}

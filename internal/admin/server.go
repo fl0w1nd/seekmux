@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
 	"slices"
@@ -23,6 +24,11 @@ import (
 	"github.com/fl0w1nd/seekmux/internal/search"
 	"github.com/fl0w1nd/seekmux/internal/store"
 )
+
+func init() {
+	// The web app manifest has no entry in a minimal image's mime table.
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 type Server struct {
 	app     *app.App

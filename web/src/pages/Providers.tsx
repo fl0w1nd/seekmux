@@ -14,7 +14,7 @@ export function ProvidersPage() {
   return (
     <>
       <PageHeader title="提供商" description="搜索与抓取服务的凭据与限流。同一提供商的密钥和限流由其支持的所有工具共用；优先级与专有参数在各工具的页面设置。" />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {meta.catalog.map((info, index) => {
           const creds = config.providers[info.id];
           const tools = info.tools;

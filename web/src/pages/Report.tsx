@@ -57,7 +57,7 @@ export function ReportPage({ id }: { id: string }) {
   }
   if (query.isPending) {
     return (
-      <div className="grid min-h-screen place-items-center">
+      <div className="grid min-h-dvh place-items-center">
         <Spinner />
       </div>
     );
@@ -154,7 +154,7 @@ function Bar({ children }: { children?: ReactNode }) {
 /** The page when there is no report to show: one statement, set as large as a report's title. */
 function Message({ tag, title, children }: { tag: ReactNode; title: string; children: ReactNode }) {
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden">
+    <div className="relative flex min-h-dvh flex-col overflow-hidden">
       <div aria-hidden className="report-backdrop absolute inset-0" />
       <div className={cx(column, "relative flex flex-1 flex-col")}>
         <Bar />
@@ -254,7 +254,7 @@ function Document({ report }: { report: PublicReport }) {
   ];
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       {/* How far into the page the reader is. */}
       <div aria-hidden className="fixed inset-x-0 top-0 z-40 h-0.5">
         <div className="h-full origin-left bg-signal-text" style={{ transform: `scaleX(${progress})` }} />
@@ -301,7 +301,7 @@ function Document({ report }: { report: PublicReport }) {
       <div className={cx(column, "grid gap-x-14 py-12 lg:grid-cols-[13rem_minmax(0,1fr)] lg:py-16 xl:grid-cols-[13rem_minmax(0,46rem)_minmax(0,1fr)]")}>
         <aside className="max-lg:hidden">
           {toc.length > 1 && (
-            <nav aria-label="目录" className="sticky top-10 max-h-[calc(100vh-5rem)] overflow-y-auto pr-2">
+            <nav aria-label="目录" className="sticky top-10 max-h-[calc(100dvh-5rem)] overflow-y-auto pr-2">
               <div className="tag mb-3">目录</div>
               <ol>
                 {toc.map((heading) => (

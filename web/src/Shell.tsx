@@ -7,6 +7,7 @@ import {
   Globe,
   KeyRound,
   LogOut,
+  Menu,
   Microscope,
   Monitor,
   Moon,
@@ -21,6 +22,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { api } from "./lib/api";
 import { useConfig } from "./lib/config";
+import { Drawer } from "./ui/overlays";
 import { Button, cx, Dot, Segmented, Tooltip } from "./ui/primitives";
 
 export function Logo({ className }: { className?: string }) {
@@ -93,83 +95,117 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
   return [theme, setTheme];
 }
 
+function NavList({ location }: { location: string }) {
+  return (
+    <nav className="flex-1 overflow-y-auto px-2 pb-4">
+      {nav.map((section) => (
+        <div key={section.group} className="mt-4 first:mt-1">
+          <div className="tag px-2 pb-1.5">{section.group}</div>
+          {section.items.map(({ href, label, icon: Icon }) => {
+            const active = href === "/" ? location === "/" : location.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={cx(
+                  "relative flex h-8 items-center gap-2.5 rounded-ctl px-2 text-sm transition-colors max-md:h-10",
+                  active ? "bg-raised text-ink" : "text-ink-2 hover:bg-raised/60 hover:text-ink",
+                )}
+              >
+                {active && <span className="absolute inset-y-1.5 -left-2 w-0.5 rounded-full bg-signal-text" />}
+                <Icon className={cx("size-4 shrink-0", active ? "text-signal-text" : "text-ink-3")} />
+                {label}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+/** Theme and sign-out, the foot of the sidebar and of the menu on a phone. */
+function NavFoot() {
+  const client = useQueryClient();
+  const [theme, setTheme] = useTheme();
+  return (
+    <div className="flex items-center justify-between gap-2 border-t border-line p-2.5">
+      <Segmented
+        size="sm"
+        value={theme}
+        onChange={setTheme}
+        options={[
+          { value: "system", label: <Monitor aria-label="跟随系统" /> },
+          { value: "light", label: <Sun aria-label="浅色" /> },
+          { value: "dark", label: <Moon aria-label="深色" /> },
+        ]}
+      />
+      <Tooltip content="退出登录">
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<LogOut />}
+          aria-label="退出登录"
+          onClick={async () => {
+            await api.logout();
+            await client.invalidateQueries({ queryKey: ["auth"] });
+          }}
+        />
+      </Tooltip>
+    </div>
+  );
+}
+
 export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { meta, saving, error, retry, discard } = useConfig();
-  const client = useQueryClient();
-  const [theme, setTheme] = useTheme();
+  const [menu, setMenu] = useState(false);
+  const current = nav.flatMap((section) => section.items).find(({ href }) => (href === "/" ? location === "/" : location.startsWith(href)));
+
+  // The menu of a phone closes once a page is chosen.
+  useEffect(() => setMenu(false), [location]);
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-line bg-surface max-md:w-14">
+    <div className="flex min-h-dvh max-md:flex-col">
+      <aside className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col border-r border-line bg-surface max-md:hidden">
         <div className="flex h-14 items-center gap-2.5 px-3.5">
           <Logo className="size-7" />
-          <div className="leading-tight max-md:hidden">
+          <div className="leading-tight">
             <div className="font-medium">SeekMux</div>
             <div className="tag normal-case">{saving ? "保存中…" : meta.version}</div>
           </div>
         </div>
-        <nav className="flex-1 overflow-y-auto px-2 pb-4">
-          {nav.map((section) => (
-            <div key={section.group} className="mt-4 first:mt-1">
-              <div className="tag px-2 pb-1.5 max-md:hidden">{section.group}</div>
-              {section.items.map(({ href, label, icon: Icon }) => {
-                const active = href === "/" ? location === "/" : location.startsWith(href);
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    aria-current={active ? "page" : undefined}
-                    title={label}
-                    className={cx(
-                      "relative flex h-8 items-center gap-2.5 rounded-ctl px-2 text-sm transition-colors max-md:justify-center",
-                      active ? "bg-raised text-ink" : "text-ink-2 hover:bg-raised/60 hover:text-ink",
-                    )}
-                  >
-                    {active && <span className="absolute inset-y-1.5 -left-2 w-0.5 rounded-full bg-signal-text" />}
-                    <Icon className={cx("size-4 shrink-0", active ? "text-signal-text" : "text-ink-3")} />
-                    <span className="max-md:hidden">{label}</span>
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
-        <div className="flex items-center justify-between gap-2 border-t border-line p-2.5 max-md:flex-col">
-          <div className="max-md:hidden">
-            <Segmented
-              size="sm"
-              value={theme}
-              onChange={setTheme}
-              options={[
-                { value: "system", label: <Monitor aria-label="跟随系统" /> },
-                { value: "light", label: <Sun aria-label="浅色" /> },
-                { value: "dark", label: <Moon aria-label="深色" /> },
-              ]}
-            />
-          </div>
-          <Tooltip content="退出登录">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<LogOut />}
-              aria-label="退出登录"
-              onClick={async () => {
-                await api.logout();
-                await client.invalidateQueries({ queryKey: ["auth"] });
-              }}
-            />
-          </Tooltip>
-        </div>
+        <NavList location={location} />
+        <NavFoot />
       </aside>
 
+      <header className="sticky top-0 z-20 hidden h-[calc(3rem+env(safe-area-inset-top))] shrink-0 items-center gap-2 border-b border-line bg-surface pt-[env(safe-area-inset-top)] pr-[max(0.5rem,env(safe-area-inset-right))] pl-[max(0.5rem,env(safe-area-inset-left))] max-md:flex">
+        <Button variant="ghost" className="size-10" icon={<Menu />} aria-label="打开菜单" onClick={() => setMenu(true)} />
+        <Logo className="size-6" />
+        <div className="min-w-0 flex-1 truncate font-medium">{current?.label ?? "SeekMux"}</div>
+        {saving && <span className="tag normal-case">保存中…</span>}
+      </header>
+      <Drawer open={menu} onOpenChange={setMenu} side="left" title="SeekMux" description={meta.version} bodyClassName="flex flex-col p-0">
+        <NavList location={location} />
+        <NavFoot />
+      </Drawer>
+
       <main className="min-w-0 flex-1">
-        <div className={cx("mx-auto w-full max-w-6xl px-6 py-6 max-md:px-4", error && "pb-24")}>{children}</div>
+        <div
+          className={cx(
+            "mx-auto w-full max-w-6xl px-6 py-6 max-md:px-4",
+            "max-md:pr-[max(1rem,env(safe-area-inset-right))] max-md:pb-[max(1.5rem,env(safe-area-inset-bottom))] max-md:pl-[max(1rem,env(safe-area-inset-left))]",
+            error && "pb-24",
+          )}
+        >
+          {children}
+        </div>
       </main>
 
       {error && (
-        <div className="fixed inset-x-0 bottom-4 z-30 flex justify-center px-4 pl-60 max-md:pl-18">
-          <div className="flex max-w-2xl animate-in items-center gap-4 rounded-panel border border-line-strong bg-overlay py-2 pr-2 pl-4 shadow-overlay">
+        <div className="fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex justify-center px-4 pl-60 max-md:pl-4">
+          <div className="flex max-w-2xl animate-in items-center gap-4 rounded-panel border border-line-strong bg-overlay py-2 pr-2 pl-4 shadow-overlay max-md:flex-wrap max-md:gap-2">
             <span className="flex min-w-0 items-start gap-2.5 text-sm">
               <Dot tone="err" className="mt-2" />
               <span className="min-w-0 break-words">配置保存失败：{error}</span>

@@ -115,3 +115,10 @@ except the dot of something that is live. All of it is disabled under
 - Secrets are never rendered; `SecretInput` shows only the stored hint.
 - Every state has copy: empty states say what will appear and how to get it
   there, errors say what happened and what to do.
+- The console is installable (`public/manifest.webmanifest`, `public/sw.js`)
+  and is used on a phone. Below `md` the sidebar gives way to a top bar and a
+  menu drawer; the page keeps clear of the notch and home bar with
+  `env(safe-area-inset-*)`, and heights use `dvh`, not `vh`. Fields are 16px
+  on a touch screen (`index.css`), because a phone zooms the page into any
+  field set smaller. Never shrink them back, and let a header or a row wrap
+  rather than overflow: `scrollWidth` of the page must equal its width.

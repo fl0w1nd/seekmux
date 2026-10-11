@@ -33,14 +33,14 @@ function Console() {
 
   if (auth.isPending) {
     return (
-      <div className="grid h-screen place-items-center">
+      <div className="grid h-dvh place-items-center">
         <Spinner />
       </div>
     );
   }
   if (auth.error) {
     return (
-      <div className="grid h-screen place-items-center">
+      <div className="grid h-dvh place-items-center">
         <Empty title="无法连接到 SeekMux 服务">{auth.error.message}</Empty>
       </div>
     );
@@ -126,7 +126,7 @@ function Gate({ setup, onDone }: { setup: boolean; onDone: () => unknown }) {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center px-4">
+    <div className="grid min-h-dvh place-items-center px-4">
       <form onSubmit={submit} className="w-full max-w-sm">
         <div className="mb-6 flex items-center gap-2.5">
           <Logo />

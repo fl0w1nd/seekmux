@@ -304,7 +304,7 @@ export function Panel({
   return (
     <section className={cx("rounded-panel border border-line bg-surface", className)}>
       {(title || actions) && (
-        <header className="flex items-start justify-between gap-4 border-b border-line px-4 py-3">
+        <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3">
           <div className="min-w-0">
             <h2 className="flex items-baseline gap-2 text-base font-medium">
               {index && <span className="tag text-signal-text">{index}</span>}
@@ -312,7 +312,7 @@ export function Panel({
             </h2>
             {description && <p className="mt-0.5 text-xs text-ink-3">{description}</p>}
           </div>
-          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
       <div className={flush ? undefined : "p-4"}>{children}</div>
