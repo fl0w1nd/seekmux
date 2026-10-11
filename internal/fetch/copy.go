@@ -58,19 +58,22 @@ func numberLines(text string) string {
 // expandCopies replaces the copy tags in answer with the lines of text they
 // name. base is the offset of text in the page. The copied text is held to
 // budget weighted characters; what does not fit is left out with a note
-// saying where to read it. warning reports tags that named no line.
-func expandCopies(answer, text string, base, budget int, truncated bool) (expanded, warning string) {
+// saying where to read it, and omitted is the lowest page offset left out,
+// or -1. warning reports tags that named no line.
+func expandCopies(answer, text string, base, budget int, truncated bool) (expanded, warning string, omitted int) {
 	if truncated {
 		answer = cutCopyTag.ReplaceAllString(answer, "")
 	}
 	lines := splitLines(text)
 	invalid := 0
-	lineOffset := func(first int) int {
+	omitted = -1
+	// lineOffset is the page offset of line n, which may be one past the last.
+	lineOffset := func(n int) int {
 		offset := base
-		for _, line := range lines[:first-1] {
+		for _, line := range lines[:n-1] {
 			offset += len(line) + 1
 		}
-		return offset
+		return min(offset, base+len(text))
 	}
 	var out strings.Builder
 	rest := 0
@@ -92,14 +95,30 @@ func expandCopies(answer, text string, base, budget int, truncated bool) (expand
 		if before := strings.TrimRight(answer[:m[0]], " \t"); before != "" && !strings.HasSuffix(before, "\n") {
 			out.WriteString("\n\n")
 		}
+		fence := "" // the marker of the code block the copy is inside of
 		for n := first; n <= last; n++ {
 			cost := weightedLen(lines[n-1]) + 1
 			if cost > budget {
 				budget = 0
-				fmt.Fprintf(&out, "[Lines %d-%d of this passage are left out: the answer is at its length limit. Read them with raw=true and offset=%d.]", n, last, lineOffset(n))
+				at := lineOffset(n)
+				if omitted < 0 || at < omitted {
+					omitted = at
+				}
+				// The note must not end up as a line of the page's code.
+				if fence != "" {
+					out.WriteString(fence + "\n")
+				}
+				fmt.Fprintf(&out, "[The next %d characters of the page are left out here: the answer is at its length limit. Read on from offset=%d.]", lineOffset(last+1)-at, at)
 				break
 			}
 			budget -= cost
+			if marker := fenceMarker(lines[n-1]); marker != "" {
+				if fence == "" {
+					fence = marker
+				} else {
+					fence = ""
+				}
+			}
 			out.WriteString(lines[n-1])
 			if n < last {
 				out.WriteByte('\n')
@@ -111,8 +130,22 @@ func expandCopies(answer, text string, base, budget int, truncated bool) (expand
 	}
 	out.WriteString(answer[rest:])
 	expanded = out.String()
-	if invalid > 0 {
-		warning = fmt.Sprintf("%d passage(s) the helper model meant to copy from the page could not be located and are missing from the answer.", invalid)
+	var warnings []string
+	if omitted >= 0 {
+		warnings = append(warnings, fmt.Sprintf("The answer is at its length limit and leaves out part of what it copies from the page, starting at offset %d. Call again with that offset (it is next_offset) to continue from there, with the same prompt or with raw set for the original text.", omitted))
 	}
-	return strings.TrimSpace(expanded), warning
+	if invalid > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d passage(s) the helper model meant to copy from the page could not be located and are missing from the answer.", invalid))
+	}
+	return strings.TrimSpace(expanded), strings.Join(warnings, " "), omitted
+}
+
+// fenceMarker returns the run of backticks or tildes that opens or closes a
+// code block on line, or "" when line is no fence.
+func fenceMarker(line string) string {
+	if !isFence(line) {
+		return ""
+	}
+	line = strings.TrimLeft(line, " ")
+	return line[:len(line)-len(strings.TrimLeft(line, line[:1]))]
 }

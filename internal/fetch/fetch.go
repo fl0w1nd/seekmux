@@ -50,7 +50,8 @@ type Result struct {
 	Error       string `json:"error,omitempty"`
 	// ContentLength is the size of the page's original text, in the unit of Offset.
 	ContentLength int `json:"content_length,omitempty"`
-	// NextOffset continues past what this result covers.
+	// NextOffset continues past what this result covers, or from the first
+	// passage an answer had no room to copy.
 	NextOffset      int    `json:"next_offset,omitempty"`
 	Answer          string `json:"answer,omitempty"`
 	AnswerTruncated bool   `json:"answer_truncated,omitempty"`
@@ -310,7 +311,7 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 	}
 
 	// The cache keeps the answer as the model wrote it, copy tags unexpanded.
-	answer, warning := expandCopies(chat.Text, content[offset:end], offset, rt.Config.Fetch.RawPageLength, chat.Truncated)
+	answer, warning, omitted := expandCopies(chat.Text, content[offset:end], offset, rt.Config.Fetch.RawPageLength, chat.Truncated)
 	result := Result{
 		Title:           page.Title,
 		Engine:          page.Engine,
@@ -324,6 +325,10 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 	}
 	if end < len(content) {
 		result.NextOffset = end
+	}
+	// Continuing past the excerpt would skip what the answer left out.
+	if omitted >= 0 {
+		result.NextOffset = omitted
 	}
 	return result, nil
 }
