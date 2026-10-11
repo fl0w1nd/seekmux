@@ -264,6 +264,27 @@ export interface CallerStats {
   output_tokens: number;
 }
 
+/** How a provider's attempt at a page ended; `missing` is the site saying the page does not exist. */
+export type FetchOutcome = "ok" | "blocked" | "missing" | "failed" | "timeout";
+
+/** What one provider made of the pages of a domain. */
+export interface DomainProviderStats {
+  provider: string;
+  calls: number;
+  outcomes: Partial<Record<FetchOutcome, number>>;
+  /** The mean duration and text size of the pages it read. */
+  avg_ms: number;
+  avg_bytes: number;
+}
+
+export interface DomainStats {
+  /** The registrable domain, e.g. youtube.com for m.youtube.com. */
+  domain: string;
+  calls: number;
+  outcomes: Partial<Record<FetchOutcome, number>>;
+  providers: DomainProviderStats[];
+}
+
 /** What the circuit breaker says about a provider or model. */
 export interface Health {
   disabled: boolean;
@@ -592,6 +613,8 @@ export const api = {
   clearLogs: () => request("DELETE", "/api/logs"),
   overview: (window: string) => get<Overview>(`/api/stats?window=${window}`),
   clearCache: () => post("/api/cache/clear"),
+  domains: (days: number) => get<{ days: number; retention_days: number; domains: DomainStats[] }>(`/api/domains?days=${days}`),
+  clearDomains: () => request("DELETE", "/api/domains"),
   status: () => get<{ routes: RouteStatus[]; models: ModelStatus[] }>("/api/status"),
   resetBreaker: (key: string) => post("/api/breaker/reset", { key }),
 

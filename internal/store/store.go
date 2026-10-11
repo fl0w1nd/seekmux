@@ -1,6 +1,6 @@
 // Package store persists everything in one SQLite file: the configuration
-// document, admin credentials and sessions, API keys, request logs and
-// research tasks.
+// document, admin credentials and sessions, API keys, request logs, research
+// tasks and the fetch statistics per domain.
 package store
 
 import (
@@ -76,6 +76,16 @@ CREATE TABLE IF NOT EXISTS research_tasks (
 	spent      TEXT NOT NULL DEFAULT '',
 	draft      TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS domain_stats (
+	day         INTEGER NOT NULL,
+	domain      TEXT NOT NULL,
+	provider    TEXT NOT NULL,
+	outcome     TEXT NOT NULL,
+	count       INTEGER NOT NULL DEFAULT 0,
+	duration_ms INTEGER NOT NULL DEFAULT 0,
+	bytes       INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (day, domain, provider, outcome)
+) WITHOUT ROWID;
 `
 
 // added lists the columns that came after the first release, which a

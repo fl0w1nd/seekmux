@@ -56,6 +56,7 @@ type App struct {
 	Logs   *store.LogWriter
 	Limits *core.Limits
 
+	domains  *store.DomainWriter
 	fetcher  *fetch.Service
 	snapshot atomic.Pointer[Snapshot]
 	saveMu   sync.Mutex
@@ -72,7 +73,13 @@ type App struct {
 // New loads the stored configuration, creating the default one on first run.
 func New(ctx context.Context, st *store.Store) (*App, error) {
 	limits := core.NewLimits()
-	a := &App{Store: st, Logs: st.NewLogWriter(), Limits: limits, fetcher: fetch.NewService(limits)}
+	a := &App{Store: st, Logs: st.NewLogWriter(), Limits: limits, domains: st.NewDomainWriter(), fetcher: fetch.NewService(limits)}
+	a.fetcher.Observe = func(o fetch.Observation) {
+		a.domains.Record(store.DomainSample{
+			TS: o.Time.UnixMilli(), Domain: o.Domain, Provider: o.Provider, Outcome: o.Outcome,
+			DurationMs: o.Duration.Milliseconds(), Bytes: int64(o.Bytes),
+		})
+	}
 	a.background, a.stop = context.WithCancel(context.Background())
 
 	cfg := config.Default()
@@ -95,6 +102,7 @@ func (a *App) Close() {
 	a.stop()
 	a.tasks.Wait()
 	a.Logs.Close()
+	a.domains.Close()
 }
 
 func (a *App) Snapshot() *Snapshot { return a.snapshot.Load() }

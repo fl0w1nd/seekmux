@@ -79,6 +79,8 @@ type Service struct {
 	answers *core.Cache[llm.ChatResult]
 	// gone remembers the pages that turned out not to exist.
 	gone *core.Cache[*core.GoneError]
+	// Observe, when set, is told how every provider's attempt at a page ended.
+	Observe func(Observation)
 }
 
 func NewService(limits *core.Limits) *Service {
@@ -179,6 +181,9 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		}
 	case engine != EngineAuto:
 		providers = slices.DeleteFunc(providers, func(p core.Provider[Input, Page]) bool { return p.Name != engine })
+	}
+	for i := range providers {
+		providers[i].Execute = s.observed(target, providers[i])
 	}
 	opt := core.RunOptions{
 		Kind:          config.ToolFetch,

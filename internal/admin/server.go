@@ -67,6 +67,8 @@ func (s *Server) Handler() http.Handler {
 		"GET /api/logs/{id}":                   s.handleGetLog,
 		"DELETE /api/logs":                     s.handleClearLogs,
 		"GET /api/stats":                       s.handleStats,
+		"GET /api/domains":                     s.handleDomains,
+		"DELETE /api/domains":                  s.handleClearDomains,
 		"POST /api/cache/clear":                s.handleClearCache,
 		"POST /api/play/search":                s.handlePlaySearch,
 		"POST /api/play/dev_search":            s.handlePlayDevSearch,
@@ -515,6 +517,28 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			"research": app.ResearchAvailable(snap),
 		},
 	})
+}
+
+// handleDomains reports how fetches went per domain and provider.
+func (s *Server) handleDomains(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days < 1 || days > store.DomainRetentionDays {
+		days = 7
+	}
+	domains, err := s.app.Store.DomainStats(r.Context(), days, 500)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, map[string]any{"days": days, "retention_days": store.DomainRetentionDays, "domains": domains})
+}
+
+func (s *Server) handleClearDomains(w http.ResponseWriter, r *http.Request) {
+	if err := s.app.Store.ClearDomainStats(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // handleStatus reports the limits and health of every provider and model,

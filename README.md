@@ -26,7 +26,8 @@ Around the tools:
 - **Failover** between providers, and along a chain of models for extraction.
 - **Service routing**: rules send the pages of a site to the providers that
   can read them. A built-in rule, off until you switch it on, sends YouTube
-  videos to Tavily, which returns the transcript.
+  videos to Tavily, which returns the transcript. Statistics per domain show
+  where each provider is turned away, which is where the next rule belongs.
 - **Circuit breaker**: something that keeps failing is skipped for a while.
   A rejected API key or exhausted credits switch a provider off until you
   re-enable it, and the console shows what the provider answered.

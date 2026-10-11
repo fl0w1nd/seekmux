@@ -30,5 +30,17 @@ const hostPattern = /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9-]+$/;
 
 export const validPattern = (pattern: string) => hostPattern.test(pattern.split("/")[0]);
 
+/** The enabled rule that covers pages of a registrable domain, if any. */
+export function ruleForDomain(rules: Rule[], domain: string): Rule | undefined {
+  return rules.find(
+    (rule) =>
+      rule.enabled &&
+      rule.match.some((pattern) => {
+        const host = pattern.split("/")[0];
+        return host === domain || host.endsWith(`.${domain}`) || domain.endsWith(`.${host}`);
+      }),
+  );
+}
+
 /** An id for a new rule, in the form the server accepts. */
 export const newRuleID = () => `r-${Math.random().toString(36).slice(2, 10)}`;
