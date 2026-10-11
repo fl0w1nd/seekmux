@@ -408,5 +408,5 @@ func exaFetch(ctx context.Context, c call, in Input) (Page, error) {
 }
 
 func siteError(provider string, status int) error {
-	return &core.TargetError{Provider: provider, Reason: fmt.Sprintf("the site answered %d %s", status, http.StatusText(status))}
+	return &core.TargetError{Provider: provider, Reason: fmt.Sprintf("the site answered %d %s", status, http.StatusText(status)), Status: status}
 }

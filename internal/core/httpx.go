@@ -79,10 +79,26 @@ func (e *HTTPError) Kind() Class {
 }
 
 // TargetError reports that a provider answered but could not get the page:
-// the site refused, was missing or returned nothing usable.
-type TargetError struct{ Provider, Reason string }
+// the site refused, was missing or returned nothing usable. Status is the
+// site's own answer, when the provider passed it on.
+type TargetError struct {
+	Provider, Reason string
+	Status           int
+}
 
 func (e *TargetError) Error() string { return e.Provider + " could not get the page: " + e.Reason }
+
+// GoneError reports that the page does not exist: the site said so to each
+// of Providers.
+type GoneError struct {
+	Status    int
+	Providers []string
+}
+
+func (e *GoneError) Error() string {
+	return fmt.Sprintf("The page does not exist: the site answered %d %s to %s. The link is probably out of date; search for a current one instead of fetching it again.",
+		e.Status, http.StatusText(e.Status), strings.Join(e.Providers, " and "))
+}
 
 // TimeoutError reports that a tool call ran out of its time budget.
 type TimeoutError struct{ Timeout time.Duration }

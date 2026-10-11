@@ -467,3 +467,41 @@ func TestLimitKeySharesTheBudgetAcrossTools(t *testing.T) {
 		t.Fatal("disabling one tool's route must not disable the other")
 	}
 }
+
+func TestRunsStopOnceTwoProvidersFindThePageGone(t *testing.T) {
+	missing := func(name string) error {
+		return &TargetError{Provider: name, Reason: "the site answered 404 Not Found", Status: 404}
+	}
+	opt := RunOptions{Timeout: time.Second, SlowThreshold: 500 * time.Millisecond, GoneAfter: 2}
+	runners := map[string]func(context.Context, *Limits, []Provider[string, string], string, RunOptions) (string, string, error){
+		"fallback": RunFallback[string, string],
+		"hedged":   RunHedged[string, string],
+	}
+	for name, run := range runners {
+		var asked atomic.Int32
+		last := provider("d", config.RateLimit{}, func(context.Context) (string, error) {
+			asked.Add(1)
+			return "D", nil
+		})
+		// A blocked crawler in between says nothing about the page.
+		_, _, err := run(context.Background(), NewLimits(), []Provider[string, string]{
+			provider("a", config.RateLimit{}, fail(missing("A"))),
+			provider("b", config.RateLimit{}, fail(&TargetError{Provider: "B", Reason: "the site answered 403 Forbidden", Status: 403})),
+			provider("c", config.RateLimit{}, fail(missing("C"))),
+			last,
+		}, "", opt)
+		var gone *GoneError
+		if !errors.As(err, &gone) || gone.Status != 404 || strings.Join(gone.Providers, ",") != "a,c" || asked.Load() != 0 {
+			t.Fatalf("%s: err=%v asked=%d", name, err, asked.Load())
+		}
+
+		// One provider's word is not enough.
+		out, _, err := run(context.Background(), NewLimits(), []Provider[string, string]{
+			provider("a", config.RateLimit{}, fail(missing("A"))),
+			last,
+		}, "", opt)
+		if err != nil || out != "D" {
+			t.Fatalf("%s: out=%q err=%v", name, out, err)
+		}
+	}
+}

@@ -3,6 +3,7 @@ package fetch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -75,6 +76,8 @@ type Service struct {
 	limits  *core.Limits
 	pages   *core.Cache[Page]
 	answers *core.Cache[llm.ChatResult]
+	// gone remembers the pages that turned out not to exist.
+	gone *core.Cache[*core.GoneError]
 }
 
 func NewService(limits *core.Limits) *Service {
@@ -82,6 +85,7 @@ func NewService(limits *core.Limits) *Service {
 		limits:  limits,
 		pages:   core.NewCache(48<<20, func(p Page) int { return len(p.Content) + len(p.Title) + len(p.Description) + 256 }),
 		answers: core.NewCache(8<<20, func(r llm.ChatResult) int { return len(r.Text) + 256 }),
+		gone:    core.NewCache(1<<20, func(*core.GoneError) int { return 256 }),
 	}
 }
 
@@ -89,6 +93,7 @@ func NewService(limits *core.Limits) *Service {
 func (s *Service) ClearCache() {
 	s.pages.Clear()
 	s.answers.Clear()
+	s.gone.Clear()
 }
 
 // ClearAnswers drops the cached answers, which a changed model or prompt
@@ -146,6 +151,13 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		core.TraceFrom(ctx).Note(config.ToolFetch, page.Engine, target, core.AttemptCached)
 		return page, nil
 	}
+	// A named provider is still asked: the caller may know better.
+	if gone, ok := s.gone.Get(target); ok && !rt.NoCache && engine == EngineAuto {
+		for _, provider := range gone.Providers {
+			core.TraceFrom(ctx).Note(config.ToolFetch, provider, target, core.AttemptCached)
+		}
+		return Page{}, gone
+	}
 
 	cfg := rt.Config.Fetch
 	providers := Providers(rt.Config, rt.Client)
@@ -158,6 +170,7 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		Timeout:       time.Duration(cfg.TimeoutSeconds * float64(time.Second)),
 		SingleRetry:   true,
 		SlowThreshold: time.Duration(cfg.SlowThresholdSeconds * float64(time.Second)),
+		GoneAfter:     2,
 	}
 	in := Input{URL: target, IsPDF: hasExtension(target, ".pdf")}
 
@@ -170,6 +183,10 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		page, provider, err = core.RunFallback(ctx, s.limits, providers, in, opt)
 	}
 	if err != nil {
+		var gone *core.GoneError
+		if errors.As(err, &gone) && !rt.NoCache {
+			s.gone.Set(target, gone, time.Duration(cfg.CacheTTLSeconds)*time.Second)
+		}
 		return Page{}, err
 	}
 	page.Engine = provider

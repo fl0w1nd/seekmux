@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -64,6 +65,11 @@ type RunOptions struct {
 	NoWait bool
 	// Untraced leaves the trace to providers that record their own attempts.
 	Untraced bool
+	// GoneAfter ends the run once the site told this many providers that the
+	// page does not exist, which the rest would only hear again. A single
+	// provider may have been served a false 404 for being a crawler. Zero
+	// tries every provider.
+	GoneAfter int
 }
 
 // ErrRateLimited reports that the providers not yet tried have no free
@@ -106,6 +112,26 @@ func listErrors(errs []providerError) string {
 		lines[i] = fmt.Sprintf("- %s: %s", e.name, e.err)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// gone returns the error that ends a run early: the site told opt.GoneAfter
+// of the providers tried that the page does not exist.
+func gone(errs []providerError, opt RunOptions) error {
+	if opt.GoneAfter <= 0 {
+		return nil
+	}
+	var out GoneError
+	for _, e := range errs {
+		var target *TargetError
+		if errors.As(e.err, &target) && (target.Status == http.StatusNotFound || target.Status == http.StatusGone) {
+			out.Providers = append(out.Providers, e.name)
+			out.Status = cmp.Or(out.Status, target.Status)
+		}
+	}
+	if len(out.Providers) < opt.GoneAfter {
+		return nil
+	}
+	return &out
 }
 
 func timeoutError(timeout time.Duration, errs []providerError) error {
@@ -242,6 +268,9 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 			}
 			errs = append(errs, providerError{p.Name, err})
 			failed[p.Name] = true
+			if err := gone(errs, opt); err != nil {
+				return zero, "", err
+			}
 		}
 		if earliest < 0 {
 			break
@@ -417,6 +446,10 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 				return zero, "", ended(ctx, opt.Timeout, errs)
 			}
 			errs = append(errs, providerError{r.name, r.err})
+			if err := gone(errs, opt); err != nil {
+				finish()
+				return zero, "", err
+			}
 			launch()
 		case <-slow:
 			launch()
