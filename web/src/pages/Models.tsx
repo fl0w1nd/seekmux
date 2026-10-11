@@ -56,7 +56,7 @@ export function ModelsPage() {
     <>
       <PageHeader
         title="模型接口"
-        description="大模型接口及其下属模型。模型在此独立定义：参数与限流随模型生效，「网页抓取」和「深度研究」仅按 ID 引用；引用同一模型的功能共用其限流。"
+        description="大模型接口及其下属模型。模型在此独立定义：参数与限流随模型生效，「工具」中的网页抓取和深度研究仅按 ID 引用；引用同一模型的功能共用其限流。"
         actions={
           <Button variant="primary" icon={<Plus />} onClick={() => setEditing({ kind: "provider", index: -1 })}>
             添加接口
@@ -102,7 +102,7 @@ export function ModelsPage() {
                       icon={<Trash2 />}
                       aria-label={`删除接口 ${p.name || p.id}`}
                       disabled={inUse}
-                      title={inUse ? "该接口下有模型已被关联，请先在网页抓取或深度研究页解除关联" : undefined}
+                      title={inUse ? "该接口下有模型已被关联，请先在「工具」的网页抓取或深度研究中解除关联" : undefined}
                       onClick={async () => {
                         if (await confirm({ title: `删除接口 ${p.name || p.id}？`, body: "接口及其下属模型将一并删除，立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers.splice(pi, 1));
                       }}
@@ -174,7 +174,7 @@ export function ModelsPage() {
                                     icon={<Trash2 />}
                                     aria-label={`删除模型 ${m.id}`}
                                     disabled={roles.length > 0}
-                                    title={roles.length > 0 ? "已被关联，请先在网页抓取或深度研究页解除关联" : undefined}
+                                    title={roles.length > 0 ? "已被关联，请先在「工具」的网页抓取或深度研究中解除关联" : undefined}
                                     onClick={async () => {
                                       if (await confirm({ title: `删除模型 ${m.id}？`, body: "立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers[pi].models.splice(mi, 1));
                                     }}
@@ -409,7 +409,7 @@ function ModelDialog({
 
         <ReasoningEditor type={provider.type} value={form.reasoning} onChange={(reasoning) => set({ reasoning })} />
 
-        <Field label="最大输出 Token" hint={provider.type === "anthropic" ? "模型的最大输出 Token，研究与抓取均受其约束。0 按 32000 发送（该接口要求指定上限）；抓取可在「网页抓取」页单独设置更小的值" : "模型的最大输出 Token，研究与抓取均受其约束。0 为不限制；抓取可在「网页抓取」页单独设置更小的值"} className="max-w-md">
+        <Field label="最大输出 Token" hint={provider.type === "anthropic" ? "模型的最大输出 Token，研究与抓取均受其约束。0 按 32000 发送（该接口要求指定上限）；抓取可在「工具」的「网页抓取」中单独设置更小的值" : "模型的最大输出 Token，研究与抓取均受其约束。0 为不限制；抓取可在「工具」的「网页抓取」中单独设置更小的值"} className="max-w-md">
           <NumberInput value={form.max_output_tokens ?? 0} onChange={(n) => set({ max_output_tokens: Math.round(n) || undefined })} />
         </Field>
         <Field label="附加请求字段" hint="原样并入请求体的 JSON；最后合并，会覆盖上方的同名设置。用于界面未提供的参数">

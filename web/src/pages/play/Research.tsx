@@ -146,10 +146,10 @@ export function ResearchPlay() {
         {!saved.enabled && (
           <Notice tone="warn" className="mb-3">
             深度研究尚未启用。请前往{" "}
-            <Link href="/research" className="text-ink underline underline-offset-2">
+            <Link href="/tools/research" className="text-ink underline underline-offset-2">
               深度研究
             </Link>{" "}
-            页选择模型并启用。
+            选择模型并启用。
           </Notice>
         )}
         <Composer
@@ -229,8 +229,8 @@ export function ResearchPlay() {
                 </p>
                 <p className="mt-auto text-xs text-ink-3">
                   初始值取自{" "}
-                  <Link href="/research" className="text-ink-2 underline underline-offset-2 hover:text-ink">
-                    深度研究页
+                  <Link href="/tools/research" className="text-ink-2 underline underline-offset-2 hover:text-ink">
+                    深度研究
                   </Link>{" "}
                   的配置。这里的改动只随下一次运行发出，不保存，MCP 调用始终按配置运行。
                 </p>

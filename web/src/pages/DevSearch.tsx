@@ -1,16 +1,13 @@
 import { RouteList } from "../components/RouteList";
 import { useConfig } from "../lib/config";
-import { PageHeader } from "../Shell";
+import { ToolIntro } from "../Shell";
 import { NumberInput, Panel, Row } from "../ui/primitives";
 
 export function DevSearchPage() {
   const { config, update } = useConfig();
   return (
     <>
-      <PageHeader
-        title="开发搜索"
-        description="dev_search 工具检索公开代码仓库的 issue、已合并 PR、README 与文档站，而非开放网页；每条结果附带匹配的原文段落，通常无需再抓取页面。"
-      />
+      <ToolIntro>dev_search 工具检索公开代码仓库的 issue、已合并 PR、README 与文档站，而非开放网页；每条结果附带匹配的原文段落，通常无需再抓取页面。</ToolIntro>
       <div className="flex flex-col gap-4">
         <Panel
           index="01"

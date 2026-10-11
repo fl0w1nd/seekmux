@@ -4,17 +4,14 @@ import { Redirect, Route, Switch, useLocation } from "wouter";
 import { api, setUnauthorizedHandler } from "./lib/api";
 import { ConfigProvider } from "./lib/config";
 import { DesignPage } from "./pages/Design";
-import { DevSearchPage } from "./pages/DevSearch";
-import { FetchPage } from "./pages/Fetch";
 import { KeysPage } from "./pages/Keys";
 import { LogsPage } from "./pages/Logs";
 import { ModelsPage } from "./pages/Models";
 import { OverviewPage } from "./pages/Overview";
 import { Playground, playPage } from "./pages/play";
 import { ProvidersPage } from "./pages/Providers";
-import { ResearchPage } from "./pages/Research";
-import { SearchPage } from "./pages/Search";
 import { SystemPage } from "./pages/System";
+import { ToolsPage } from "./pages/Tools";
 import { Logo, Shell } from "./Shell";
 import { Button, Empty, Field, Input, Notice, Spinner, PasswordInput } from "./ui/primitives";
 
@@ -66,11 +63,24 @@ function Pages() {
         </Route>
         {play && <Route path="/play/:page">{null}</Route>}
         <Route path="/providers" component={ProvidersPage} />
-        <Route path="/search" component={SearchPage} />
-        <Route path="/dev-search" component={DevSearchPage} />
-        <Route path="/fetch" component={FetchPage} />
         <Route path="/models" component={ModelsPage} />
-        <Route path="/research" component={ResearchPage} />
+        <Route path="/tools">
+          <Redirect to="/tools/search" replace />
+        </Route>
+        <Route path="/tools/:tool" component={ToolsPage} />
+        {/* The tool pages were top-level before they became tabs. */}
+        <Route path="/search">
+          <Redirect to="/tools/search" replace />
+        </Route>
+        <Route path="/dev-search">
+          <Redirect to="/tools/dev-search" replace />
+        </Route>
+        <Route path="/fetch">
+          <Redirect to="/tools/fetch" replace />
+        </Route>
+        <Route path="/research">
+          <Redirect to="/tools/research" replace />
+        </Route>
         <Route path="/keys" component={KeysPage} />
         <Route path="/system" component={SystemPage} />
         <Route path="/design" component={DesignPage} />

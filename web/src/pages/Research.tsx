@@ -1,6 +1,6 @@
 import { ModelSelect } from "../components/ModelPicker";
 import { useConfig } from "../lib/config";
-import { PageHeader } from "../Shell";
+import { ToolIntro } from "../Shell";
 import { Field, Notice, NumberInput, Panel, Row, Segmented, Switch, Textarea } from "../ui/primitives";
 
 export function ResearchPage() {
@@ -11,10 +11,7 @@ export function ResearchPage() {
 
   return (
     <>
-      <PageHeader
-        title="深度研究"
-        description="将问题整体交由云端的研究 Agent 处理：Agent 使用本网关的搜索与抓取反复查证，最终返回附带出处的报告。启用后 MCP 将新增 research、research_start、research_result 三个工具。"
-      />
+      <ToolIntro>将问题整体交由云端的研究 Agent 处理：Agent 使用本网关的搜索与抓取反复查证，最终返回附带出处的报告。启用后 MCP 将新增 research、research_start、research_result 三个工具。</ToolIntro>
       <div className="flex flex-col gap-4">
         <Panel index="01" title="开关" flush>
           <Row label="启用研究工具" hint="需先选定下方的研究模型">
@@ -36,8 +33,8 @@ export function ResearchPage() {
               research.reading === "raw"
                 ? "研究模型直接读取网页原文，长页面分段读取；最接近一手材料，但上下文消耗最大"
                 : extractReady
-                  ? "由「网页抓取」页的提取模型先按研究模型的提问提炼各网页，仅将结果交给研究模型；需要代码或原话时仍可按页读取原文。节省上下文，准确度取决于提取模型"
-                  : "尚未配置提取模型，网页将按原文返回；请先在「网页抓取」页选定提取模型"
+                  ? "由「网页抓取」的提取模型先按研究模型的提问提炼各网页，仅将结果交给研究模型；需要代码或原话时仍可按页读取原文。节省上下文，准确度取决于提取模型"
+                  : "尚未配置提取模型，网页将按原文返回；请先在「工具」的「网页抓取」中选定提取模型"
             }
           >
             <Segmented

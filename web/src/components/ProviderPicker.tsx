@@ -1,6 +1,7 @@
 import { Link } from "wouter";
 import type { Route, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
+import { toolPage } from "../lib/format";
 import { optionText } from "../lib/options";
 import { Choice, ChoiceList, ChoiceStatus, type Tone } from "../ui/primitives";
 import { healthLabel, useStatus } from "./Health";
@@ -56,7 +57,7 @@ export function ProviderPicker({ tool, value, onChange }: { tool: RoutedTool; va
                 <>
                   {changed.join(" · ")}
                   {" · "}
-                  <Link href={`/${tool}`} className="underline underline-offset-2 hover:text-ink">
+                  <Link href={toolPage(tool)} className="underline underline-offset-2 hover:text-ink">
                     修改
                   </Link>
                 </>

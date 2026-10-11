@@ -51,4 +51,7 @@ export function ago(ts: number | undefined): string {
   return `${Math.floor(seconds / 86400)} 天前`;
 }
 
+/** Where the settings of a routed tool live in the console. */
+export const toolPage = (tool: string) => `/tools/${tool === "dev_search" ? "dev-search" : tool}`;
+
 export const toolLabel: Record<string, string> = { search: "搜索", dev_search: "开发搜索", fetch: "抓取", research: "研究", llm: "模型" };

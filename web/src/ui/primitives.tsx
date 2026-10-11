@@ -408,9 +408,9 @@ export function Tabs<T extends string>({ value, onChange, className, children }:
 }
 
 /** The tab strip of a pane; `actions` sit at its right end. */
-export function TabList<T extends string>({ tabs, actions }: { tabs: { value: T; label: ReactNode; disabled?: boolean }[]; actions?: ReactNode }) {
+export function TabList<T extends string>({ tabs, actions, flush }: { tabs: { value: T; label: ReactNode; disabled?: boolean }[]; actions?: ReactNode; flush?: boolean }) {
   return (
-    <div className="flex h-11 shrink-0 items-center gap-4 border-b border-line px-4">
+    <div className={cx("flex h-11 shrink-0 items-center gap-4 border-b border-line", !flush && "px-4")}>
       <RadixTabs.List className="flex h-full items-stretch gap-4">
         {tabs.map((tab) => (
           <RadixTabs.Trigger

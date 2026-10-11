@@ -1,7 +1,7 @@
 import { ModelChain } from "../components/ModelPicker";
 import { RouteList } from "../components/RouteList";
 import { useConfig } from "../lib/config";
-import { PageHeader } from "../Shell";
+import { ToolIntro } from "../Shell";
 import { Field, Notice, NumberInput, Panel, Row, Switch, Textarea } from "../ui/primitives";
 
 export function FetchPage() {
@@ -12,7 +12,7 @@ export function FetchPage() {
 
   return (
     <>
-      <PageHeader title="网页抓取" description="fetch 工具先通过提供商获取页面，再由提取模型按 Prompt 提炼回答，仅向 Agent 返回提取结果。" />
+      <ToolIntro>fetch 工具先通过提供商获取页面，再由提取模型按 Prompt 提炼回答，仅向 Agent 返回提取结果。</ToolIntro>
       <div className="flex flex-col gap-4">
         <Panel index="01" title="路由优先级" description="按从上到下的顺序依次尝试。调用方也可通过 fetch_engine 参数指定提供商。各提供商的专有参数在「参数」中设置，修改后页面缓存将被清空。" flush>
           <RouteList tool="fetch" />

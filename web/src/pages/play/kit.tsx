@@ -8,7 +8,7 @@ import { OptionFields, type RouteParams } from "../../components/RouteOptions";
 import { Waterfall } from "../../components/Waterfall";
 import { api, type Attempt, type LogEntry, type RoutedTool, type RouteTuning } from "../../lib/api";
 import { useConfig } from "../../lib/config";
-import { ago, duration } from "../../lib/format";
+import { ago, duration, toolPage } from "../../lib/format";
 import { Dialog, Popover, useToast } from "../../ui/overlays";
 import { Button, CodeBlock, cx, Dot, Empty, Notice, Spinner, TabList, TabPanel, Tabs, Tooltip } from "../../ui/primitives";
 
@@ -294,7 +294,7 @@ export function useTuning(tool: RoutedTool, engine: string): Tuning {
 /** The column of the parameters panel that tunes the pinned provider for one call. */
 export function ProviderParams({ tool, engine, tuning, note }: { tool: RoutedTool; engine: string; tuning: Tuning; note?: ReactNode }) {
   const { provider } = useConfig();
-  const page = tool === "dev_search" ? "/dev-search" : `/${tool}`;
+  const page = toolPage(tool);
   if (engine === "auto") {
     return (
       <OptionGroup title="提供商参数" local>

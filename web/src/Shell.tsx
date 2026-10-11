@@ -3,8 +3,6 @@ import {
   Bot,
   Boxes,
   Braces,
-  Code,
-  FileText,
   Gauge,
   Globe,
   KeyRound,
@@ -14,10 +12,9 @@ import {
   Moon,
   ScanText,
   ScrollText,
-  Search,
   Settings,
   Sun,
-  Telescope,
+  Wrench,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
@@ -50,29 +47,20 @@ const nav = [
     ],
   },
   {
-    // Named by what each page does, apart from the settings pages of the same tools below.
     group: "调试台",
     items: [
-      { href: "/play/search", label: "搜索网页", icon: Globe },
-      { href: "/play/dev-search", label: "搜索开发资料", icon: Braces },
-      { href: "/play/fetch", label: "抓取页面", icon: ScanText },
-      { href: "/play/research", label: "发起研究", icon: Microscope },
+      { href: "/play/search", label: "网页搜索", icon: Globe },
+      { href: "/play/dev-search", label: "开发搜索", icon: Braces },
+      { href: "/play/fetch", label: "网页抓取", icon: ScanText },
+      { href: "/play/research", label: "深度研究", icon: Microscope },
     ],
   },
   {
     group: "网关",
     items: [
       { href: "/providers", label: "提供商", icon: Boxes },
-      { href: "/search", label: "网页搜索", icon: Search },
-      { href: "/dev-search", label: "开发搜索", icon: Code },
-      { href: "/fetch", label: "网页抓取", icon: FileText },
-    ],
-  },
-  {
-    group: "Agent",
-    items: [
       { href: "/models", label: "模型接口", icon: Bot },
-      { href: "/research", label: "深度研究", icon: Telescope },
+      { href: "/tools", label: "工具", icon: Wrench },
     ],
   },
   {
@@ -197,6 +185,11 @@ export function Shell({ children }: { children: ReactNode }) {
       )}
     </div>
   );
+}
+
+/** The sentence under a tab that says what the tool does; the page heading is the tab strip's. */
+export function ToolIntro({ children }: { children: ReactNode }) {
+  return <p className="mb-6 max-w-2xl text-sm text-ink-3">{children}</p>;
 }
 
 /** The heading every page starts with. */

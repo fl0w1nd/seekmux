@@ -268,10 +268,10 @@ function Roles({ data }: { data: Overview }) {
       {!data.roles.extract && (
         <Notice tone="warn">
           尚未配置提取模型，fetch 仅能返回原始页面，带 prompt 的调用将回退为截断的原文。请前往{" "}
-          <Link href="/fetch" className="text-ink underline underline-offset-2">
-            抓取
+          <Link href="/tools/fetch" className="text-ink underline underline-offset-2">
+            网页抓取
           </Link>{" "}
-          页设置。
+          设置。
         </Notice>
       )}
     </div>
