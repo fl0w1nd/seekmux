@@ -77,6 +77,8 @@ export interface Research {
   max_duration_seconds: number;
   max_tokens: number;
   max_context_tokens: number;
+  /** How long one research_result call waits for a running task. */
+  result_wait_seconds: number;
 }
 
 export interface Config {

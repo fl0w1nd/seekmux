@@ -214,6 +214,9 @@ type Research struct {
 	// MaxContextTokens bounds a single request to the model, where MaxTokens
 	// bounds the sum over all steps.
 	MaxContextTokens int64 `json:"max_context_tokens"`
+	// ResultWaitSeconds is how long one research_result call waits for a
+	// running task before it answers that the task is still running.
+	ResultWaitSeconds int `json:"result_wait_seconds"`
 }
 
 const (
@@ -403,7 +406,7 @@ func Default() *Config {
 				StreamTotalTimeoutMs: 60000,
 			},
 		},
-		Research: Research{Reading: ReadingRaw, MaxSteps: 24, MaxDurationSeconds: 420, MaxTokens: 600000, MaxContextTokens: 150000},
+		Research: Research{Reading: ReadingRaw, MaxSteps: 24, MaxDurationSeconds: 420, MaxTokens: 600000, MaxContextTokens: 150000, ResultWaitSeconds: 50},
 		Breaker:  Breaker{Enabled: true, Failures: 3, WindowSeconds: 60, CooldownSeconds: 60},
 		Logs:     Logs{RetentionDays: 14, MaxRows: 20000, CaptureBody: true},
 	}
@@ -465,6 +468,7 @@ func (c *Config) Normalize() {
 	}
 	positive(&c.Research.MaxSteps, 24)
 	positive(&c.Research.MaxDurationSeconds, 420)
+	positive(&c.Research.ResultWaitSeconds, 50)
 	if c.Research.MaxTokens <= 0 {
 		c.Research.MaxTokens = 600000
 	}

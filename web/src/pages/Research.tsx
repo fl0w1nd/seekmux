@@ -63,7 +63,13 @@ export function ResearchPage() {
           </Row>
         </Panel>
 
-        <Panel index="05" title="系统提示词">
+        <Panel index="05" title="后台任务" description="通过 research_start 发起的研究，由 research_result 取回报告。" flush>
+          <Row label="单次等待时长" hint="research_result 在任务完成前最长挂起的时间，超时则返回进度并由调用方再次调用。越长重复调用越少；应低于 MCP 客户端的工具调用超时">
+            <NumberInput className="w-24" min={5} suffix="秒" value={research.result_wait_seconds} onChange={(v) => update((d) => void (d.research.result_wait_seconds = Math.round(v)))} />
+          </Row>
+        </Panel>
+
+        <Panel index="06" title="系统提示词">
           <Field label="研究 Agent 的指令" hint="留空则使用内置提示词；{{date}} 将替换为当天日期">
             <Textarea rows={12} value={research.system_prompt ?? ""} placeholder={meta.prompts.research} onChange={(e) => update((d) => void (d.research.system_prompt = e.target.value || undefined))} />
           </Field>

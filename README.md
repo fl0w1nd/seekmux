@@ -17,7 +17,7 @@ It is one small Go binary with a single SQLite file, meant for a cheap server.
 | `search` | Brave, Exa, Firecrawl, Perplexity, Tavily | Tried in your priority order; a provider that is rate limited or failing is skipped. |
 | `dev_search` | Firecrawl | Searches issues, merged pull requests, READMEs and documentation sites instead of the web, and returns the passages that matched. |
 | `fetch` | Exa, Firecrawl, Jina Reader, Tavily | A slow provider is raced by the next one. Given a prompt, a model answers from the page instead of returning all of it. |
-| `research` | any configured model | An agent searches and reads on its own and returns a sourced report. Also available as `research_start` / `research_result` for clients with short timeouts. |
+| `research` | any configured model | An agent searches and reads on its own and returns a sourced report. Also available as `research_start` / `research_result`, for agents with other work to do meanwhile and for clients with short timeouts. |
 
 Around the tools:
 
@@ -77,7 +77,9 @@ Put a TLS-terminating reverse proxy in front of it. The compose file binds to
 
 - **No response buffering** for `/mcp` and `/api/logs/stream`; both stream.
 - **A read timeout longer than your research time budget** (5 minutes by
-  default), or have agents use `research_start` / `research_result`.
+  default), or have agents use `research_start` / `research_result`. One
+  `research_result` call waits up to 50 seconds by default; raise it in the
+  console as far as your client's tool timeout allows, so agents call less often.
 
 The proxy should send `X-Forwarded-For` and `X-Forwarded-Proto`, as most do by
 default: the first keeps login throttling per client, the second marks the

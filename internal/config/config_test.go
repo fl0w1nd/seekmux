@@ -52,6 +52,7 @@ func TestStoredDocumentGainsNewRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	delete(doc, "dev_search")
+	delete(doc["research"].(map[string]any), "result_wait_seconds")
 	data, _ = json.Marshal(doc)
 
 	c, err := FromStored(data)
@@ -63,6 +64,9 @@ func TestStoredDocumentGainsNewRoutes(t *testing.T) {
 	}
 	if r := c.DevSearch.Routes; len(r) != 1 || r[0].Provider != "firecrawl" || !r[0].Enabled || c.DevSearch.TimeoutSeconds <= 0 {
 		t.Fatalf("dev_search = %+v", c.DevSearch)
+	}
+	if c.Research.ResultWaitSeconds != 50 {
+		t.Fatalf("result wait = %d", c.Research.ResultWaitSeconds)
 	}
 }
 

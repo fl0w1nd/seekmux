@@ -225,7 +225,7 @@ func newServer(a *app.App, key store.APIKey, version string) *mcp.Server {
 	}
 
 	if allowed(config.ToolResearch) && app.ResearchAvailable(snap) {
-		addResearchTools(server, a, key, caller)
+		addResearchTools(server, a, key, caller, time.Duration(snap.Config.Research.ResultWaitSeconds)*time.Second)
 	}
 	return server
 }
@@ -317,10 +317,43 @@ func unfinished(message string, read []string, draft string) *mcp.CallToolResult
 	return failure(errors.New(message))
 }
 
-func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller app.Caller) {
+// running is the answer for a task still under way, with how far into its
+// budget it is so the caller can judge how long is left.
+func running(task store.ResearchTask) *mcp.CallToolResult {
+	var budget app.ResearchBudget
+	var spent research.Spent
+	if len(task.Budget) > 0 {
+		_ = json.Unmarshal(task.Budget, &budget)
+	}
+	if len(task.Spent) > 0 {
+		_ = json.Unmarshal(task.Spent, &spent)
+	}
+	out := map[string]string{"status": task.Status}
+	if task.Progress != "" {
+		out["progress"] = task.Progress
+	}
+	elapsed := time.Since(time.UnixMilli(task.CreatedAt)).Round(time.Second)
+	// A task kept from before runs recorded their budget has no limits to name.
+	if budget.MaxDurationSeconds > 0 {
+		out["elapsed"] = fmt.Sprintf("%s of at most %s", elapsed, time.Duration(budget.MaxDurationSeconds)*time.Second)
+	} else {
+		out["elapsed"] = elapsed.String()
+	}
+	if budget.MaxSteps > 0 && spent.Steps > 0 {
+		out["steps"] = fmt.Sprintf("%d of at most %d", spent.Steps, budget.MaxSteps)
+	}
+	out["next"] = "Still running. Call research_result again: the call itself waits for the report, so do not pause or check more often."
+	return text(out, false)
+}
+
+// heartbeat is the longest a waiting research_result stays silent on its
+// response stream.
+const heartbeat = 15 * time.Second
+
+func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller app.Caller, wait time.Duration) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "research",
-		Description: researchDescription + " The call returns when the report is ready; if your client times out on long calls, use `research_start` instead.",
+		Description: researchDescription + " The call returns when the report is ready, which is the cheapest way to wait for it. Use `research_start` instead when you have other work to do in the meantime, or after your client cut a `research` call short.",
 		InputSchema: schema(questionSchema),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args researchArgs) (*mcp.CallToolResult, any, error) {
 		override, err := args.override()
@@ -352,7 +385,7 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "research_start",
-		Description: researchDescription + " Returns a task id immediately; poll `research_result` with it for the report.",
+		Description: researchDescription + " Returns a task id immediately, so you can go on with other work; call `research_result` with it once you need the report.",
 		InputSchema: schema(questionSchema),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, args researchArgs) (*mcp.CallToolResult, any, error) {
 		override, err := args.override()
@@ -369,20 +402,26 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 		return text(map[string]string{
 			"task_id": id,
 			"status":  store.TaskRunning,
-			"next":    "Call research_result with this task_id. A run usually takes a few minutes.",
+			"next":    "Call research_result with this task_id once you need the report; that call waits for the run to finish. A run usually takes a few minutes.",
 		}, false), nil, nil
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "research_result",
-		Description: "Get the status of a research task started with `research_start`, and its report once it is done. While the task is running the call waits up to 25 seconds for it to finish.",
+		Description: fmt.Sprintf("Get the report of a research task started with `research_start`. The call waits for the task to finish, up to %d seconds; if it is still running by then, the answer says how far along it is and you call again.", int(wait/time.Second)),
 		InputSchema: schema(`{
 			"type": "object",
 			"required": ["task_id"],
 			"properties": {"task_id": {"type": "string", "description": "The task id returned by research_start."}}
 		}`),
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, args taskArgs) (*mcp.CallToolResult, any, error) {
-		deadline := time.Now().Add(25 * time.Second)
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args taskArgs) (*mcp.CallToolResult, any, error) {
+		deadline := time.Now().Add(wait)
+		// Progress notifications keep the response stream from idling out
+		// while the call waits.
+		token := req.Params.GetProgressToken()
+		var notified time.Time
+		var line string
+		var beats float64
 		for {
 			task, ok, err := a.Store.GetTask(ctx, strings.TrimSpace(args.TaskID))
 			if err != nil {
@@ -402,11 +441,12 @@ func addResearchTools(server *mcp.Server, a *app.App, key store.APIKey, caller a
 			case task.Status == store.TaskFailed, task.Status == store.TaskCanceled:
 				return unfinished("research failed: "+task.Error, stats.Read, strings.TrimSpace(task.Draft)), nil, nil
 			case time.Now().After(deadline):
-				return text(map[string]string{
-					"status":   task.Status,
-					"progress": task.Progress,
-					"next":     "Still running. Call research_result again.",
-				}, false), nil, nil
+				return running(task), nil, nil
+			}
+			if token != nil && (task.Progress != line || time.Since(notified) >= heartbeat) {
+				line, notified = task.Progress, time.Now()
+				beats++
+				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: token, Progress: beats, Message: line})
 			}
 			select {
 			case <-time.After(2 * time.Second):
