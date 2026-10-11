@@ -216,6 +216,19 @@ export interface ProviderStats {
   p95_ms: number;
 }
 
+/** The tool calls of one caller: an API key, or the playground when it has no key. */
+export interface CallerStats {
+  source: string;
+  api_key_id?: number;
+  api_key_name?: string;
+  calls: number;
+  errors: number;
+  p50_ms: number;
+  p95_ms: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+
 /** What the circuit breaker says about a provider or model. */
 export interface Health {
   disabled: boolean;
@@ -258,6 +271,7 @@ export interface Overview {
     since: number;
     tools: ToolStats[];
     providers: ProviderStats[];
+    callers: CallerStats[];
     buckets: { ts: number; calls: number; errors: number }[];
     input_tokens: number;
     output_tokens: number;

@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Radio, ScrollText, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useSearch } from "wouter";
 import { Waterfall } from "../components/Waterfall";
 import { api, type Hop, type LogEntry } from "../lib/api";
 import { useConfig } from "../lib/config";
@@ -29,6 +30,9 @@ export function LogsPage() {
   const [tool, setTool] = useState("");
   const [status, setStatus] = useState("");
   const [provider, setProvider] = useState("");
+  // "webui" for the playground, or the id of an API key; the overview links here with one.
+  const [caller, setCaller] = useState(new URLSearchParams(useSearch()).get("caller") ?? "");
+  const keys = useQuery({ queryKey: ["keys"], queryFn: api.keys });
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [live, setLive] = useState(true);
@@ -39,7 +43,13 @@ export function LogsPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const filters = { tool, provider, q: query, ...(status === "fallback" ? { fallback: 1 } : { status }) };
+  const filters = {
+    tool,
+    provider,
+    q: query,
+    ...(status === "fallback" ? { fallback: 1 } : { status }),
+    ...(caller === "webui" ? { source: caller } : { key: caller }),
+  };
   const logs = useInfiniteQuery({
     queryKey: ["logs", filters],
     queryFn: ({ pageParam }) => api.logs({ ...filters, before: pageParam, limit: pageSize }),
@@ -107,6 +117,16 @@ export function LogsPage() {
               {p.name}
             </option>
           ))}
+        </Select>
+        <Select className="w-36" value={caller} onChange={(e) => setCaller(e.target.value)} aria-label="按调用方筛选">
+          <option value="">全部调用方</option>
+          <option value="webui">调试台</option>
+          {keys.data?.map((key) => (
+            <option key={key.id} value={key.id}>
+              {key.name}
+            </option>
+          ))}
+          {caller && caller !== "webui" && keys.data && !keys.data.some((key) => String(key.id) === caller) && <option value={caller}>已删除的 Key</option>}
         </Select>
         <div className="relative min-w-48 flex-1">
           <Search className="pointer-events-none absolute top-2 left-2.5 size-4 text-ink-3" />

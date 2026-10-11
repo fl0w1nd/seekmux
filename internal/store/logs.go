@@ -1,6 +1,7 @@
 package store
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -171,6 +172,8 @@ func (s *Store) insertLogs(batch []LogEntry) []LogEntry {
 // LogFilter narrows ListLogs. Before pages backwards from a log id.
 type LogFilter struct {
 	Tool, Status, Provider, Source, Query string
+	// APIKey keeps only the calls made with the API key of this id.
+	APIKey int64
 	// Fallback keeps only calls in which a provider or model failed or was
 	// skipped, for the breaker or its rate limit.
 	Fallback bool
@@ -231,6 +234,9 @@ func (s *Store) ListLogs(ctx context.Context, f LogFilter) ([]LogEntry, error) {
 	}
 	if f.Source != "" {
 		add("source = ?", f.Source)
+	}
+	if f.APIKey > 0 {
+		add("api_key_id = ?", f.APIKey)
 	}
 	if f.Provider != "" {
 		// Match the winning provider as well as any provider that was tried.
@@ -331,6 +337,20 @@ type ProviderStats struct {
 	P95Ms int64 `json:"p95_ms"`
 }
 
+// CallerStats summarizes the tool calls of one caller: an API key, or the
+// console's playground when APIKeyID is zero.
+type CallerStats struct {
+	Source   string `json:"source"`
+	APIKeyID int64  `json:"api_key_id,omitempty"`
+	// APIKeyName is the name the key had at its latest call.
+	APIKeyName string `json:"api_key_name,omitempty"`
+	Calls      int    `json:"calls"`
+	Errors     int    `json:"errors"`
+	P50Ms      int64  `json:"p50_ms"`
+	P95Ms      int64  `json:"p95_ms"`
+	core.Usage
+}
+
 // Bucket is the call volume of one time slice.
 type Bucket struct {
 	TS     int64 `json:"ts"`
@@ -342,6 +362,7 @@ type Stats struct {
 	Since     int64           `json:"since"`
 	Tools     []ToolStats     `json:"tools"`
 	Providers []ProviderStats `json:"providers"`
+	Callers   []CallerStats   `json:"callers"`
 	Buckets   []Bucket        `json:"buckets"`
 	core.Usage
 }
@@ -356,10 +377,10 @@ func percentile(sorted []int64, p float64) int64 {
 // Stats aggregates the logs of the last window into buckets of the given size.
 func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats, error) {
 	since := time.Now().Add(-window).UnixMilli()
-	stats := Stats{Since: since, Tools: []ToolStats{}, Providers: []ProviderStats{}, Buckets: []Bucket{}}
+	stats := Stats{Since: since, Tools: []ToolStats{}, Providers: []ProviderStats{}, Callers: []CallerStats{}, Buckets: []Bucket{}}
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT ts, tool, status, duration_ms, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens FROM request_logs WHERE ts >= ? ORDER BY ts`, since)
+		`SELECT ts, tool, source, api_key_id, api_key_name, status, duration_ms, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens FROM request_logs WHERE ts >= ? ORDER BY ts`, since)
 	if err != nil {
 		return stats, err
 	}
@@ -374,11 +395,17 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 	}
 	tools := map[string]*ToolStats{}
 	toolDurations := map[string][]int64{}
+	type callerKey struct {
+		source string
+		keyID  int64
+	}
+	callers := map[callerKey]*CallerStats{}
+	callerDurations := map[callerKey][]int64{}
 	for rows.Next() {
-		var ts, duration int64
-		var tool, status string
+		var ts, duration, keyID int64
+		var tool, source, keyName, status string
 		var usage core.Usage
-		if err := rows.Scan(&ts, &tool, &status, &duration, &usage.InputTokens, &usage.OutputTokens, &usage.CacheReadTokens, &usage.CacheWriteTokens); err != nil {
+		if err := rows.Scan(&ts, &tool, &source, &keyID, &keyName, &status, &duration, &usage.InputTokens, &usage.OutputTokens, &usage.CacheReadTokens, &usage.CacheWriteTokens); err != nil {
 			return stats, err
 		}
 		t := tools[tool]
@@ -388,10 +415,21 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 		}
 		t.Calls++
 		toolDurations[tool] = append(toolDurations[tool], duration)
+		who := callerKey{source, keyID}
+		c := callers[who]
+		if c == nil {
+			c = &CallerStats{Source: source, APIKeyID: keyID}
+			callers[who] = c
+		}
+		c.Calls++
+		c.APIKeyName = keyName
+		c.Usage = c.Usage.Add(usage)
+		callerDurations[who] = append(callerDurations[who], duration)
 		b := &stats.Buckets[min(count-1, max(0, int((ts-first)/size)))]
 		b.Calls++
 		if status != StatusOK {
 			t.Errors++
+			c.Errors++
 			b.Errors++
 		}
 		stats.Usage = stats.Usage.Add(usage)
@@ -406,6 +444,18 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 		stats.Tools = append(stats.Tools, *t)
 	}
 	slices.SortFunc(stats.Tools, func(a, b ToolStats) int { return strings.Compare(a.Tool, b.Tool) })
+	for who, c := range callers {
+		d := callerDurations[who]
+		slices.Sort(d)
+		c.P50Ms, c.P95Ms = percentile(d, 0.5), percentile(d, 0.95)
+		stats.Callers = append(stats.Callers, *c)
+	}
+	slices.SortFunc(stats.Callers, func(a, b CallerStats) int {
+		if c := b.Calls - a.Calls; c != 0 {
+			return c
+		}
+		return cmp.Compare(a.APIKeyID, b.APIKeyID)
+	})
 
 	attempts, err := s.db.QueryContext(ctx, `
 		SELECT json_extract(a.value, '$.kind'), json_extract(a.value, '$.provider'),

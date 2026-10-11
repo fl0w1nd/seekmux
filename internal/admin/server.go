@@ -313,8 +313,9 @@ func (s *Server) handleListLogs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	before, _ := strconv.ParseInt(q.Get("before"), 10, 64)
 	limit, _ := strconv.Atoi(q.Get("limit"))
+	key, _ := strconv.ParseInt(q.Get("key"), 10, 64)
 	entries, err := s.app.Store.ListLogs(r.Context(), store.LogFilter{
-		Tool: q.Get("tool"), Status: q.Get("status"), Provider: q.Get("provider"), Source: q.Get("source"),
+		Tool: q.Get("tool"), Status: q.Get("status"), Provider: q.Get("provider"), Source: q.Get("source"), APIKey: key,
 		Query: strings.TrimSpace(q.Get("q")), Fallback: q.Get("fallback") == "1", Before: before, Limit: limit,
 	})
 	if err != nil {

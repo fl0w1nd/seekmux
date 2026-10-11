@@ -46,6 +46,7 @@ export function OverviewPage() {
           </div>
           {data.models.length > 0 && <Models data={data} />}
           <Providers data={data} index={data.models.length > 0 ? "05" : "04"} />
+          <Callers data={data} index={data.models.length > 0 ? "06" : "05"} />
           <Roles data={data} />
         </div>
       )}
@@ -236,6 +237,58 @@ function Providers({ data, index }: { data: Overview; index: string }) {
                     <Td className={cx("num text-right text-xs", bad && "text-err")}>{percent(settled - row.errors, settled)}</Td>
                     <Td className="num text-right text-xs text-ink-2">{row.wins}</Td>
                     <Td className="num text-right text-xs text-ink-3">{row.canceled || "—"}</Td>
+                    <Td className="num text-right text-xs">{duration(row.p50_ms)}</Td>
+                    <Td className="num text-right text-xs text-ink-2">{duration(row.p95_ms)}</Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function Callers({ data, index }: { data: Overview; index: string }) {
+  const rows = data.stats.callers;
+  return (
+    <Panel index={index} title="调用方" description="按 API Key 统计的工具调用；点击名称查看其日志" flush>
+      {rows.length === 0 ? (
+        <Empty title="暂无数据" />
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <thead>
+              <tr>
+                <Th className="w-full">调用方</Th>
+                <Th className="text-right">调用数</Th>
+                <Th className="text-right">成功率</Th>
+                <Th className="text-right">输入 Token</Th>
+                <Th className="text-right">输出 Token</Th>
+                <Th className="text-right">P50</Th>
+                <Th className="text-right">P95</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const id = row.source === "webui" ? "webui" : String(row.api_key_id ?? "");
+                const name = row.source === "webui" ? "调试台" : row.api_key_name || "—";
+                return (
+                  <tr key={`${row.source}/${id}`}>
+                    <Td className="whitespace-nowrap">
+                      {id ? (
+                        <Link href={`/logs?caller=${id}`} className="underline-offset-2 hover:underline">
+                          {name}
+                        </Link>
+                      ) : (
+                        name
+                      )}
+                    </Td>
+                    <Td className="num text-right text-xs">{row.calls}</Td>
+                    <Td className={cx("num text-right text-xs", row.errors / row.calls > 0.2 && "text-err")}>{percent(row.calls - row.errors, row.calls)}</Td>
+                    <Td className="num text-right text-xs text-ink-2">{row.input_tokens ? compact(row.input_tokens) : "—"}</Td>
+                    <Td className="num text-right text-xs text-ink-2">{row.output_tokens ? compact(row.output_tokens) : "—"}</Td>
                     <Td className="num text-right text-xs">{duration(row.p50_ms)}</Td>
                     <Td className="num text-right text-xs text-ink-2">{duration(row.p95_ms)}</Td>
                   </tr>
