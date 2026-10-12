@@ -600,6 +600,7 @@ func (a *App) research(ctx context.Context, caller Caller, req research.Request,
 		// The agent's own tool calls run against the same snapshot and land
 		// in this call's trace instead of the request log.
 		tools := research.Tools{
+			Reads: s.Config.Reads(),
 			Search: func(ctx context.Context, args search.Args) ([]search.QueryResult, error) {
 				if err := args.Validate(s.Config); err != nil {
 					return nil, err

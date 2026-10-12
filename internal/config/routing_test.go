@@ -212,3 +212,34 @@ func TestOwnRulesComeFirstAndAreCleaned(t *testing.T) {
 		}
 	}
 }
+
+func TestReadsNamesOnlyWhatTheRulesInEffectDeliver(t *testing.T) {
+	c := Default()
+	c.Routing.Builtin = map[string]BuiltinRule{"youtube": {Enabled: true}, "twitter": {Enabled: true}, "arxiv": {Enabled: true}}
+	c.Routing.Rules = []Rule{
+		{ID: "wechat", Name: "WeChat", Enabled: true, Match: []string{"mp.weixin.qq.com"}, Providers: []string{"jina"}, Reads: "  WeChat   articles "},
+		{ID: "docs", Name: "Docs", Enabled: true, Match: []string{"example.com"}, Providers: []string{"jina"}},
+		{ID: "off", Name: "Off", Match: []string{"example.org"}, Providers: []string{"jina"}, Reads: "something"},
+	}
+	c.Normalize()
+	// Jina needs no key; the providers behind the built-in rules have none yet.
+	if got := c.Reads(); !slices.Equal(got, []string{"WeChat articles"}) {
+		t.Fatalf("reads = %q", got)
+	}
+	c.Providers["tavily"].APIKey = "k"
+	if got, want := c.Reads(), []string{"WeChat articles", capYouTube.Reads, capTwitter.Reads}; !slices.Equal(got, want) {
+		t.Fatalf("reads = %q, want %q", got, want)
+	}
+	// A provider that returns a video's page without the transcript does not
+	// make the rule deliver one.
+	c.Providers["tavily"].APIKey = ""
+	c.Routing.Builtin["youtube"] = BuiltinRule{Enabled: true, Providers: []string{"jina"}}
+	if got := c.Reads(); !slices.Equal(got, []string{"WeChat articles"}) {
+		t.Fatalf("reads = %q", got)
+	}
+
+	c.Routing.Rules[0].Reads = strings.Repeat("x", maxReads+1)
+	if err := c.Validate(); err == nil {
+		t.Fatal("an overlong phrase passed validation")
+	}
+}

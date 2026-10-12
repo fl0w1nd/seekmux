@@ -177,3 +177,76 @@ func TestExpiredKeyIsTurnedAway(t *testing.T) {
 		t.Errorf("status %d, want 401", res.StatusCode)
 	}
 }
+
+func TestToolsSayWhatTheRoutingRulesLetFetchRead(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := app.New(ctx, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	_, secret, err := st.CreateAPIKey(ctx, store.KeySpec{Name: "all", Scopes: []string{config.ToolSearch, config.ToolFetch}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, searchOnly, err := st.CreateAPIKey(ctx, store.KeySpec{Name: "search", Scopes: []string{config.ToolSearch}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(Handler(a, "test"))
+	defer srv.Close()
+
+	// told returns the instructions and the descriptions by tool.
+	told := func(secret string) (string, map[string]string) {
+		t.Helper()
+		client := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil)
+		session, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: srv.URL, HTTPClient: &http.Client{Transport: withKey{secret}}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer session.Close()
+		list, err := session.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		descriptions := map[string]string{}
+		for _, tool := range list.Tools {
+			descriptions[tool.Name] = tool.Description
+			if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+				t.Errorf("%s is not marked read-only", tool.Name)
+			}
+		}
+		return session.InitializeResult().Instructions, descriptions
+	}
+
+	const transcript = "YouTube videos (as the transcript of what is said)"
+	instructions, tools := told(secret)
+	if !strings.Contains(instructions, "`fetch`") || strings.Contains(instructions, "`research`") || strings.Contains(instructions, "YouTube") {
+		t.Errorf("instructions before any rule = %q", instructions)
+	}
+	if strings.Contains(tools["fetch"], "YouTube") {
+		t.Errorf("fetch claims YouTube before the rule is on: %q", tools["fetch"])
+	}
+
+	cfg := a.Snapshot().Config.Clone()
+	cfg.Routing.Builtin = map[string]config.BuiltinRule{"youtube": {Enabled: true}}
+	cfg.Providers["tavily"].APIKey = "k"
+	if err := a.SaveConfig(ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	instructions, tools = told(secret)
+	for where, text := range map[string]string{"instructions": instructions, "fetch": tools["fetch"], "search": tools["search"]} {
+		if !strings.Contains(text, transcript) {
+			t.Errorf("%s does not mention the transcript: %q", where, text)
+		}
+	}
+	// A key without fetch is told nothing of what fetch reads.
+	instructions, tools = told(searchOnly)
+	if strings.Contains(instructions, "YouTube") || strings.Contains(instructions, "`fetch`") || strings.Contains(tools["search"], "YouTube") {
+		t.Errorf("a search-only key is told of fetch: %q / %q", instructions, tools["search"])
+	}
+}

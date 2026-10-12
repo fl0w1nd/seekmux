@@ -9,6 +9,20 @@ export function routingRules(config: Config, meta: Meta): Rule[] {
   return [...config.routing.rules, ...builtin];
 }
 
+/**
+ * What the rules in effect let fetch read beyond an ordinary page, as the tools word it for the calling agent.
+ * A built-in rule counts only while a provider declaring its capability can be called.
+ */
+export function announced(rules: Rule[], meta: Meta, usable: (provider: string) => boolean): string[] {
+  const out: string[] = [];
+  for (const rule of rules) {
+    if (!rule.enabled || !rule.reads || out.includes(rule.reads)) continue;
+    const declares = (id: string) => !rule.builtin || Boolean(meta.catalog.find((info) => info.id === id)?.capabilities?.some((c) => c.id === rule.id));
+    if (rule.providers.some((id) => usable(id) && declares(id))) out.push(rule.reads);
+  }
+  return out;
+}
+
 /** Reduces what a person may paste, a full URL included, to host[/path-prefix], as the server does. */
 export function cleanPattern(raw: string): string {
   let text = raw.trim();

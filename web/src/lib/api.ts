@@ -34,6 +34,8 @@ export interface Rule {
   /** Patterns of the form host[/path-prefix]; a host stands for its subdomains too. */
   match: string[];
   providers: string[];
+  /** What a fetch of these pages returns, in the words given to the calling agent; absent says nothing. */
+  reads?: string;
   /** Comes from a provider capability; never set on a stored rule. */
   builtin?: boolean;
 }
@@ -50,6 +52,7 @@ export interface Capability {
   id: string;
   name: string;
   match: string[];
+  reads: string;
 }
 
 /** How much a model thinks before answering. An empty mode leaves it to the model. */

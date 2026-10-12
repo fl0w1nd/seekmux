@@ -5,7 +5,7 @@ import { Link, Redirect, useLocation, useParams } from "wouter";
 import { api, type Config, type DomainProviderStats, type DomainStats, type FetchOutcome, type Rule } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { bytes, duration, percent } from "../lib/format";
-import { cleanPattern, newRuleID, routingRules, ruleForDomain, validPattern } from "../lib/routing";
+import { announced, cleanPattern, newRuleID, routingRules, ruleForDomain, validPattern } from "../lib/routing";
 import { PageHeader } from "../Shell";
 import { BrandIcon } from "../ui/brand";
 import { ChipInput } from "../ui/inputs";
@@ -80,6 +80,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
   const usable = useCredentials();
   const rules = routingRules(config, meta);
   const own = config.routing.rules.length;
+  const reads = announced(rules, meta, usable);
 
   const move = (index: number, by: number) =>
     update((draft) => {
@@ -93,70 +94,82 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
     });
 
   return (
-    <Panel
-      index="01"
-      title="路由规则"
-      description="URL 命中规则时，只在规则列出的提供商中依次尝试，不再走抓取工具的路由优先级；提供商配置了密钥即可，无需在抓取路由中启用。自上而下匹配，命中第一条即止。内置规则默认停用，需手动开启。调用方通过 fetch_engine 指定提供商时不套用规则。"
-      flush
-    >
-      <ol>
-        {rules.map((rule, index) => {
-          const ready = rule.providers.some(usable);
-          return (
-            <li key={rule.id} className={cx("flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 last:border-b-0", !rule.enabled && "opacity-60")}>
-              <span className={cx("num w-6 text-sm", rule.enabled && ready ? "text-signal-text" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
-              <span className={cx("flex w-7 flex-col", rule.builtin && "max-sm:hidden")}>
-                {!rule.builtin && (
-                  <>
-                    <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
-                    <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === own - 1} onClick={() => move(index, 1)} />
-                  </>
-                )}
-              </span>
-              <div className="min-w-48 flex-1 max-sm:basis-[calc(100%-3rem)]">
-                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                  {rule.builtin && <BrandIcon id={rule.id} className="size-4" />}
-                  {rule.name}
-                  {rule.builtin && <Badge>内置</Badge>}
-                  {!rule.enabled ? (
-                    <Badge>已停用</Badge>
-                  ) : ready ? (
-                    <Badge tone="ok" dot>
-                      生效
-                    </Badge>
-                  ) : (
-                    <Link href="/providers">
-                      <Badge tone="warn" dot>
-                        缺少密钥
-                      </Badge>
-                    </Link>
+    <div className="flex flex-col gap-4">
+      <Notice tone={reads.length > 0 ? "info" : "warn"}>
+        {reads.length > 0 ? (
+          <>
+            已在 MCP 的服务说明与 fetch、search 工具描述中告知 Agent，fetch 还能读取：<span className="num">{reads.join(", ")}</span>
+          </>
+        ) : (
+          "当前没有向 Agent 声明任何专有页面：Agent 只会把 fetch 当作普通抓取工具。开启带声明的规则并为其提供商配置密钥后，工具描述会自动写明。"
+        )}
+      </Notice>
+      <Panel
+        index="01"
+        title="路由规则"
+        description="URL 命中规则时，只在规则列出的提供商中依次尝试，不再走抓取工具的路由优先级；提供商配置了密钥即可，无需在抓取路由中启用。自上而下匹配，命中第一条即止。内置规则默认停用，需手动开启。调用方通过 fetch_engine 指定提供商时不套用规则。"
+        flush
+      >
+        <ol>
+          {rules.map((rule, index) => {
+            const ready = rule.providers.some(usable);
+            return (
+              <li key={rule.id} className={cx("flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 last:border-b-0", !rule.enabled && "opacity-60")}>
+                <span className={cx("num w-6 text-sm", rule.enabled && ready ? "text-signal-text" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
+                <span className={cx("flex w-7 flex-col", rule.builtin && "max-sm:hidden")}>
+                  {!rule.builtin && (
+                    <>
+                      <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
+                      <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === own - 1} onClick={() => move(index, 1)} />
+                    </>
                   )}
-                </div>
-                <div className="num mt-1 text-xs break-all text-ink-3">{rule.match.join(" · ")}</div>
-              </div>
-              <div className="flex flex-col gap-1 text-right max-sm:order-1 max-sm:mr-auto max-sm:ml-10 max-sm:text-left">
-                <span className="tag">提供商</span>
-                <span className="flex flex-wrap items-center justify-end gap-1.5 text-xs text-ink-2 max-sm:justify-start">
-                  {rule.providers.map((id, i) => (
-                    <Fragment key={id}>
-                      {i > 0 && <span className="text-ink-3">→</span>}
-                      <BrandIcon id={id} className="size-3.5" />
-                      {provider(id).name}
-                    </Fragment>
-                  ))}
                 </span>
-              </div>
-              <Button size="sm" variant="ghost" className="max-sm:order-2" icon={<Pencil />} onClick={() => onEdit(rule)}>
-                编辑
-              </Button>
-              <span className="flex max-sm:order-2">
-                <Switch checked={rule.enabled} onCheckedChange={(enabled) => enable(rule, index, enabled)} aria-label={`启用规则 ${rule.name}`} />
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-    </Panel>
+                <div className="min-w-48 flex-1 max-sm:basis-[calc(100%-3rem)]">
+                  <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                    {rule.builtin && <BrandIcon id={rule.id} className="size-4" />}
+                    {rule.name}
+                    {rule.builtin && <Badge>内置</Badge>}
+                    {!rule.enabled ? (
+                      <Badge>已停用</Badge>
+                    ) : ready ? (
+                      <Badge tone="ok" dot>
+                        生效
+                      </Badge>
+                    ) : (
+                      <Link href="/providers">
+                        <Badge tone="warn" dot>
+                          缺少密钥
+                        </Badge>
+                      </Link>
+                    )}
+                  </div>
+                  <div className="num mt-1 text-xs break-all text-ink-3">{rule.match.join(" · ")}</div>
+                  {rule.reads && <div className="mt-1 text-xs text-ink-2">声明：{rule.reads}</div>}
+                </div>
+                <div className="flex flex-col gap-1 text-right max-sm:order-1 max-sm:mr-auto max-sm:ml-10 max-sm:text-left">
+                  <span className="tag">提供商</span>
+                  <span className="flex flex-wrap items-center justify-end gap-1.5 text-xs text-ink-2 max-sm:justify-start">
+                    {rule.providers.map((id, i) => (
+                      <Fragment key={id}>
+                        {i > 0 && <span className="text-ink-3">→</span>}
+                        <BrandIcon id={id} className="size-3.5" />
+                        {provider(id).name}
+                      </Fragment>
+                    ))}
+                  </span>
+                </div>
+                <Button size="sm" variant="ghost" className="max-sm:order-2" icon={<Pencil />} onClick={() => onEdit(rule)}>
+                  编辑
+                </Button>
+                <span className="flex max-sm:order-2">
+                  <Switch checked={rule.enabled} onCheckedChange={(enabled) => enable(rule, index, enabled)} aria-label={`启用规则 ${rule.name}`} />
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </Panel>
+    </div>
   );
 }
 
@@ -167,6 +180,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
   const [name, setName] = useState(rule.name);
   const [match, setMatch] = useState(rule.match);
   const [chosen, setChosen] = useState(rule.providers);
+  const [reads, setReads] = useState(rule.reads ?? "");
 
   const builtin = meta.rules.find((r) => r.id === rule.id);
   // The providers that declare the rule as a capability; none for a rule that
@@ -190,7 +204,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
         changeBuiltin(draft, builtin.id, { providers: same ? undefined : chosen });
         return;
       }
-      const next: Rule = { id: rule.id, name: name.trim(), enabled: rule.enabled, match, providers: chosen };
+      const next: Rule = { id: rule.id, name: name.trim(), enabled: rule.enabled, match, providers: chosen, reads: reads.trim() || undefined };
       if (stored >= 0) draft.routing.rules[stored] = next;
       else draft.routing.rules.push(next);
     });
@@ -292,6 +306,19 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
           </ol>
           <span className="text-xs text-ink-3">只在选中的提供商中按顺序尝试，全部失败即报错，不会退回其它提供商。</span>
         </div>
+        {builtin ? (
+          builtin.reads && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-ink-2">向 Agent 声明</span>
+              <div className="rounded-ctl border border-line bg-sunken px-2.5 py-1.5 text-xs text-ink-2">{builtin.reads}</div>
+              <span className="text-xs text-ink-3">规则生效期间写入 MCP 服务说明与工具描述，Agent 据此得知这类页面可以交给 fetch。</span>
+            </div>
+          )
+        ) : (
+          <Field label="向 Agent 声明" hint="用英文短语说明这类页面能读到什么，接在「fetch 还能读取」之后。规则生效期间写入 MCP 服务说明与工具描述；留空则不声明。">
+            <Input value={reads} maxLength={120} placeholder="WeChat articles" onChange={(e) => setReads(e.target.value)} />
+          </Field>
+        )}
         {builtin && capable.length > 0 && chosen.some((id) => !capable.includes(id)) && (
           <Notice tone="warn">未标注「{builtin.name}」的提供商读不出这类页面的专有内容（例如视频字幕），由它们返回的结果会附带一条提示。</Notice>
         )}

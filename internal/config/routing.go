@@ -17,46 +17,59 @@ type Capability struct {
 	Name string `json:"name"`
 	// Match lists the pages, as the patterns of a Rule.
 	Match []string `json:"match"`
+	// Reads names what a fetch of these pages returns, in the words the
+	// calling agent is given: a phrase that completes "fetch also reads". It
+	// promises no more than the providers deliver: of a post they return the
+	// post, not the conversation under it.
+	Reads string `json:"reads"`
 }
 
 var capYouTube = Capability{
 	ID: "youtube", Name: "YouTube",
 	Match: []string{"youtube.com/watch", "youtube.com/shorts/", "youtube.com/live/", "youtu.be"},
+	Reads: "YouTube videos (as the transcript of what is said)",
 }
 
 var capTwitter = Capability{
 	ID: "twitter", Name: "X (Twitter)",
 	Match: []string{"x.com", "twitter.com"},
+	Reads: "X (Twitter) posts (the post itself, without its replies)",
 }
 
 var capReddit = Capability{
 	ID: "reddit", Name: "Reddit",
 	Match: []string{"reddit.com", "redd.it"},
+	Reads: "Reddit posts (the post itself, without its comments)",
 }
 
 var capInstagram = Capability{
 	ID: "instagram", Name: "Instagram",
 	Match: []string{"instagram.com", "instagr.am"},
+	Reads: "Instagram posts",
 }
 
 var capThreads = Capability{
 	ID: "threads", Name: "Threads",
 	Match: []string{"threads.com", "threads.net"},
+	Reads: "Threads posts",
 }
 
 var capFacebook = Capability{
 	ID: "facebook", Name: "Facebook",
 	Match: []string{"facebook.com", "fb.watch"},
+	Reads: "public Facebook posts",
 }
 
 var capTikTok = Capability{
 	ID: "tiktok", Name: "TikTok",
 	Match: []string{"tiktok.com"},
+	Reads: "TikTok posts",
 }
 
 var capLinkedIn = Capability{
 	ID: "linkedin", Name: "LinkedIn",
 	Match: []string{"linkedin.com", "lnkd.in"},
+	Reads: "public LinkedIn posts",
 }
 
 // siteRules are the built-in rules that no capability stands behind: every
@@ -80,6 +93,10 @@ type Rule struct {
 	// its subdomains as well.
 	Match     []string `json:"match"`
 	Providers []string `json:"providers"`
+	// Reads names what a fetch of these pages returns, as a Capability does.
+	// While the rule is in effect the phrase is part of what the tools tell
+	// the calling agent; a rule without one is not mentioned.
+	Reads string `json:"reads,omitempty"`
 	// Builtin marks a rule that comes from the catalog. It is never set on a
 	// stored rule.
 	Builtin bool `json:"builtin,omitempty"`
@@ -111,7 +128,7 @@ func BuiltinRules() []Rule {
 		for _, capability := range info.Capabilities {
 			i := slices.IndexFunc(rules, func(r Rule) bool { return r.ID == capability.ID })
 			if i < 0 {
-				rules = append(rules, Rule{ID: capability.ID, Name: capability.Name, Match: capability.Match, Builtin: true})
+				rules = append(rules, Rule{ID: capability.ID, Name: capability.Name, Match: capability.Match, Reads: capability.Reads, Builtin: true})
 				i = len(rules) - 1
 			}
 			rules[i].Providers = append(rules[i].Providers, info.ID)
@@ -138,6 +155,32 @@ func (c *Config) RoutingRules() []Rule {
 		rules = append(rules, rule)
 	}
 	return rules
+}
+
+// Reads lists what the rules in effect let a fetch read beyond an ordinary
+// page, in rule order: the phrases of the enabled rules that a provider with
+// credentials serves. A built-in rule counts only while one of the providers
+// declaring its capability is among them, since the others return the page
+// without what the rule is for.
+func (c *Config) Reads() []string {
+	var out []string
+	for _, rule := range c.RoutingRules() {
+		if !rule.Enabled || rule.Reads == "" || slices.Contains(out, rule.Reads) {
+			continue
+		}
+		if slices.ContainsFunc(rule.Providers, func(id string) bool {
+			return c.HasCredentials(id) && (!rule.Builtin || declares(id, rule.ID))
+		}) {
+			out = append(out, rule.Reads)
+		}
+	}
+	return out
+}
+
+// declares reports whether a provider has the capability in the catalog.
+func declares(provider, capability string) bool {
+	info, _ := Info(provider)
+	return slices.ContainsFunc(info.Capabilities, func(c Capability) bool { return c.ID == capability })
 }
 
 // RuleFor returns the first enabled rule that matches the URL.
@@ -182,6 +225,9 @@ func cleanPattern(raw string) string {
 	return host + "/" + path
 }
 
+// maxReads bounds the phrase of a rule, which every tool listing carries.
+const maxReads = 120
+
 var patternHost = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9-]+$`)
 
 func checkPattern(p string) error {
@@ -214,6 +260,7 @@ func (c *Config) normalizeRouting() {
 			}
 		}
 		rule.Match = match
+		rule.Reads = strings.Join(strings.Fields(rule.Reads), " ")
 		rule.Providers = append([]string{}, fetchProviders(rule.Providers)...)
 		rules = append(rules, rule)
 	}
@@ -269,6 +316,9 @@ func (c *Config) validateRouting() error {
 		}
 		if len(rule.Providers) == 0 {
 			return fmt.Errorf("routing rule %q: choose at least one provider", rule.Name)
+		}
+		if len(rule.Reads) > maxReads {
+			return fmt.Errorf("routing rule %q: what it reads must fit in %d characters", rule.Name, maxReads)
 		}
 	}
 	return nil
