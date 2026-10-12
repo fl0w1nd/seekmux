@@ -18,6 +18,8 @@ import (
 
 type Store struct {
 	db *sql.DB
+	// key seals the values that hold secrets; see Seal.
+	key []byte
 }
 
 const schema = `
@@ -147,6 +149,10 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
+	key, err := loadKey(dir)
+	if err != nil {
+		return nil, err
+	}
 	path := filepath.Join(dir, "seekmux.db")
 	query := url.Values{}
 	for _, pragma := range []string{
@@ -174,9 +180,8 @@ func Open(dir string) (*Store, error) {
 			}
 		}
 	}
-	// The database holds API keys in plain text.
 	_ = os.Chmod(path, 0o600)
-	return &Store{db: db}, nil
+	return &Store{db: db, key: key}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

@@ -1,7 +1,9 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 	"slices"
@@ -249,5 +251,72 @@ func TestUsageOfCountsWhatReachedUpstream(t *testing.T) {
 	}
 	if !maps.Equal(got, want) {
 		t.Errorf("usage:\n got %+v\nwant %+v", got, want)
+	}
+}
+
+func TestConfigurationIsEncryptedAtRest(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	st, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A database from before encryption holds the document in plain text.
+	cfg := config.Default()
+	cfg.Providers["brave"] = &config.Provider{Secret: config.Secret{APIKey: "plain-secret"}}
+	plain, _ := json.Marshal(cfg)
+	if err := st.Set(ctx, configKey, plain); err != nil {
+		t.Fatal(err)
+	}
+	stored := func() []byte {
+		raw, err := st.Get(ctx, configKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+
+	a, err := New(ctx, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Snapshot().Config.Providers["brave"].APIKey; got != "plain-secret" {
+		t.Fatalf("key after the upgrade: %q", got)
+	}
+	if raw := stored(); !store.Sealed(raw) || bytes.Contains(raw, []byte("plain-secret")) {
+		t.Error("opening an old database must encrypt its configuration")
+	}
+
+	next := a.Snapshot().Config.Clone()
+	next.Providers["brave"].APIKey = "second-secret"
+	if err := a.SaveConfig(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	if raw := stored(); !store.Sealed(raw) || bytes.Contains(raw, []byte("second-secret")) {
+		t.Error("a saved configuration must be encrypted")
+	}
+	a.Close()
+	st.Close()
+
+	// The key file reopens it; another key must not.
+	if st, err = store.Open(dir); err != nil {
+		t.Fatal(err)
+	}
+	if a, err = New(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.Snapshot().Config.Providers["brave"].APIKey; got != "second-secret" {
+		t.Errorf("key after a restart: %q", got)
+	}
+	a.Close()
+	st.Close()
+
+	t.Setenv(store.EncryptionKeyEnv, "some other key")
+	if st, err = store.Open(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, err := New(ctx, st); err == nil {
+		t.Error("the wrong key must not open the configuration")
 	}
 }

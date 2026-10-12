@@ -128,10 +128,18 @@ seekmux serve --addr 127.0.0.1:8787 --data /var/lib/seekmux
 | `--addr` | `SEEKMUX_ADDR` | `:8787` |
 | `--data` | `SEEKMUX_DATA_DIR` | `./data` |
 | | `SEEKMUX_ADMIN_PASSWORD` | unset; when set it is applied on every start |
+| | `SEEKMUX_ENCRYPTION_KEY` | unset; the key is then kept in `encryption.key` in the data directory |
 
 ### Backup and moving
 
-Everything is in the data directory. To move only the configuration:
+Everything is in the data directory. The configuration, provider keys
+included, is encrypted in the database with the key in `encryption.key`, which
+is created on first start: back the two up together, and the database alone
+gives no keys away. Set `SEEKMUX_ENCRYPTION_KEY` to a long random value to
+keep the key out of the data directory instead; without the key the
+configuration cannot be read and has to be entered again.
+
+To move only the configuration:
 
 ```bash
 seekmux export > seekmux.yaml     # contains your API keys in plain text

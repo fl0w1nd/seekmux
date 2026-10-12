@@ -41,6 +41,8 @@ Flags and environment:
   --addr, SEEKMUX_ADDR             Listen address (default :8787)
   --data, SEEKMUX_DATA_DIR         Data directory (default ./data)
   SEEKMUX_ADMIN_PASSWORD           Admin password; when set it is applied on every start
+  SEEKMUX_ENCRYPTION_KEY           Key that encrypts the stored configuration; when unset it is
+                                   kept in encryption.key in the data directory
 `
 
 func env(key, fallback string) string {

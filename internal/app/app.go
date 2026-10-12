@@ -105,8 +105,24 @@ func New(ctx context.Context, st *store.Store) (*App, error) {
 		return nil, err
 	}
 	if raw != nil {
-		if cfg, err = config.FromStored(raw); err != nil {
+		plain, err := st.Unseal(configKey, raw)
+		if err != nil {
 			return nil, fmt.Errorf("stored configuration is unusable: %w", err)
+		}
+		if cfg, err = config.FromStored(plain); err != nil {
+			return nil, fmt.Errorf("stored configuration is unusable: %w", err)
+		}
+		// A database from before encryption holds the provider keys in plain
+		// text; seal the document and scrub the old copy from the file.
+		if !store.Sealed(raw) {
+			sealed, err := st.Seal(configKey, plain)
+			if err != nil {
+				return nil, err
+			}
+			if err := st.Set(ctx, configKey, sealed); err != nil {
+				return nil, err
+			}
+			st.Compact()
 		}
 	}
 	a.install(cfg)
@@ -345,6 +361,10 @@ func (a *App) SaveConfig(ctx context.Context, cfg *config.Config) error {
 	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
+		return err
+	}
+	// The document carries the provider keys, so it is encrypted at rest.
+	if data, err = a.Store.Seal(configKey, data); err != nil {
 		return err
 	}
 	a.saveMu.Lock()
