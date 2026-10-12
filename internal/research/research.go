@@ -425,9 +425,12 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	result.Searches, result.DevSearches, result.Fetches = spent.Searches, spent.DevSearches, spent.Fetches
 	result.Read = pages
 	unfinished := strings.TrimSpace(draft.String())
+	used := spent.Usage
 	mu.Unlock()
 	if err != nil {
 		result.Draft = unfinished
+		// A run that failed has still spent what its finished requests cost.
+		trace.AddUsage(model.Label, used)
 		err = llm.Describe(err)
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			err = fmt.Errorf("research did not finish within %s", budget+2*time.Minute)
@@ -439,7 +442,7 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 
 	result.Steps = len(out.Steps)
 	result.Usage = llm.Usage(out.TotalUsage)
-	trace.AddUsage(result.Usage)
+	trace.AddUsage(model.Label, result.Usage)
 	result.Report = strings.TrimSpace(out.Response.Content.Text())
 	result.Unread = unread(result.Report, known)
 	report("", "", func() {

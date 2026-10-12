@@ -187,6 +187,59 @@ export interface APIKey {
   created_at: number;
   last_used_at?: number;
   revoked_at?: number;
+  /** When the key stops working, in ms; absent means never. */
+  expires_at?: number;
+  policy: KeyPolicy;
+}
+
+/** What a key changes about the calls it makes; an empty policy changes nothing. */
+export interface KeyPolicy {
+  /** Replaces the extract chain, in order. */
+  extract_models?: string[];
+  /** Replaces the model of the research agent. */
+  research_model?: string;
+  research: {
+    /** Ceilings on the configured budget; absent or 0 leaves it. */
+    max_steps?: number;
+    max_duration_seconds?: number;
+    max_tokens?: number;
+    /** Every run is a quick one. */
+    quick_only?: boolean;
+    /** How many runs the key may have under way at once. */
+    concurrency?: number;
+  };
+}
+
+export interface KeyBody {
+  name: string;
+  scopes: Tool[];
+  rate_limit: string;
+  expires_at: number;
+  policy: KeyPolicy;
+}
+
+export interface Usage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+}
+
+export interface UsageCount extends Usage {
+  calls: number;
+  errors: number;
+}
+
+/** What one key used over a number of days. */
+export interface KeyUsage {
+  /** The tool calls and every token. */
+  total: UsageCount;
+  /** One entry per day, oldest first; `ts` is midnight UTC. */
+  days: (UsageCount & { ts: number })[];
+  tools: (UsageCount & { tool: Tool })[];
+  /** Upstream requests by the kind of call they were made for. */
+  providers: { kind: RoutedTool; provider: string; calls: number; errors: number }[];
+  models: (UsageCount & { model: string })[];
 }
 
 export interface Attempt {
@@ -613,10 +666,11 @@ export const api = {
   importConfig: (yaml: string) => request<Config>("POST", "/api/config/import", undefined, yaml),
 
   keys: () => get<APIKey[]>("/api/keys"),
-  createKey: (body: { name: string; scopes: Tool[]; rate_limit: string }) =>
-    post<{ key: APIKey; secret: string }>("/api/keys", body),
-  updateKey: (id: number, body: { name: string; scopes: Tool[]; rate_limit: string }) =>
-    request("PATCH", `/api/keys/${id}`, body),
+  createKey: (body: KeyBody) => post<{ key: APIKey; secret: string }>("/api/keys", body),
+  updateKey: (id: number, body: KeyBody) => request("PATCH", `/api/keys/${id}`, body),
+  keysUsage: (days: number) => get<{ days: number; keys: Record<string, UsageCount> }>(`/api/keys/usage?days=${days}`),
+  keyUsage: (id: number, days: number) =>
+    get<{ days: number; retention_days: number; usage: KeyUsage }>(`/api/keys/${id}/usage?days=${days}`),
   revokeKey: (id: number) => post(`/api/keys/${id}/revoke`),
   deleteKey: (id: number) => request("DELETE", `/api/keys/${id}`),
 

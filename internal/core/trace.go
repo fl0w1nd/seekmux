@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 )
@@ -57,6 +58,8 @@ type Trace struct {
 	mu       sync.Mutex
 	attempts []Attempt
 	usage    Usage
+	// models splits usage by the id of the model that spent it.
+	models map[string]Usage
 }
 
 func NewTrace() *Trace { return &Trace{Start: time.Now()} }
@@ -131,13 +134,28 @@ func (t *Trace) add(a Attempt) {
 	t.mu.Unlock()
 }
 
-func (t *Trace) AddUsage(u Usage) {
+// AddUsage counts the tokens a model spent on the call.
+func (t *Trace) AddUsage(model string, u Usage) {
 	if t == nil {
 		return
 	}
 	t.mu.Lock()
 	t.usage = t.usage.Add(u)
+	if t.models == nil {
+		t.models = map[string]Usage{}
+	}
+	t.models[model] = t.models[model].Add(u)
 	t.mu.Unlock()
+}
+
+// ModelUsage returns the usage of the call by model id.
+func (t *Trace) ModelUsage() map[string]Usage {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return maps.Clone(t.models)
 }
 
 func (t *Trace) Attempts() []Attempt {

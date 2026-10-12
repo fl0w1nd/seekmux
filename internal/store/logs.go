@@ -331,6 +331,7 @@ func (s *Store) Prune(ctx context.Context, retentionDays, maxRows int) {
 	s.pruneSessions(ctx)
 	s.pruneTasks(ctx, cutoff)
 	s.pruneDomainStats(ctx)
+	s.pruneKeyUsage(ctx)
 }
 
 // ToolStats summarizes the calls of one tool.

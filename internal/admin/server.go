@@ -65,6 +65,8 @@ func (s *Server) Handler() http.Handler {
 		"GET /api/status":                      s.handleStatus,
 		"GET /api/keys":                        s.handleListKeys,
 		"POST /api/keys":                       s.handleCreateKey,
+		"GET /api/keys/usage":                  s.handleKeysUsage,
+		"GET /api/keys/{id}/usage":             s.handleKeyUsage,
 		"PATCH /api/keys/{id}":                 s.handleUpdateKey,
 		"POST /api/keys/{id}/revoke":           s.handleRevokeKey,
 		"DELETE /api/keys/{id}":                s.handleDeleteKey,
@@ -234,12 +236,45 @@ func (s *Server) handleImport(w http.ResponseWriter, r *http.Request) {
 }
 
 type keyBody struct {
-	Name      string   `json:"name"`
-	Scopes    []string `json:"scopes"`
-	RateLimit string   `json:"rate_limit"`
+	Name      string          `json:"name"`
+	Scopes    []string        `json:"scopes"`
+	RateLimit string          `json:"rate_limit"`
+	ExpiresAt int64           `json:"expires_at"`
+	Policy    store.KeyPolicy `json:"policy"`
 }
 
-func (b *keyBody) validate() error {
+func (b keyBody) spec() store.KeySpec {
+	return store.KeySpec{Name: b.Name, Scopes: b.Scopes, RateLimit: b.RateLimit, ExpiresAt: b.ExpiresAt, Policy: b.Policy}
+}
+
+// maxKeyResearchRuns bounds how many research runs a key may be given at once.
+const maxKeyResearchRuns = 100
+
+// validate checks the body against cfg, whose models a policy may name.
+func (b *keyBody) validate(cfg *config.Config) error {
+	p := &b.Policy
+	p.ResearchModel = strings.TrimSpace(p.ResearchModel)
+	if len(p.ExtractModels) == 0 {
+		p.ExtractModels = nil
+	}
+	for i, id := range append([]string{p.ResearchModel}, p.ExtractModels...) {
+		if _, _, ok := cfg.ModelByID(id); id != "" && !ok {
+			return fmt.Errorf("model %q does not exist", id)
+		}
+		if i > 0 && (id == "" || slices.Index(p.ExtractModels, id) != i-1) {
+			return errors.New("the extract models must be distinct model ids")
+		}
+	}
+	r := p.Research
+	switch {
+	case b.ExpiresAt < 0:
+		return errors.New("expires_at must not be negative")
+	case r.MaxSteps < 0 || r.MaxDurationSeconds < 0 || r.MaxTokens < 0:
+		return errors.New("research limits must not be negative")
+	case r.Concurrency < 0 || r.Concurrency > maxKeyResearchRuns:
+		return fmt.Errorf("research concurrency must be between 1 and %d", maxKeyResearchRuns)
+	}
+
 	b.Name = strings.TrimSpace(b.Name)
 	if b.Name == "" || len(b.Name) > 64 {
 		return errors.New("name is required, at most 64 characters")
@@ -266,16 +301,57 @@ func (s *Server) handleListKeys(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, keys)
 }
 
+// usageDays reads the number of days a usage report covers.
+func usageDays(r *http.Request) int {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days < 1 || days > store.KeyUsageRetentionDays {
+		days = 30
+	}
+	return days
+}
+
+// handleKeysUsage reports the calls and tokens of every key.
+func (s *Server) handleKeysUsage(w http.ResponseWriter, r *http.Request) {
+	days := usageDays(r)
+	s.app.FlushUsage()
+	totals, err := s.app.Store.KeyUsageTotals(r.Context(), days)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, map[string]any{"days": days, "keys": totals})
+}
+
+// handleKeyUsage reports what one key used, by day, tool, provider and model.
+func (s *Server) handleKeyUsage(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	days := usageDays(r)
+	s.app.FlushUsage()
+	usage, err := s.app.Store.KeyUsage(r.Context(), id, days)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, map[string]any{"days": days, "retention_days": store.KeyUsageRetentionDays, "usage": usage})
+}
+
 func (s *Server) handleCreateKey(w http.ResponseWriter, r *http.Request) {
 	var body keyBody
 	if !readJSON(w, r, &body) {
 		return
 	}
-	if err := body.validate(); err != nil {
+	if err := body.validate(s.app.Snapshot().Config); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	key, secret, err := s.app.Store.CreateAPIKey(r.Context(), body.Name, body.Scopes, body.RateLimit)
+	if body.ExpiresAt != 0 && body.ExpiresAt <= time.Now().UnixMilli() {
+		writeError(w, http.StatusBadRequest, errors.New("the expiry must be in the future"))
+		return
+	}
+	key, secret, err := s.app.Store.CreateAPIKey(r.Context(), body.spec())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
@@ -289,11 +365,11 @@ func (s *Server) handleUpdateKey(w http.ResponseWriter, r *http.Request) {
 	if !ok || !readJSON(w, r, &body) {
 		return
 	}
-	if err := body.validate(); err != nil {
+	if err := body.validate(s.app.Snapshot().Config); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.app.Store.UpdateAPIKey(r.Context(), id, body.Name, body.Scopes, body.RateLimit); err != nil {
+	if err := s.app.Store.UpdateAPIKey(r.Context(), id, body.spec()); err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}

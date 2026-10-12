@@ -44,6 +44,8 @@ type Caller struct {
 	Source  string
 	KeyID   int64
 	KeyName string
+	// Policy is what the calling key changes about its calls.
+	Policy store.KeyPolicy
 	// IP and UserAgent describe the client the call came from.
 	IP        string
 	UserAgent string
@@ -67,6 +69,7 @@ type App struct {
 	Limits *core.Limits
 
 	domains  *store.DomainWriter
+	usage    *store.UsageWriter
 	fetcher  *fetch.Service
 	snapshot atomic.Pointer[Snapshot]
 	saveMu   sync.Mutex
@@ -78,12 +81,16 @@ type App struct {
 	// running holds the cancel function of every research task under way,
 	// by task id.
 	running sync.Map
+	// researching counts the research runs under way by API key id, for the
+	// keys that bound them.
+	researchMu  sync.Mutex
+	researching map[int64]int
 }
 
 // New loads the stored configuration, creating the default one on first run.
 func New(ctx context.Context, st *store.Store) (*App, error) {
 	limits := core.NewLimits()
-	a := &App{Store: st, Logs: st.NewLogWriter(), Limits: limits, domains: st.NewDomainWriter(), fetcher: fetch.NewService(limits)}
+	a := &App{Store: st, Logs: st.NewLogWriter(), Limits: limits, domains: st.NewDomainWriter(), usage: st.NewUsageWriter(), fetcher: fetch.NewService(limits), researching: map[int64]int{}}
 	a.fetcher.Observe = func(o fetch.Observation) {
 		a.domains.Record(store.DomainSample{
 			TS: o.Time.UnixMilli(), Domain: o.Domain, Provider: o.Provider, Outcome: o.Outcome,
@@ -113,6 +120,7 @@ func (a *App) Close() {
 	a.tasks.Wait()
 	a.Logs.Close()
 	a.domains.Close()
+	a.usage.Close()
 }
 
 func (a *App) Snapshot() *Snapshot { return a.snapshot.Load() }
@@ -237,6 +245,81 @@ func (s *Snapshot) with(tool string, o Override) (*Snapshot, error) {
 	return &Snapshot{Version: s.Version, Config: cfg, Client: s.Client}, nil
 }
 
+// under returns s as a key with policy p sees it, or s itself when p changes
+// nothing.
+func (s *Snapshot) under(p store.KeyPolicy) *Snapshot {
+	exists := func(id string) bool {
+		_, _, ok := s.Config.ModelByID(id)
+		return id != "" && ok
+	}
+	var models []string
+	for _, id := range p.ExtractModels {
+		if exists(id) {
+			models = append(models, id)
+		}
+	}
+	r := p.Research
+	if len(models) == 0 && !exists(p.ResearchModel) && r.MaxSteps == 0 && r.MaxDurationSeconds == 0 && r.MaxTokens == 0 {
+		return s
+	}
+	cfg := s.Config.Clone()
+	if len(models) > 0 {
+		cfg.Fetch.Extract.Models = models
+	}
+	if exists(p.ResearchModel) {
+		cfg.Research.Model = p.ResearchModel
+	}
+	if r.MaxSteps > 0 {
+		cfg.Research.MaxSteps = min(cfg.Research.MaxSteps, r.MaxSteps)
+	}
+	if r.MaxDurationSeconds > 0 {
+		cfg.Research.MaxDurationSeconds = min(cfg.Research.MaxDurationSeconds, r.MaxDurationSeconds)
+	}
+	if r.MaxTokens > 0 {
+		cfg.Research.MaxTokens = min(cfg.Research.MaxTokens, r.MaxTokens)
+	}
+	return &Snapshot{Version: s.Version, Config: cfg, Client: s.Client}
+}
+
+// View returns the current configuration as caller's key sees it.
+func (a *App) View(caller Caller) *Snapshot { return a.Snapshot().under(caller.Policy) }
+
+// view returns the configuration a call of tool by caller runs on.
+func (a *App) view(caller Caller, tool string, o Override) (*Snapshot, error) {
+	if tool == config.ToolResearch && caller.Policy.Research.QuickOnly {
+		o.Research.Quick = true
+	}
+	s, err := a.Snapshot().with(tool, o)
+	if err != nil {
+		return nil, err
+	}
+	// The key's ceilings come last, so no effort lifts a run above them.
+	return s.under(caller.Policy), nil
+}
+
+// admitResearch counts a research run of caller's key in, unless the key
+// already has as many under way as it may. The run is over when the returned
+// function is called.
+func (a *App) admitResearch(caller Caller) (func(), error) {
+	limit := caller.Policy.Research.Concurrency
+	if limit <= 0 {
+		return func() {}, nil
+	}
+	a.researchMu.Lock()
+	defer a.researchMu.Unlock()
+	if a.researching[caller.KeyID] >= limit {
+		return nil, fmt.Errorf("this API key already has %d research runs under way, which is as many as it may; wait for one to finish or stop it with research_cancel", limit)
+	}
+	a.researching[caller.KeyID]++
+	return func() {
+		a.researchMu.Lock()
+		defer a.researchMu.Unlock()
+		if a.researching[caller.KeyID]--; a.researching[caller.KeyID] <= 0 {
+			delete(a.researching, caller.KeyID)
+		}
+	}, nil
+}
+
 func (a *App) install(cfg *config.Config) {
 	var version int64 = 1
 	if prev := a.snapshot.Load(); prev != nil {
@@ -323,6 +406,48 @@ func (a *App) logCall(s *Snapshot, caller Caller, tool string, trace *core.Trace
 	entry.Summary = truncate(entry.Summary, 500)
 	entry.Error = truncate(entry.Error, 2000)
 	a.Logs.Write(entry)
+	if caller.KeyID != 0 {
+		a.usage.Record(usageOf(entry, trace)...)
+	}
+}
+
+// FlushUsage writes the usage still held in memory, so that a report read
+// next includes the calls that just ended.
+func (a *App) FlushUsage() { a.usage.Flush() }
+
+// usageOf is what the finished call of entry adds to the usage of its key:
+// the call itself, every request that reached a provider or a model, and the
+// tokens each model spent.
+func usageOf(entry store.LogEntry, trace *core.Trace) []store.UsageSample {
+	sample := func(kind, name string, count store.UsageCount) store.UsageSample {
+		return store.UsageSample{TS: entry.TS, KeyID: entry.APIKeyID, Tool: entry.Tool, Kind: kind, Name: name, UsageCount: count}
+	}
+	call := store.UsageCount{Calls: 1}
+	if entry.Status == store.StatusError {
+		call.Errors = 1
+	}
+	samples := []store.UsageSample{sample(store.UsageCall, "", call)}
+	for _, attempt := range trace.Attempts() {
+		count := store.UsageCount{Calls: 1}
+		switch attempt.Status {
+		case core.AttemptError:
+			count.Errors = 1
+		case core.AttemptOK, core.AttemptCanceled:
+			// A hedge that lost the race was sent all the same.
+		default:
+			// Answered from the cache, or never sent.
+			continue
+		}
+		kind := attempt.Kind
+		if kind == "llm" {
+			kind = store.UsageModel
+		}
+		samples = append(samples, sample(kind, attempt.Provider, count))
+	}
+	for model, usage := range trace.ModelUsage() {
+		samples = append(samples, sample(store.UsageModel, model, store.UsageCount{Usage: usage}))
+	}
+	return samples
 }
 
 func capture(v any, limit int) string {
@@ -360,7 +485,7 @@ func traced(ctx context.Context) (context.Context, *core.Trace) {
 // Search serves the search tool. The error is an invalid-arguments error.
 // The upstream calls land in the trace of ctx when it carries one.
 func (a *App) Search(ctx context.Context, caller Caller, args search.Args, o Override) ([]search.QueryResult, error) {
-	s, err := a.Snapshot().with(config.ToolSearch, o)
+	s, err := a.view(caller, config.ToolSearch, o)
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +515,7 @@ func (a *App) Search(ctx context.Context, caller Caller, args search.Args, o Ove
 // DevSearch serves the dev_search tool. The error is an invalid-arguments
 // error. The upstream calls land in the trace of ctx when it carries one.
 func (a *App) DevSearch(ctx context.Context, caller Caller, args search.DevArgs, o Override) (search.DevResult, error) {
-	s, err := a.Snapshot().with(config.ToolDevSearch, o)
+	s, err := a.view(caller, config.ToolDevSearch, o)
 	if err != nil {
 		return search.DevResult{}, err
 	}
@@ -411,7 +536,7 @@ func (a *App) DevSearch(ctx context.Context, caller Caller, args search.DevArgs,
 // Fetch serves the fetch tool. The error is an invalid-arguments error.
 // The upstream calls land in the trace of ctx when it carries one.
 func (a *App) Fetch(ctx context.Context, caller Caller, args fetch.Args, o Override) (fetch.Result, error) {
-	s, err := a.Snapshot().with(config.ToolFetch, o)
+	s, err := a.view(caller, config.ToolFetch, o)
 	if err != nil {
 		return fetch.Result{}, err
 	}
@@ -447,7 +572,7 @@ func (a *App) Research(ctx context.Context, caller Caller, req research.Request,
 
 // research runs as Research does; the log entry names the task of the run, if it has one.
 func (a *App) research(ctx context.Context, caller Caller, req research.Request, o Override, task string, progress func(research.Event)) (research.Result, error) {
-	s, err := a.Snapshot().with(config.ToolResearch, o)
+	s, err := a.view(caller, config.ToolResearch, o)
 	if err != nil {
 		return research.Result{}, err
 	}
@@ -546,18 +671,31 @@ func (s *Snapshot) ReportExpiry(created int64) time.Time {
 // StartResearch runs research in the background and returns the id of the
 // task that holds its progress and its result.
 func (a *App) StartResearch(ctx context.Context, caller Caller, req research.Request, o Override) (string, error) {
-	id, err := a.createTask(ctx, &req, o)
+	release, err := a.admitResearch(caller)
 	if err != nil {
 		return "", err
 	}
-	a.tasks.Go(func() { _, _ = a.runTask(a.background, id, caller, req, o, nil) })
+	id, err := a.createTask(ctx, caller, &req, o)
+	if err != nil {
+		release()
+		return "", err
+	}
+	a.tasks.Go(func() {
+		defer release()
+		_, _ = a.runTask(a.background, id, caller, req, o, nil)
+	})
 	return id, nil
 }
 
 // ResearchTask runs research to completion as Research does and keeps it as
 // a task, so that its report has a page. It returns the id of the task.
 func (a *App) ResearchTask(ctx context.Context, caller Caller, req research.Request, o Override, progress func(research.Event)) (string, research.Result, error) {
-	id, err := a.createTask(ctx, &req, o)
+	release, err := a.admitResearch(caller)
+	if err != nil {
+		return "", research.Result{}, err
+	}
+	defer release()
+	id, err := a.createTask(ctx, caller, &req, o)
 	if err != nil {
 		return "", research.Result{}, err
 	}
@@ -565,12 +703,12 @@ func (a *App) ResearchTask(ctx context.Context, caller Caller, req research.Requ
 	return id, result, err
 }
 
-// createTask validates req and records a task for the run it asks for.
-func (a *App) createTask(ctx context.Context, req *research.Request, o Override) (string, error) {
+// createTask validates req and records a task for the run caller asks for.
+func (a *App) createTask(ctx context.Context, caller Caller, req *research.Request, o Override) (string, error) {
 	if err := req.Validate(); err != nil {
 		return "", err
 	}
-	s, err := a.Snapshot().with(config.ToolResearch, o)
+	s, err := a.view(caller, config.ToolResearch, o)
 	if err != nil {
 		return "", err
 	}

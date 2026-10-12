@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
 	rate_limit   TEXT NOT NULL DEFAULT '',
 	created_at   INTEGER NOT NULL,
 	last_used_at INTEGER,
-	revoked_at   INTEGER
+	revoked_at   INTEGER,
+	expires_at   INTEGER NOT NULL DEFAULT 0,
+	policy       TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS request_logs (
 	id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +91,20 @@ CREATE TABLE IF NOT EXISTS domain_stats (
 	bytes       INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (day, domain, provider, outcome)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS key_usage (
+	day         INTEGER NOT NULL,
+	api_key_id  INTEGER NOT NULL,
+	tool        TEXT NOT NULL,
+	kind        TEXT NOT NULL,
+	name        TEXT NOT NULL,
+	calls       INTEGER NOT NULL DEFAULT 0,
+	errors      INTEGER NOT NULL DEFAULT 0,
+	input_tokens       INTEGER NOT NULL DEFAULT 0,
+	output_tokens      INTEGER NOT NULL DEFAULT 0,
+	cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+	cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (day, api_key_id, tool, kind, name)
+) WITHOUT ROWID;
 `
 
 // added lists the columns that came after the first release, which a
@@ -104,6 +120,8 @@ var added = []struct{ table, column, definition string }{
 	{"research_tasks", "budget", "TEXT NOT NULL DEFAULT ''"},
 	{"research_tasks", "spent", "TEXT NOT NULL DEFAULT ''"},
 	{"research_tasks", "draft", "TEXT NOT NULL DEFAULT ''"},
+	{"api_keys", "expires_at", "INTEGER NOT NULL DEFAULT 0"},
+	{"api_keys", "policy", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // Open opens, and creates if needed, the database in dir.

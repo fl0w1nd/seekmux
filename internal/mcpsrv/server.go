@@ -53,6 +53,11 @@ func Handler(a *app.App, version string) http.Handler {
 			http.Error(w, "missing or invalid API key", http.StatusUnauthorized)
 			return
 		}
+		if key.Expired() {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="seekmux", error="invalid_token"`)
+			http.Error(w, "the API key has expired", http.StatusUnauthorized)
+			return
+		}
 		if time.Since(time.UnixMilli(key.LastUsedAt)) > time.Minute {
 			a.Store.TouchAPIKey(r.Context(), key.ID)
 		}
@@ -126,8 +131,9 @@ const researchDescription = "Hand a question to a research agent that searches a
 
 // newServer returns the server for one request r, with the tools its key may call.
 func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *mcp.Server {
-	snap := a.Snapshot()
-	caller := app.Caller{Source: app.SourceMCP, KeyID: key.ID, KeyName: key.Name}.From(r)
+	caller := app.Caller{Source: app.SourceMCP, KeyID: key.ID, KeyName: key.Name, Policy: key.Policy}.From(r)
+	// What the key's policy changes decides which tools it is offered.
+	snap := a.View(caller)
 	// The icons are the console's own, served without a login next to /mcp.
 	base := snap.PublicURL(r)
 	server := mcp.NewServer(&mcp.Implementation{

@@ -37,14 +37,16 @@ function Options({ models }: { models: (Model & { provider: string })[] }) {
   ));
 }
 
-/** Picks the one model a feature runs on. */
-export function ModelSelect({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+/** Picks the one model a feature runs on; `empty` words the choice of none. */
+export function ModelSelect({ value, onChange, empty = "未选择" }: { value: string; onChange: (id: string) => void; empty?: string }) {
   const { config } = useConfig();
   const models = allModels(config);
   if (models.length === 0) return <NoModels />;
   return (
     <Select className="max-w-sm" value={value} onChange={(e) => onChange(e.target.value)} aria-label="模型">
-      <option value="">未选择</option>
+      <option value="">{empty}</option>
+      {/* A model that was removed since it was chosen. */}
+      {value && !models.some((m) => m.id === value) && <option value={value}>{value}（已不存在）</option>}
       <Options models={models} />
     </Select>
   );

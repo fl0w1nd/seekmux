@@ -236,7 +236,7 @@ func (m *Model) Chat(ctx context.Context, system, user string, opt ChatOptions) 
 
 		if err == nil {
 			done(nil)
-			trace.AddUsage(Usage(result.TotalUsage))
+			trace.AddUsage(m.Label, Usage(result.TotalUsage))
 			hitLimit := result.Response.FinishReason == fantasy.FinishReasonLength
 			if answer == "" {
 				if hitLimit {

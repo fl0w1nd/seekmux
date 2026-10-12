@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -42,7 +43,7 @@ func TestResearchResultWaitsAndReportsTheBudget(t *testing.T) {
 	if err := a.SaveConfig(ctx, cfg); err != nil {
 		t.Fatal(err)
 	}
-	_, secret, err := st.CreateAPIKey(ctx, "test", []string{config.ToolResearch}, "")
+	_, secret, err := st.CreateAPIKey(ctx, store.KeySpec{Name: "test", Scopes: []string{config.ToolResearch}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +124,7 @@ func TestServerInfoAdvertisesIconsAtThePublicAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	_, secret, err := st.CreateAPIKey(ctx, "test", []string{config.ToolSearch}, "")
+	_, secret, err := st.CreateAPIKey(ctx, store.KeySpec{Name: "test", Scopes: []string{config.ToolSearch}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,5 +145,35 @@ func TestServerInfoAdvertisesIconsAtThePublicAddress(t *testing.T) {
 	}
 	if len(info.Icons) != 2 || info.Icons[0].Source != srv.URL+"/icon-192.png" || info.Icons[1].Source != srv.URL+"/favicon.svg" {
 		t.Errorf("icons = %+v", info.Icons)
+	}
+}
+
+func TestExpiredKeyIsTurnedAway(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := app.New(ctx, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	_, secret, err := st.CreateAPIKey(ctx, store.KeySpec{Name: "old", Scopes: []string{config.ToolSearch}, ExpiresAt: time.Now().Add(-time.Minute).UnixMilli()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(Handler(a, "test"))
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req.Header.Set("Authorization", "Bearer "+secret)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Errorf("status %d, want 401", res.StatusCode)
 	}
 }

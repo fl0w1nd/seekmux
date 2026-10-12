@@ -25,6 +25,46 @@ type APIKey struct {
 	CreatedAt  int64    `json:"created_at"`
 	LastUsedAt int64    `json:"last_used_at,omitempty"`
 	RevokedAt  int64    `json:"revoked_at,omitempty"`
+	// ExpiresAt is when the key stops working, in ms; 0 means never.
+	ExpiresAt int64     `json:"expires_at,omitempty"`
+	Policy    KeyPolicy `json:"policy"`
+}
+
+// Expired reports whether the key has passed its expiry.
+func (k APIKey) Expired() bool { return k.ExpiresAt > 0 && k.ExpiresAt <= now() }
+
+// KeyPolicy is what a key changes about the calls it makes. The zero policy
+// changes nothing.
+type KeyPolicy struct {
+	// ExtractModels replaces the extract chain, in order. A model that no
+	// longer exists is left out; when none is left the configured chain serves.
+	ExtractModels []string `json:"extract_models,omitempty"`
+	// ResearchModel replaces the model of the research agent.
+	ResearchModel string      `json:"research_model,omitempty"`
+	Research      KeyResearch `json:"research"`
+}
+
+// KeyResearch bounds the research runs of a key. A zero field leaves what is
+// configured.
+type KeyResearch struct {
+	// MaxSteps, MaxDurationSeconds and MaxTokens are ceilings: a run gets the
+	// smaller of the ceiling and the configured budget.
+	MaxSteps           int   `json:"max_steps,omitempty"`
+	MaxDurationSeconds int   `json:"max_duration_seconds,omitempty"`
+	MaxTokens          int64 `json:"max_tokens,omitempty"`
+	// QuickOnly makes every run a quick one, whatever effort it asks for.
+	QuickOnly bool `json:"quick_only,omitempty"`
+	// Concurrency is how many runs the key may have under way at once.
+	Concurrency int `json:"concurrency,omitempty"`
+}
+
+// KeySpec is what an API key is created with and what can be changed later.
+type KeySpec struct {
+	Name      string
+	Scopes    []string
+	RateLimit string
+	ExpiresAt int64
+	Policy    KeyPolicy
 }
 
 // HashToken returns the stored form of a secret token.
@@ -44,13 +84,17 @@ func NewToken(prefix string) string {
 
 // CreateAPIKey stores a new key and returns it with its secret, which cannot
 // be recovered later.
-func (s *Store) CreateAPIKey(ctx context.Context, name string, scopes []string, rateLimit string) (APIKey, string, error) {
+func (s *Store) CreateAPIKey(ctx context.Context, spec KeySpec) (APIKey, string, error) {
 	secret := NewToken(KeyPrefix)
-	key := APIKey{Name: name, Prefix: secret[:len(KeyPrefix)+6], Scopes: scopes, RateLimit: rateLimit, CreatedAt: now()}
-	scopeJSON, _ := json.Marshal(scopes)
+	key := APIKey{
+		Name: spec.Name, Prefix: secret[:len(KeyPrefix)+6], Scopes: spec.Scopes, RateLimit: spec.RateLimit,
+		CreatedAt: now(), ExpiresAt: spec.ExpiresAt, Policy: spec.Policy,
+	}
+	scopeJSON, _ := json.Marshal(spec.Scopes)
+	policyJSON, _ := json.Marshal(spec.Policy)
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO api_keys (name, prefix, hash, scopes, rate_limit, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		key.Name, key.Prefix, HashToken(secret), string(scopeJSON), rateLimit, key.CreatedAt)
+		`INSERT INTO api_keys (name, prefix, hash, scopes, rate_limit, created_at, expires_at, policy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		key.Name, key.Prefix, HashToken(secret), string(scopeJSON), spec.RateLimit, key.CreatedAt, spec.ExpiresAt, string(policyJSON))
 	if err != nil {
 		return APIKey{}, "", err
 	}
@@ -58,16 +102,20 @@ func (s *Store) CreateAPIKey(ctx context.Context, name string, scopes []string, 
 	return key, secret, nil
 }
 
-const keyColumns = `id, name, prefix, scopes, rate_limit, created_at, COALESCE(last_used_at, 0), COALESCE(revoked_at, 0)`
+const keyColumns = `id, name, prefix, scopes, rate_limit, created_at, COALESCE(last_used_at, 0), COALESCE(revoked_at, 0), expires_at, policy`
 
 func scanKey(row interface{ Scan(...any) error }) (APIKey, error) {
 	var key APIKey
-	var scopes string
-	err := row.Scan(&key.ID, &key.Name, &key.Prefix, &scopes, &key.RateLimit, &key.CreatedAt, &key.LastUsedAt, &key.RevokedAt)
+	var scopes, policy string
+	err := row.Scan(&key.ID, &key.Name, &key.Prefix, &scopes, &key.RateLimit, &key.CreatedAt, &key.LastUsedAt, &key.RevokedAt, &key.ExpiresAt, &policy)
 	if err != nil {
 		return APIKey{}, err
 	}
 	_ = json.Unmarshal([]byte(scopes), &key.Scopes)
+	// A key from before policies has none stored.
+	if policy != "" {
+		_ = json.Unmarshal([]byte(policy), &key.Policy)
+	}
 	return key, nil
 }
 
@@ -88,7 +136,8 @@ func (s *Store) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
 	return keys, rows.Err()
 }
 
-// LookupAPIKey returns the active key matching the secret.
+// LookupAPIKey returns the key matching the secret unless it is revoked. The
+// caller turns away one that has expired.
 func (s *Store) LookupAPIKey(ctx context.Context, secret string) (APIKey, bool, error) {
 	if !strings.HasPrefix(secret, KeyPrefix) {
 		return APIKey{}, false, nil
@@ -105,10 +154,11 @@ func (s *Store) TouchAPIKey(ctx context.Context, id int64) {
 	_, _ = s.db.ExecContext(ctx, `UPDATE api_keys SET last_used_at = ? WHERE id = ?`, now(), id)
 }
 
-func (s *Store) UpdateAPIKey(ctx context.Context, id int64, name string, scopes []string, rateLimit string) error {
-	scopeJSON, _ := json.Marshal(scopes)
-	_, err := s.db.ExecContext(ctx, `UPDATE api_keys SET name = ?, scopes = ?, rate_limit = ? WHERE id = ?`,
-		name, string(scopeJSON), rateLimit, id)
+func (s *Store) UpdateAPIKey(ctx context.Context, id int64, spec KeySpec) error {
+	scopeJSON, _ := json.Marshal(spec.Scopes)
+	policyJSON, _ := json.Marshal(spec.Policy)
+	_, err := s.db.ExecContext(ctx, `UPDATE api_keys SET name = ?, scopes = ?, rate_limit = ?, expires_at = ?, policy = ? WHERE id = ?`,
+		spec.Name, string(scopeJSON), spec.RateLimit, spec.ExpiresAt, string(policyJSON), id)
 	return err
 }
 
@@ -118,6 +168,10 @@ func (s *Store) RevokeAPIKey(ctx context.Context, id int64) error {
 }
 
 func (s *Store) DeleteAPIKey(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ?`, id)
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ?`, id); err != nil {
+		return err
+	}
+	// Its usage has nowhere left to be shown.
+	_, err := s.db.ExecContext(ctx, `DELETE FROM key_usage WHERE api_key_id = ?`, id)
 	return err
 }
