@@ -19,6 +19,7 @@ import (
 	"github.com/fl0w1nd/seekmux/internal/app"
 	"github.com/fl0w1nd/seekmux/internal/config"
 	"github.com/fl0w1nd/seekmux/internal/mcpsrv"
+	"github.com/fl0w1nd/seekmux/internal/oauth"
 	"github.com/fl0w1nd/seekmux/internal/store"
 	"github.com/fl0w1nd/seekmux/web"
 )
@@ -140,13 +141,15 @@ func load(command, path string) (*config.Config, error) {
 }
 
 func serve(ctx context.Context, a *app.App, addr string) error {
-	adminServer := admin.New(a, version, web.Assets())
+	authz := oauth.New(a)
+	adminServer := admin.New(a, authz, version, web.Assets())
 	if err := adminServer.InitPassword(ctx, os.Getenv("SEEKMUX_ADMIN_PASSWORD")); err != nil {
 		return err
 	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpsrv.Handler(a, version))
+	authz.Mount(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.Handle("/", adminServer.Handler())
 

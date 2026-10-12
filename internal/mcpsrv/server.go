@@ -1,5 +1,5 @@
 // Package mcpsrv exposes the gateway tools over MCP streamable HTTP,
-// authorized by API keys.
+// authorized by API keys or by the access tokens of package oauth.
 package mcpsrv
 
 import (
@@ -20,6 +20,7 @@ import (
 	"github.com/fl0w1nd/seekmux/internal/app"
 	"github.com/fl0w1nd/seekmux/internal/config"
 	"github.com/fl0w1nd/seekmux/internal/fetch"
+	"github.com/fl0w1nd/seekmux/internal/oauth"
 	"github.com/fl0w1nd/seekmux/internal/research"
 	"github.com/fl0w1nd/seekmux/internal/search"
 	"github.com/fl0w1nd/seekmux/internal/store"
@@ -43,18 +44,32 @@ func Handler(a *app.App, version string) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		secret := bearer(r)
+		snap := a.Snapshot()
+		// The challenge tells a client that can sign in where to do so.
+		challenge := `Bearer realm="seekmux"`
+		if !snap.Config.OAuth.Disabled {
+			challenge += `, resource_metadata="` + snap.PublicURL(r) + oauth.ResourceMetadataPath + `"`
+		}
 		key, ok, err := a.Store.LookupAPIKey(r.Context(), secret)
+		if err == nil && !ok && !snap.Config.OAuth.Disabled {
+			key, ok, err = a.Store.LookupAccessToken(r.Context(), secret)
+		}
 		if err != nil {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		if !ok {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="seekmux"`)
-			http.Error(w, "missing or invalid API key", http.StatusUnauthorized)
+			// A token that no longer works is told apart from none at all,
+			// so that the client refreshes it instead of giving up.
+			if secret != "" {
+				challenge += `, error="invalid_token"`
+			}
+			w.Header().Set("WWW-Authenticate", challenge)
+			http.Error(w, "missing or invalid API key or access token", http.StatusUnauthorized)
 			return
 		}
 		if key.Expired() {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="seekmux", error="invalid_token"`)
+			w.Header().Set("WWW-Authenticate", challenge+`, error="invalid_token"`)
 			http.Error(w, "the API key has expired", http.StatusUnauthorized)
 			return
 		}

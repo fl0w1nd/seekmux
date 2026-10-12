@@ -20,6 +20,7 @@ import (
 	"github.com/fl0w1nd/seekmux/internal/core"
 	"github.com/fl0w1nd/seekmux/internal/fetch"
 	"github.com/fl0w1nd/seekmux/internal/llm"
+	"github.com/fl0w1nd/seekmux/internal/oauth"
 	"github.com/fl0w1nd/seekmux/internal/research"
 	"github.com/fl0w1nd/seekmux/internal/search"
 	"github.com/fl0w1nd/seekmux/internal/store"
@@ -32,6 +33,7 @@ func init() {
 
 type Server struct {
 	app     *app.App
+	oauth   *oauth.Server
 	version string
 	assets  fs.FS
 
@@ -40,8 +42,8 @@ type Server struct {
 }
 
 // New returns the admin server. assets holds the built WebUI.
-func New(a *app.App, version string, assets fs.FS) *Server {
-	return &Server{app: a, version: version, assets: assets}
+func New(a *app.App, authz *oauth.Server, version string, assets fs.FS) *Server {
+	return &Server{app: a, oauth: authz, version: version, assets: assets}
 }
 
 // Handler serves /api/ and the WebUI.
@@ -87,6 +89,8 @@ func (s *Server) Handler() http.Handler {
 		"GET /api/research/tasks/{id}":         s.handleGetTask,
 		"POST /api/research/tasks":             s.handleStartTask,
 		"POST /api/research/tasks/{id}/cancel": s.handleCancelTask,
+		"POST /api/oauth/describe":             s.handleOAuthDescribe,
+		"POST /api/oauth/decide":               s.handleOAuthDecide,
 	} {
 		api.HandleFunc(pattern, s.requireAuth(handler))
 	}

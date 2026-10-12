@@ -40,8 +40,25 @@ CREATE TABLE IF NOT EXISTS api_keys (
 	last_used_at INTEGER,
 	revoked_at   INTEGER,
 	expires_at   INTEGER NOT NULL DEFAULT 0,
-	policy       TEXT NOT NULL DEFAULT ''
+	policy       TEXT NOT NULL DEFAULT '',
+	oauth_client TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS oauth_clients (
+	id            TEXT PRIMARY KEY,
+	secret_hash   TEXT NOT NULL DEFAULT '',
+	name          TEXT NOT NULL,
+	uri           TEXT NOT NULL DEFAULT '',
+	redirect_uris TEXT NOT NULL,
+	created_at    INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+	hash       TEXT PRIMARY KEY,
+	kind       TEXT NOT NULL,
+	client_id  TEXT NOT NULL,
+	api_key_id INTEGER NOT NULL,
+	expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS oauth_tokens_key ON oauth_tokens (api_key_id);
 CREATE TABLE IF NOT EXISTS request_logs (
 	id            INTEGER PRIMARY KEY AUTOINCREMENT,
 	ts            INTEGER NOT NULL,
@@ -122,6 +139,7 @@ var added = []struct{ table, column, definition string }{
 	{"research_tasks", "draft", "TEXT NOT NULL DEFAULT ''"},
 	{"api_keys", "expires_at", "INTEGER NOT NULL DEFAULT 0"},
 	{"api_keys", "policy", "TEXT NOT NULL DEFAULT ''"},
+	{"api_keys", "oauth_client", "TEXT NOT NULL DEFAULT ''"},
 }
 
 // Open opens, and creates if needed, the database in dir.

@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Redirect, Route, Switch, useLocation, useRoute } from "wouter";
 import { api, setUnauthorizedHandler } from "./lib/api";
 import { ConfigProvider } from "./lib/config";
+import { AuthorizePage } from "./pages/Authorize";
 import { DesignPage } from "./pages/Design";
 import { KeysPage } from "./pages/Keys";
 import { LogsPage } from "./pages/Logs";
@@ -26,6 +27,7 @@ export function App() {
 function Console() {
   const client = useQueryClient();
   const auth = useQuery({ queryKey: ["auth"], queryFn: api.authState });
+  const [authorizing] = useRoute("/oauth/authorize");
 
   useEffect(() => {
     setUnauthorizedHandler(() => void client.invalidateQueries({ queryKey: ["auth"] }));
@@ -48,6 +50,9 @@ function Console() {
   if (!auth.data.authenticated) {
     return <Gate setup={auth.data.setup_required} onDone={() => client.invalidateQueries({ queryKey: ["auth"] })} />;
   }
+
+  // An MCP client sent the admin here to be let in; the page stands alone.
+  if (authorizing) return <AuthorizePage />;
 
   return (
     <ConfigProvider>

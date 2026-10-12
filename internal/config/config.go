@@ -37,6 +37,14 @@ type Config struct {
 	Breaker   Breaker              `json:"breaker"`
 	Logs      Logs                 `json:"logs"`
 	Network   Network              `json:"network"`
+	OAuth     OAuth                `json:"oauth"`
+}
+
+// OAuth governs how MCP clients may sign in instead of presenting an API
+// key. It is on unless a document says otherwise, so that a document from
+// before it existed has it too.
+type OAuth struct {
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // Secret is the API key part shared by search/fetch providers and LLM

@@ -329,6 +329,7 @@ func (s *Store) Prune(ctx context.Context, retentionDays, maxRows int) {
 	_, _ = s.db.ExecContext(ctx,
 		`DELETE FROM request_logs WHERE id <= (SELECT COALESCE(MAX(id), 0) FROM request_logs) - ?`, maxRows)
 	s.pruneSessions(ctx)
+	s.pruneOAuth(ctx, 7*24*time.Hour)
 	s.pruneTasks(ctx, cutoff)
 	s.pruneDomainStats(ctx)
 	s.pruneKeyUsage(ctx)

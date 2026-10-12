@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fl0w1nd/seekmux/internal/app"
+	"github.com/fl0w1nd/seekmux/internal/oauth"
 	"github.com/fl0w1nd/seekmux/internal/research"
 	"github.com/fl0w1nd/seekmux/internal/store"
 )
@@ -26,7 +27,7 @@ func TestAReportIsReadWithoutSigningIn(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer a.Close()
-	srv := httptest.NewServer(New(a, "test", fstest.MapFS{}).Handler())
+	srv := httptest.NewServer(New(a, oauth.New(a), "test", fstest.MapFS{}).Handler())
 	defer srv.Close()
 
 	get := func(path string) (int, string) {
@@ -105,7 +106,7 @@ func TestTheWebManifestIsServedWithItsOwnType(t *testing.T) {
 		"index.html":           {Data: []byte("<html></html>")},
 		"manifest.webmanifest": {Data: []byte(`{"name":"SeekMux"}`)},
 	}
-	srv := httptest.NewServer(New(a, "test", assets).Handler())
+	srv := httptest.NewServer(New(a, oauth.New(a), "test", assets).Handler())
 	defer srv.Close()
 
 	res, err := http.Get(srv.URL + "/manifest.webmanifest")

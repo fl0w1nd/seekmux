@@ -56,7 +56,7 @@ token to set the admin password, then:
 2. **Search / Developer search / Fetch** — order the providers of each tool.
 3. **Models** (optional) — add a model endpoint to enable prompt-based
    extraction and research.
-4. **Access keys** — create a key for your agent.
+4. **Access keys** — create a key for your agent, or let it sign in (below).
 
 Images for `linux/amd64` and `linux/arm64` are published at
 `ghcr.io/fl0w1nd/seekmux`. All state lives in the `./data` volume.
@@ -66,15 +66,31 @@ To skip the setup token, set `SEEKMUX_ADMIN_PASSWORD` (10+ characters) in a
 
 ## Connect an agent
 
-The MCP endpoint is `/mcp` (Streamable HTTP). Send the access key as a bearer
-token:
+The MCP endpoint is `/mcp` (Streamable HTTP). A client that supports MCP
+authorization needs nothing but the address:
+
+```bash
+claude mcp add --transport http seekmux https://your-host/mcp
+```
+
+On its first connection the client opens the console in your browser; sign in
+with the admin password, choose the tools it may call, and approve. It then
+shows up under **Access keys** as a key of its own, where you can limit or
+revoke it. This works for clients that register themselves (OAuth 2.1 with
+PKCE and dynamic client registration); it can be switched off under **System**.
+
+Or create an access key and send it as a bearer token:
 
 ```bash
 claude mcp add --transport http seekmux https://your-host/mcp --header "Authorization: Bearer smx_..."
 ```
 
-Any MCP client that supports Streamable HTTP and custom headers works the same
+Any MCP client that supports Streamable HTTP and custom headers works that
 way; `X-API-Key: smx_...` is accepted as well.
+
+Behind a reverse proxy, set the public address under **System** when the proxy
+does not pass `X-Forwarded-Proto`: the sign-in endpoints a client is told about
+start with it.
 
 ## Deploying
 

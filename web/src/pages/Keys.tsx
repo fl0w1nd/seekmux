@@ -32,6 +32,7 @@ export function KeysPage() {
   const client = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
+  const { config } = useConfig();
   const keys = useQuery({ queryKey: ["keys"], queryFn: api.keys });
   const [form, setForm] = useState<APIKey | "new" | null>(null);
   const [created, setCreated] = useState<{ name: string; secret: string } | null>(null);
@@ -84,7 +85,7 @@ export function KeysPage() {
                         <div className="font-medium">{key.name}</div>
                         {notes.length > 0 && <div className="tag mt-0.5 normal-case">{notes.join(" · ")}</div>}
                       </Td>
-                      <Td className="num text-xs">{key.prefix}…</Td>
+                      <Td className="num text-xs">{key.oauth_client ? <Badge tone="info">OAuth</Badge> : `${key.prefix}…`}</Td>
                       <Td>
                         <span className="flex gap-1">
                           {key.scopes.map((scope) => (
@@ -118,7 +119,7 @@ export function KeysPage() {
                                 size="sm"
                                 variant="danger"
                                 onClick={async () => {
-                                  if (await confirm({ title: `吊销「${key.name}」？`, body: "使用该密钥的 Agent 将立即失去访问权限，且无法恢复。", confirm: "吊销", danger: true })) {
+                                  if (await confirm({ title: `吊销「${key.name}」？`, body: key.oauth_client ? "该客户端的令牌立即失效，再次接入需要重新登录授权。" : "使用该密钥的 Agent 将立即失去访问权限，且无法恢复。", confirm: "吊销", danger: true })) {
                                     revoke.mutate(key.id);
                                   }
                                 }}
@@ -137,8 +138,15 @@ export function KeysPage() {
           )}
         </Panel>
 
-        <Panel index="MCP" title="连接方式" description="端点使用 Streamable HTTP 传输，密钥通过 Authorization 请求头传递。">
-          <ConnectionGuide secret="<你的密钥>" />
+        <Panel index="MCP" title="连接方式" description="端点使用 Streamable HTTP 传输。客户端可以通过 OAuth 登录，也可以在 Authorization 请求头中携带密钥。">
+          <div className="grid gap-4">
+            {!config.oauth.disabled && (
+              <Field label="OAuth 登录（Claude Code）" hint="只需填写端点地址：首次连接时浏览器会打开本控制台，登录并授权后自动生成一把以客户端命名的密钥。其它支持 MCP 授权（动态客户端注册）的客户端同理。">
+                <CodeBlock copy wrap>{`claude mcp add --transport http seekmux ${endpoint()}`}</CodeBlock>
+              </Field>
+            )}
+            <ConnectionGuide secret="<你的密钥>" />
+          </div>
         </Panel>
       </div>
 

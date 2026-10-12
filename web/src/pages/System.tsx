@@ -65,8 +65,11 @@ export function SystemPage() {
         </Panel>
 
         <Panel index="03" title="网络" flush>
-          <Row label="对外地址" hint="研究报告链接以此开头。留空则沿用请求到达时的地址；Agent 经内网地址接入时需要填写">
+          <Row label="对外地址" hint="研究报告链接与 OAuth 登录地址以此开头。留空则沿用请求到达时的地址；Agent 经内网地址接入时需要填写">
             <Input mono className="w-72" value={config.network.public_url ?? ""} placeholder="https://seekmux.example.com" onChange={(e) => update((d) => void (d.network.public_url = e.target.value.trim() || undefined))} />
+          </Row>
+          <Row label="OAuth 登录" hint="支持 OAuth 的 MCP 客户端只需填写端点地址，首次连接时在浏览器中用管理员密码登录并授权，无需粘贴密钥。关闭后只接受 API Key，已签发的令牌随即失效">
+            <Switch checked={!config.oauth.disabled} onCheckedChange={(on) => update((d) => void (d.oauth.disabled = on ? undefined : true))} aria-label="允许 MCP 客户端通过 OAuth 登录" />
           </Row>
           <Row label="出站代理" hint="访问搜索、抓取和模型接口时使用。留空则直连">
             <Input mono className="w-72" value={config.network.proxy ?? ""} placeholder="http://127.0.0.1:7890" onChange={(e) => update((d) => void (d.network.proxy = e.target.value.trim() || undefined))} />

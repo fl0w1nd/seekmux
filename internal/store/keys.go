@@ -28,6 +28,10 @@ type APIKey struct {
 	// ExpiresAt is when the key stops working, in ms; 0 means never.
 	ExpiresAt int64     `json:"expires_at,omitempty"`
 	Policy    KeyPolicy `json:"policy"`
+	// OAuthClient is the id of the OAuth client the key stands for. Such a
+	// key has no secret anyone holds: the client calls with the tokens it
+	// was issued.
+	OAuthClient string `json:"oauth_client,omitempty"`
 }
 
 // Expired reports whether the key has passed its expiry.
@@ -65,6 +69,8 @@ type KeySpec struct {
 	RateLimit string
 	ExpiresAt int64
 	Policy    KeyPolicy
+	// OAuthClient is set when the key is created; it is not changed later.
+	OAuthClient string
 }
 
 // HashToken returns the stored form of a secret token.
@@ -88,13 +94,13 @@ func (s *Store) CreateAPIKey(ctx context.Context, spec KeySpec) (APIKey, string,
 	secret := NewToken(KeyPrefix)
 	key := APIKey{
 		Name: spec.Name, Prefix: secret[:len(KeyPrefix)+6], Scopes: spec.Scopes, RateLimit: spec.RateLimit,
-		CreatedAt: now(), ExpiresAt: spec.ExpiresAt, Policy: spec.Policy,
+		CreatedAt: now(), ExpiresAt: spec.ExpiresAt, Policy: spec.Policy, OAuthClient: spec.OAuthClient,
 	}
 	scopeJSON, _ := json.Marshal(spec.Scopes)
 	policyJSON, _ := json.Marshal(spec.Policy)
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO api_keys (name, prefix, hash, scopes, rate_limit, created_at, expires_at, policy) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		key.Name, key.Prefix, HashToken(secret), string(scopeJSON), spec.RateLimit, key.CreatedAt, spec.ExpiresAt, string(policyJSON))
+		`INSERT INTO api_keys (name, prefix, hash, scopes, rate_limit, created_at, expires_at, policy, oauth_client) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		key.Name, key.Prefix, HashToken(secret), string(scopeJSON), spec.RateLimit, key.CreatedAt, spec.ExpiresAt, string(policyJSON), spec.OAuthClient)
 	if err != nil {
 		return APIKey{}, "", err
 	}
@@ -102,12 +108,12 @@ func (s *Store) CreateAPIKey(ctx context.Context, spec KeySpec) (APIKey, string,
 	return key, secret, nil
 }
 
-const keyColumns = `id, name, prefix, scopes, rate_limit, created_at, COALESCE(last_used_at, 0), COALESCE(revoked_at, 0), expires_at, policy`
+const keyColumns = `id, name, prefix, scopes, rate_limit, created_at, COALESCE(last_used_at, 0), COALESCE(revoked_at, 0), expires_at, policy, oauth_client`
 
 func scanKey(row interface{ Scan(...any) error }) (APIKey, error) {
 	var key APIKey
 	var scopes, policy string
-	err := row.Scan(&key.ID, &key.Name, &key.Prefix, &scopes, &key.RateLimit, &key.CreatedAt, &key.LastUsedAt, &key.RevokedAt, &key.ExpiresAt, &policy)
+	err := row.Scan(&key.ID, &key.Name, &key.Prefix, &scopes, &key.RateLimit, &key.CreatedAt, &key.LastUsedAt, &key.RevokedAt, &key.ExpiresAt, &policy, &key.OAuthClient)
 	if err != nil {
 		return APIKey{}, err
 	}
@@ -163,12 +169,17 @@ func (s *Store) UpdateAPIKey(ctx context.Context, id int64, spec KeySpec) error 
 }
 
 func (s *Store) RevokeAPIKey(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL`, now(), id)
-	return err
+	if _, err := s.db.ExecContext(ctx, `UPDATE api_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL`, now(), id); err != nil {
+		return err
+	}
+	return s.deleteOAuthTokens(ctx, id)
 }
 
 func (s *Store) DeleteAPIKey(ctx context.Context, id int64) error {
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ?`, id); err != nil {
+		return err
+	}
+	if err := s.deleteOAuthTokens(ctx, id); err != nil {
 		return err
 	}
 	// Its usage has nowhere left to be shown.

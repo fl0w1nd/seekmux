@@ -135,6 +135,8 @@ export interface Config {
   breaker: { enabled: boolean; failures: number; window_seconds: number; cooldown_seconds: number };
   logs: { retention_days: number; max_rows: number; capture_body: boolean };
   network: { proxy?: string; public_url?: string };
+  /** MCP clients may sign in instead of presenting an API key, unless switched off. */
+  oauth: { disabled?: boolean };
 }
 
 export type Tool = "search" | "dev_search" | "fetch" | "research";
@@ -193,6 +195,30 @@ export interface APIKey {
   /** When the key stops working, in ms; absent means never. */
   expires_at?: number;
   policy: KeyPolicy;
+  /** The OAuth client the key stands for; such a key has no secret, the client calls with tokens. */
+  oauth_client?: string;
+}
+
+/** An authorization request as an MCP client put it in the address of the approval page. */
+export interface OAuthRequest {
+  client_id: string;
+  redirect_uri: string;
+  response_type: string;
+  code_challenge: string;
+  code_challenge_method: string;
+  scope: string;
+  state: string;
+}
+
+/** What the admin is asked to approve; `redirect` alone when the request can only go back to the client. */
+export interface OAuthPrompt {
+  redirect?: string;
+  client_name?: string;
+  client_uri?: string;
+  redirect_uri?: string;
+  scopes?: Tool[];
+  /** The name of the key the client already calls with. */
+  key?: string;
 }
 
 /** What a key changes about the calls it makes; an empty policy changes nothing. */
@@ -676,6 +702,8 @@ export const api = {
     get<{ days: number; retention_days: number; usage: KeyUsage }>(`/api/keys/${id}/usage?days=${days}`),
   revokeKey: (id: number) => post(`/api/keys/${id}/revoke`),
   deleteKey: (id: number) => request("DELETE", `/api/keys/${id}`),
+  oauthDescribe: (body: OAuthRequest) => post<OAuthPrompt>("/api/oauth/describe", body),
+  oauthDecide: (body: OAuthRequest & { approve: boolean; scopes: Tool[] }) => post<{ redirect: string }>("/api/oauth/decide", body),
 
   logs: (params: Record<string, string | number | undefined>) => {
     const query = new URLSearchParams();
