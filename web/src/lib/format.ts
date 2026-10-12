@@ -51,6 +51,17 @@ export function ago(ts: number | undefined): string {
   return `${Math.floor(seconds / 86400)} 天前`;
 }
 
+/**
+ * A short name for the client behind a User-Agent: its first product token,
+ * such as `claude-code/2.1.3`. Browsers all start with `Mozilla/`, which says
+ * nothing, so they are named as such.
+ */
+export function clientName(ua: string | undefined): string {
+  if (!ua) return "";
+  if (ua.startsWith("Mozilla/")) return "浏览器";
+  return ua.split(/\s+/)[0];
+}
+
 /** Where the settings of a routed tool live in the console. */
 export const toolPage = (tool: string) => `/tools/${tool === "dev_search" ? "dev-search" : tool}`;
 

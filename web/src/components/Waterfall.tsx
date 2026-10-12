@@ -1,6 +1,7 @@
 import type { Attempt } from "../lib/api";
 import { duration, toolLabel } from "../lib/format";
 import { cx, type Tone } from "../ui/primitives";
+import { ProviderName } from "./ProviderName";
 
 const statusTone: Record<Attempt["status"], Tone> = { ok: "ok", error: "err", canceled: "neutral", cached: "info", skipped: "warn", limited: "warn" };
 const statusLabel: Record<Attempt["status"], string> = { ok: "成功", error: "失败", canceled: "已取消", cached: "缓存命中", skipped: "熔断跳过", limited: "限流跳过" };
@@ -33,7 +34,7 @@ export function Waterfall({ attempts, total }: { attempts: Attempt[]; total: num
             <div className="flex items-center justify-between gap-3 text-xs">
               <span className="flex min-w-0 items-center gap-2">
                 <span className="tag">{toolLabel[a.kind] ?? a.kind}</span>
-                <span className="num font-medium text-ink">{a.provider}</span>
+                <ProviderName id={a.provider} kind={a.kind} className="font-medium text-ink" />
                 {a.target && <span className="truncate text-ink-3">{a.target}</span>}
               </span>
               <span className={cx("num shrink-0", text[statusTone[a.status]])}>
@@ -44,8 +45,9 @@ export function Waterfall({ attempts, total }: { attempts: Attempt[]; total: num
             </div>
             <div className="relative mt-1.5 h-1.5 rounded-full bg-sunken">
               <span
-                className={cx("absolute inset-y-0 min-w-1 rounded-full", bar[a.status], a.status === "canceled" && "opacity-50")}
-                style={{ left: `${(a.start_ms / span) * 100}%`, width: `${(a.duration_ms / span) * 100}%` }}
+                className={cx("absolute inset-y-0 min-w-1 origin-left animate-grow-x rounded-full", bar[a.status], a.status === "canceled" && "opacity-50")}
+                // Each bar starts drawing when its call started, so the order of the calls plays out once.
+                style={{ left: `${(a.start_ms / span) * 100}%`, width: `${(a.duration_ms / span) * 100}%`, animationDelay: `${Math.round((a.start_ms / span) * 360)}ms` }}
               />
             </div>
             {a.error && a.status === "error" && <div className="num mt-1.5 text-xs break-words text-err">{a.error}</div>}

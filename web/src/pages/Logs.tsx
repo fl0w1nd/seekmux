@@ -1,11 +1,12 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Radio, ScrollText, Search, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowUp, ExternalLink, Radio, ScrollText, Search, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useSearch } from "wouter";
+import { ProviderName, ProviderNames } from "../components/ProviderName";
 import { Waterfall } from "../components/Waterfall";
 import { api, type Hop, type LogEntry } from "../lib/api";
 import { useConfig } from "../lib/config";
-import { compact, dateTime, duration, logTime, percent, toolLabel } from "../lib/format";
+import { clientName, compact, dateTime, duration, logTime, percent, toolLabel } from "../lib/format";
 import { PageHeader } from "../Shell";
 import { Drawer, useConfirm, useToast } from "../ui/overlays";
 import { Badge, Button, CodeBlock, cx, Dot, Empty, Input, Panel, Segmented, Select, Spinner, Table, Td, Th } from "../ui/primitives";
@@ -22,16 +23,40 @@ function pretty(json: string | undefined): string {
   }
 }
 
+const shortTime = (ts: number) => dateTime(ts).slice(5, 16);
+
+/** A time range as a chip: the end drops the date when it is the same day. */
+function rangeLabel(since: number, until: number): string {
+  const from = shortTime(since);
+  const to = shortTime(until);
+  return from.slice(0, 5) === to.slice(0, 5) ? `${from} – ${to.slice(6)}` : `${from} – ${to}`;
+}
+
+const positive = (value: string | null) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+const callerName = (entry: LogEntry) => (entry.source === "webui" ? "调试台" : entry.api_key_name || "—");
+
 export function LogsPage() {
   const { meta } = useConfig();
   const client = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
-  const [tool, setTool] = useState("");
-  const [status, setStatus] = useState("");
-  const [provider, setProvider] = useState("");
-  // "webui" for the playground, or the id of an API key; the overview links here with one.
-  const [caller, setCaller] = useState(new URLSearchParams(useSearch()).get("caller") ?? "");
+  // The overview links here with filters in the address.
+  const address = useSearch();
+  const [params] = useState(() => new URLSearchParams(address));
+  const [tool, setTool] = useState(params.get("tool") ?? "");
+  const [status, setStatus] = useState(params.get("status") ?? "");
+  const [provider, setProvider] = useState(params.get("provider") ?? "");
+  // "webui" for the playground, or the id of an API key.
+  const [caller, setCaller] = useState(params.get("caller") ?? "");
+  const [range, setRange] = useState(() => {
+    const since = positive(params.get("since"));
+    const until = positive(params.get("until"));
+    return since && until ? { since, until } : null;
+  });
   const keys = useQuery({ queryKey: ["keys"], queryFn: api.keys });
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -49,7 +74,9 @@ export function LogsPage() {
     q: query,
     ...(status === "fallback" ? { fallback: 1 } : { status }),
     ...(caller === "webui" ? { source: caller } : { key: caller }),
+    ...(range ?? {}),
   };
+  const filterKey = JSON.stringify(filters);
   const logs = useInfiniteQuery({
     queryKey: ["logs", filters],
     queryFn: ({ pageParam }) => api.logs({ ...filters, before: pageParam, limit: pageSize }),
@@ -57,15 +84,61 @@ export function LogsPage() {
     getNextPageParam: (last) => (last.length === pageSize ? last[last.length - 1].id : undefined),
   });
 
-  // New entries arrive over SSE; refetching keeps the active filters authoritative.
+  // New entries arrive over SSE; refetching keeps the active filters
+  // authoritative. A burst is folded into one refetch a second, since each
+  // refetch reloads every page shown.
   useEffect(() => {
     if (!live) return;
     const source = new EventSource("/api/logs/stream");
-    source.onmessage = () => void client.invalidateQueries({ queryKey: ["logs"] });
-    return () => source.close();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    source.onmessage = () => {
+      timer ??= setTimeout(() => {
+        timer = undefined;
+        void client.invalidateQueries({ queryKey: ["logs"] });
+      }, 1000);
+    };
+    return () => {
+      clearTimeout(timer);
+      source.close();
+    };
   }, [live, client]);
 
   const entries = logs.data?.pages.flat() ?? [];
+  const newest = entries[0]?.id ?? 0;
+
+  // Rows that arrived since the last refetch are marked for a moment. A change
+  // of filters shows a different list, not new rows.
+  const seen = useRef<{ key: string; top: number } | null>(null);
+  const [fresh, setFresh] = useState<ReadonlySet<number>>(new Set());
+  const top = useRef<HTMLDivElement>(null);
+  const [away, setAway] = useState(false);
+  const [unseen, setUnseen] = useState(0);
+  useEffect(() => {
+    if (!logs.data) return;
+    const before = seen.current;
+    seen.current = { key: filterKey, top: Math.max(newest, before?.key === filterKey ? before.top : 0) };
+    if (!before || before.key !== filterKey || newest <= before.top) return;
+    const arrived = entries.filter((e) => e.id > before.top).map((e) => e.id);
+    setFresh(new Set(arrived));
+    if (away) setUnseen((n) => n + arrived.length);
+  }, [newest, filterKey, logs.data]);
+  useEffect(() => {
+    if (fresh.size === 0) return;
+    const timer = setTimeout(() => setFresh(new Set()), 1300);
+    return () => clearTimeout(timer);
+  }, [fresh]);
+
+  // Whether the top of the list is scrolled out of view, where new rows land unnoticed.
+  useEffect(() => {
+    const el = top.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      setAway(!entry.isIntersecting);
+      if (entry.isIntersecting) setUnseen(0);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <>
@@ -117,6 +190,7 @@ export function LogsPage() {
               {p.name}
             </option>
           ))}
+          {provider && !meta.catalog.some((p) => p.id === provider) && <option value={provider}>{provider}</option>}
         </Select>
         <Select className="w-36" value={caller} onChange={(e) => setCaller(e.target.value)} aria-label="按调用方筛选">
           <option value="">全部调用方</option>
@@ -128,11 +202,36 @@ export function LogsPage() {
           ))}
           {caller && caller !== "webui" && keys.data && !keys.data.some((key) => String(key.id) === caller) && <option value={caller}>已删除的 Key</option>}
         </Select>
+        {range && (
+          <button
+            type="button"
+            onClick={() => setRange(null)}
+            className="num inline-flex h-8 items-center gap-1.5 rounded-ctl border border-line-strong bg-raised px-2.5 text-xs text-ink-2 transition-colors hover:text-ink"
+            aria-label="清除时间范围"
+          >
+            时间：{rangeLabel(range.since, range.until)}
+            <X className="size-3.5" />
+          </button>
+        )}
         <div className="relative min-w-48 flex-1">
           <Search className="pointer-events-none absolute top-2 left-2.5 size-4 text-ink-3" />
-          <Input className="pl-8" value={search} placeholder="搜索查询词、URL 或错误信息" onChange={(e) => setSearch(e.target.value)} />
+          <Input className="pl-8" value={search} placeholder="搜索查询词、URL、错误信息、IP 或 UA" onChange={(e) => setSearch(e.target.value)} />
         </div>
       </div>
+
+      <div ref={top} />
+      {unseen > 0 && (
+        <div className="sticky top-2 z-10 flex justify-center max-md:top-[calc(3.5rem+env(safe-area-inset-top))]">
+          <button
+            type="button"
+            onClick={() => top.current?.scrollIntoView({ behavior: "smooth", block: "center" })}
+            className="num -mb-8 inline-flex h-8 animate-in items-center gap-1.5 rounded-full bg-signal px-3 text-xs font-medium text-signal-ink shadow-overlay hover:bg-signal-hover"
+          >
+            <ArrowUp className="size-3.5" />
+            {unseen} 条新记录
+          </button>
+        </div>
+      )}
 
       <Panel flush>
         {logs.isPending ? (
@@ -160,22 +259,33 @@ export function LogsPage() {
               </thead>
               <tbody>
                 {entries.map((entry) => (
-                  <tr key={entry.id} tabIndex={0} onClick={() => setSelected(entry.id)} onKeyDown={(e) => e.key === "Enter" && setSelected(entry.id)} className="cursor-pointer transition-colors hover:bg-raised/60 focus-visible:bg-raised">
+                  <tr
+                    key={entry.id}
+                    tabIndex={0}
+                    onClick={() => setSelected(entry.id)}
+                    onKeyDown={(e) => e.key === "Enter" && setSelected(entry.id)}
+                    className={cx("cursor-pointer transition-colors hover:bg-raised/60 focus-visible:bg-raised", fresh.has(entry.id) && "animate-arrive")}
+                  >
                     <Td className="num text-xs whitespace-nowrap text-ink-3">{logTime(entry.ts)}</Td>
                     <Td>
                       <Badge>{toolLabel[entry.tool] ?? entry.tool}</Badge>
                     </Td>
-                    <Td className="max-w-0">
+                    <Td className="max-w-0 min-w-48">
                       <div className="truncate">{entry.summary}</div>
                       {entry.error && <div className="truncate text-xs text-err">{entry.error}</div>}
                     </Td>
-                    <Td className="num text-xs whitespace-nowrap text-ink-2">{entry.hops ? <Route hops={entry.hops} /> : entry.provider || "—"}</Td>
+                    <Td className="text-xs whitespace-nowrap text-ink-2">
+                      {entry.hops ? <Route hops={entry.hops} /> : entry.provider ? <ProviderNames ids={entry.provider} kind={entry.tool === "research" ? "llm" : undefined} /> : "—"}
+                    </Td>
                     <Td>
                       <StatusBadge status={entry.status} />
                     </Td>
                     <Td className="num text-right text-xs whitespace-nowrap">{duration(entry.duration_ms)}</Td>
                     <Td className="num text-right text-xs whitespace-nowrap text-ink-3">{entry.input_tokens ? compact(entry.input_tokens + entry.output_tokens) : "—"}</Td>
-                    <Td className="text-xs whitespace-nowrap text-ink-3">{entry.source === "webui" ? "调试台" : entry.api_key_name || "—"}</Td>
+                    <Td className="text-xs whitespace-nowrap text-ink-3">
+                      <div>{callerName(entry)}</div>
+                      {entry.client_ip && <div className="num text-2xs text-ink-3/80">{entry.client_ip}</div>}
+                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -218,9 +328,9 @@ function Route({ hops }: { hops: Hop[] }) {
       {hops.map((hop, i) => (
         <span key={i} className="flex items-center gap-1.5">
           {i > 0 && <span className="text-ink-3">{hops[i - 1].kind === hop.kind ? "→" : "·"}</span>}
-          <span className={hopClass[hop.status]} title={`${toolLabel[hop.kind] ?? hop.kind} · ${hopTitle[hop.status]}${hop.count > 1 ? ` × ${hop.count}` : ""}`}>
-            {hop.provider}
-            {hop.count > 1 && <span className="text-ink-3 no-underline"> ×{hop.count}</span>}
+          <span className={cx("inline-flex items-center", hopClass[hop.status])} title={`${toolLabel[hop.kind] ?? hop.kind} · ${hopTitle[hop.status]}${hop.count > 1 ? ` × ${hop.count}` : ""}`}>
+            <ProviderName id={hop.provider} kind={hop.kind} />
+            {hop.count > 1 && <span className="num text-ink-3 no-underline"> ×{hop.count}</span>}
           </span>
         </span>
       ))}
@@ -265,10 +375,16 @@ function LogDrawer({ id, onClose }: { id: number | null; onClose: () => void }) 
             <Fact label="总耗时">
               <span className="num">{duration(entry.duration_ms)}</span>
             </Fact>
-            <Fact label="响应提供商">
-              <span className="num">{entry.provider || "—"}</span>
+            <Fact label="响应提供商">{entry.provider ? <ProviderNames ids={entry.provider} kind={entry.tool === "research" ? "llm" : undefined} /> : "—"}</Fact>
+            <Fact label="调用方">{callerName(entry)}</Fact>
+            <Fact label="来源 IP">
+              <span className="num">{entry.client_ip || "—"}</span>
             </Fact>
-            <Fact label="调用方">{entry.source === "webui" ? "调试台" : entry.api_key_name || "—"}</Fact>
+            <Fact label="客户端" className="col-span-1 sm:col-span-3">
+              <span className="num" title={entry.user_agent}>
+                {clientName(entry.user_agent) || "—"}
+              </span>
+            </Fact>
             {entry.input_tokens > 0 && (
               <>
                 <Fact label="Token（输入 / 输出）" className="col-span-2">
@@ -287,6 +403,22 @@ function LogDrawer({ id, onClose }: { id: number | null; onClose: () => void }) 
               </>
             )}
           </div>
+
+          {entry.task_id && (
+            <a href={`/report/${entry.task_id}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 self-start text-sm text-signal-text underline-offset-2 hover:underline">
+              <ExternalLink className="size-3.5" />
+              查看研究报告
+            </a>
+          )}
+
+          {entry.user_agent && (
+            <section>
+              <h3 className="tag mb-1.5">User-Agent</h3>
+              <CodeBlock wrap copy>
+                {entry.user_agent}
+              </CodeBlock>
+            </section>
+          )}
 
           {entry.error && (
             <section>

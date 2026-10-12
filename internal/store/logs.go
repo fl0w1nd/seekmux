@@ -22,6 +22,10 @@ type LogEntry struct {
 	Source     string `json:"source"`
 	APIKeyID   int64  `json:"api_key_id,omitempty"`
 	APIKeyName string `json:"api_key_name,omitempty"`
+	ClientIP   string `json:"client_ip,omitempty"`
+	UserAgent  string `json:"user_agent,omitempty"`
+	// TaskID is the research task a research call ran as, whose report has a page.
+	TaskID     string `json:"task_id,omitempty"`
 	Status     string `json:"status"`
 	DurationMs int64  `json:"duration_ms"`
 	// Provider is the provider that produced the answer, when there is one.
@@ -153,9 +157,9 @@ func (s *Store) insertLogs(batch []LogEntry) []LogEntry {
 			attempts = "[]"
 		}
 		res, err := tx.Exec(`INSERT INTO request_logs
-			(ts, tool, source, api_key_id, api_key_name, status, duration_ms, provider, summary, request, response, error, attempts, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			e.TS, e.Tool, e.Source, e.APIKeyID, e.APIKeyName, e.Status, e.DurationMs, e.Provider, e.Summary,
+			(ts, tool, source, api_key_id, api_key_name, client_ip, user_agent, task_id, status, duration_ms, provider, summary, request, response, error, attempts, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			e.TS, e.Tool, e.Source, e.APIKeyID, e.APIKeyName, e.ClientIP, e.UserAgent, e.TaskID, e.Status, e.DurationMs, e.Provider, e.Summary,
 			e.Request, e.Response, e.Error, attempts, e.InputTokens, e.OutputTokens, e.CacheReadTokens, e.CacheWriteTokens)
 		if err != nil {
 			continue
@@ -177,8 +181,10 @@ type LogFilter struct {
 	// Fallback keeps only calls in which a provider or model failed or was
 	// skipped, for the breaker or its rate limit.
 	Fallback bool
-	Before   int64
-	Limit    int
+	// Since and Until keep the calls started in [Since, Until), in ms; zero leaves a side open.
+	Since, Until int64
+	Before       int64
+	Limit        int
 }
 
 // Hop is one stop of a call's way through providers or models. Count is the
@@ -217,7 +223,13 @@ func hops(attempts string) []Hop {
 	return out
 }
 
-const logListColumns = `id, ts, tool, source, api_key_id, api_key_name, status, duration_ms, provider, summary, error, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens`
+const logListColumns = `id, ts, tool, source, api_key_id, api_key_name, client_ip, user_agent, task_id, status, duration_ms, provider, summary, error, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens`
+
+// scanTargets are the destinations of logListColumns, in order.
+func (e *LogEntry) scanTargets() []any {
+	return []any{&e.ID, &e.TS, &e.Tool, &e.Source, &e.APIKeyID, &e.APIKeyName, &e.ClientIP, &e.UserAgent, &e.TaskID, &e.Status, &e.DurationMs,
+		&e.Provider, &e.Summary, &e.Error, &e.InputTokens, &e.OutputTokens, &e.CacheReadTokens, &e.CacheWriteTokens}
+}
 
 func (s *Store) ListLogs(ctx context.Context, f LogFilter) ([]LogEntry, error) {
 	var where []string
@@ -245,11 +257,17 @@ func (s *Store) ListLogs(ctx context.Context, f LogFilter) ([]LogEntry, error) {
 	}
 	if f.Query != "" {
 		pattern := "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(f.Query) + "%"
-		where = append(where, `(summary LIKE ? ESCAPE '\' OR error LIKE ? ESCAPE '\')`)
-		args = append(args, pattern, pattern)
+		where = append(where, `(summary LIKE ? ESCAPE '\' OR error LIKE ? ESCAPE '\' OR client_ip LIKE ? ESCAPE '\' OR user_agent LIKE ? ESCAPE '\')`)
+		args = append(args, pattern, pattern, pattern, pattern)
 	}
 	if f.Fallback {
 		where = append(where, `EXISTS (SELECT 1 FROM json_each(request_logs.attempts) a WHERE json_extract(a.value, '$.status') IN ('error', 'skipped', 'limited'))`)
+	}
+	if f.Since > 0 {
+		add("ts >= ?", f.Since)
+	}
+	if f.Until > 0 {
+		add("ts < ?", f.Until)
 	}
 	if f.Before > 0 {
 		add("id < ?", f.Before)
@@ -274,8 +292,7 @@ func (s *Store) ListLogs(ctx context.Context, f LogFilter) ([]LogEntry, error) {
 	for rows.Next() {
 		var e LogEntry
 		var attempts string
-		if err := rows.Scan(&e.ID, &e.TS, &e.Tool, &e.Source, &e.APIKeyID, &e.APIKeyName, &e.Status, &e.DurationMs,
-			&e.Provider, &e.Summary, &e.Error, &e.InputTokens, &e.OutputTokens, &e.CacheReadTokens, &e.CacheWriteTokens, &attempts); err != nil {
+		if err := rows.Scan(append(e.scanTargets(), &attempts)...); err != nil {
 			return nil, err
 		}
 		// A research run makes dozens of calls of its own; its route is in the detail view.
@@ -291,8 +308,7 @@ func (s *Store) GetLog(ctx context.Context, id int64) (LogEntry, bool, error) {
 	var e LogEntry
 	var attempts string
 	err := s.db.QueryRowContext(ctx, `SELECT `+logListColumns+`, attempts, request, response FROM request_logs WHERE id = ?`, id).
-		Scan(&e.ID, &e.TS, &e.Tool, &e.Source, &e.APIKeyID, &e.APIKeyName, &e.Status, &e.DurationMs,
-			&e.Provider, &e.Summary, &e.Error, &e.InputTokens, &e.OutputTokens, &e.CacheReadTokens, &e.CacheWriteTokens, &attempts, &e.Request, &e.Response)
+		Scan(append(e.scanTargets(), &attempts, &e.Request, &e.Response)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return LogEntry{}, false, nil
 	}
@@ -350,6 +366,8 @@ type CallerStats struct {
 	Errors     int    `json:"errors"`
 	P50Ms      int64  `json:"p50_ms"`
 	P95Ms      int64  `json:"p95_ms"`
+	// IPs is the number of client addresses the calls came from.
+	IPs int `json:"ips"`
 	core.Usage
 }
 
@@ -358,7 +376,24 @@ type Bucket struct {
 	TS     int64 `json:"ts"`
 	Calls  int   `json:"calls"`
 	Errors int   `json:"errors"`
+	// Tools counts the calls per tool.
+	Tools map[string]int `json:"tools"`
 }
+
+// ErrorStats counts the failed upstream attempts of one provider, for one
+// kind of call, that ended with the same HTTP status.
+type ErrorStats struct {
+	Kind       string `json:"kind"`
+	Provider   string `json:"provider"`
+	HTTPStatus int    `json:"http_status,omitempty"`
+	Count      int    `json:"count"`
+	// Sample is the error of the latest of these attempts.
+	Sample string `json:"sample"`
+	LastTS int64  `json:"last_ts"`
+}
+
+// topErrors is how many groups of failed attempts Stats reports.
+const topErrors = 8
 
 type Stats struct {
 	Since     int64           `json:"since"`
@@ -366,6 +401,7 @@ type Stats struct {
 	Providers []ProviderStats `json:"providers"`
 	Callers   []CallerStats   `json:"callers"`
 	Buckets   []Bucket        `json:"buckets"`
+	Errors    []ErrorStats    `json:"errors"`
 	core.Usage
 }
 
@@ -379,10 +415,10 @@ func percentile(sorted []int64, p float64) int64 {
 // Stats aggregates the logs of the last window into buckets of the given size.
 func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats, error) {
 	since := time.Now().Add(-window).UnixMilli()
-	stats := Stats{Since: since, Tools: []ToolStats{}, Providers: []ProviderStats{}, Callers: []CallerStats{}, Buckets: []Bucket{}}
+	stats := Stats{Since: since, Tools: []ToolStats{}, Providers: []ProviderStats{}, Callers: []CallerStats{}, Buckets: []Bucket{}, Errors: []ErrorStats{}}
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT ts, tool, source, api_key_id, api_key_name, status, duration_ms, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens FROM request_logs WHERE ts >= ? ORDER BY ts`, since)
+		`SELECT ts, tool, source, api_key_id, api_key_name, client_ip, status, duration_ms, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens FROM request_logs WHERE ts >= ? ORDER BY ts`, since)
 	if err != nil {
 		return stats, err
 	}
@@ -394,6 +430,7 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 	stats.Buckets = make([]Bucket, count)
 	for i := range stats.Buckets {
 		stats.Buckets[i].TS = first + int64(i)*size
+		stats.Buckets[i].Tools = map[string]int{}
 	}
 	tools := map[string]*ToolStats{}
 	toolDurations := map[string][]int64{}
@@ -403,11 +440,12 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 	}
 	callers := map[callerKey]*CallerStats{}
 	callerDurations := map[callerKey][]int64{}
+	callerIPs := map[callerKey]map[string]struct{}{}
 	for rows.Next() {
 		var ts, duration, keyID int64
-		var tool, source, keyName, status string
+		var tool, source, keyName, ip, status string
 		var usage core.Usage
-		if err := rows.Scan(&ts, &tool, &source, &keyID, &keyName, &status, &duration, &usage.InputTokens, &usage.OutputTokens, &usage.CacheReadTokens, &usage.CacheWriteTokens); err != nil {
+		if err := rows.Scan(&ts, &tool, &source, &keyID, &keyName, &ip, &status, &duration, &usage.InputTokens, &usage.OutputTokens, &usage.CacheReadTokens, &usage.CacheWriteTokens); err != nil {
 			return stats, err
 		}
 		t := tools[tool]
@@ -427,8 +465,15 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 		c.APIKeyName = keyName
 		c.Usage = c.Usage.Add(usage)
 		callerDurations[who] = append(callerDurations[who], duration)
+		if ip != "" {
+			if callerIPs[who] == nil {
+				callerIPs[who] = map[string]struct{}{}
+			}
+			callerIPs[who][ip] = struct{}{}
+		}
 		b := &stats.Buckets[min(count-1, max(0, int((ts-first)/size)))]
 		b.Calls++
+		b.Tools[tool]++
 		if status != StatusOK {
 			t.Errors++
 			c.Errors++
@@ -450,6 +495,7 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 		d := callerDurations[who]
 		slices.Sort(d)
 		c.P50Ms, c.P95Ms = percentile(d, 0.5), percentile(d, 0.95)
+		c.IPs = len(callerIPs[who])
 		stats.Callers = append(stats.Callers, *c)
 	}
 	slices.SortFunc(stats.Callers, func(a, b CallerStats) int {
@@ -460,8 +506,9 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 	})
 
 	attempts, err := s.db.QueryContext(ctx, `
-		SELECT json_extract(a.value, '$.kind'), json_extract(a.value, '$.provider'),
-		       json_extract(a.value, '$.status'), json_extract(a.value, '$.duration_ms')
+		SELECT ts, json_extract(a.value, '$.kind'), json_extract(a.value, '$.provider'),
+		       json_extract(a.value, '$.status'), json_extract(a.value, '$.duration_ms'),
+		       json_extract(a.value, '$.http_status'), json_extract(a.value, '$.error')
 		FROM request_logs, json_each(request_logs.attempts) a
 		WHERE ts >= ?`, since)
 	if err != nil {
@@ -470,11 +517,29 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 	defer attempts.Close()
 	providers := map[[2]string]*ProviderStats{}
 	providerDurations := map[[2]string][]int64{}
+	type errorKey struct {
+		kind, provider string
+		status         int64
+	}
+	failures := map[errorKey]*ErrorStats{}
 	for attempts.Next() {
-		var kind, provider, status sql.NullString
-		var duration sql.NullInt64
-		if err := attempts.Scan(&kind, &provider, &status, &duration); err != nil {
+		var ts int64
+		var kind, provider, status, message sql.NullString
+		var duration, httpStatus sql.NullInt64
+		if err := attempts.Scan(&ts, &kind, &provider, &status, &duration, &httpStatus, &message); err != nil {
 			return stats, err
+		}
+		if status.String == "error" {
+			key := errorKey{kind.String, provider.String, httpStatus.Int64}
+			f := failures[key]
+			if f == nil {
+				f = &ErrorStats{Kind: kind.String, Provider: provider.String, HTTPStatus: int(httpStatus.Int64)}
+				failures[key] = f
+			}
+			f.Count++
+			if ts >= f.LastTS {
+				f.LastTS, f.Sample = ts, truncateText(message.String, 200)
+			}
 		}
 		// These are notes about a provider, not calls to it.
 		if status.String == "cached" || status.String == "skipped" || status.String == "limited" {
@@ -510,7 +575,36 @@ func (s *Store) Stats(ctx context.Context, window, bucket time.Duration) (Stats,
 		if c := strings.Compare(a.Kind, b.Kind); c != 0 {
 			return c
 		}
-		return b.Calls - a.Calls
+		if c := b.Calls - a.Calls; c != 0 {
+			return c
+		}
+		return strings.Compare(a.Provider, b.Provider)
 	})
+	for _, f := range failures {
+		stats.Errors = append(stats.Errors, *f)
+	}
+	slices.SortFunc(stats.Errors, func(a, b ErrorStats) int {
+		if c := b.Count - a.Count; c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.LastTS, a.LastTS); c != 0 {
+			return c
+		}
+		// failures is a map: without a final key, equal rows swap places between refreshes.
+		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(a.Provider, b.Provider), cmp.Compare(a.HTTPStatus, b.HTTPStatus))
+	})
+	stats.Errors = stats.Errors[:min(len(stats.Errors), topErrors)]
 	return stats, nil
+}
+
+// truncateText cuts s to at most limit bytes on a character boundary.
+func truncateText(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit
+	for cut > 0 && s[cut]&0xC0 == 0x80 {
+		cut--
+	}
+	return s[:cut] + "…"
 }

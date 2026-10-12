@@ -11,14 +11,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/netip"
 	"strings"
 	"time"
 
 	"golang.org/x/crypto/argon2"
 
+	"github.com/fl0w1nd/seekmux/internal/app"
 	"github.com/fl0w1nd/seekmux/internal/config"
 	"github.com/fl0w1nd/seekmux/internal/store"
 )
@@ -136,33 +135,9 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// clientAddr is the address to hold a request against. Behind a reverse proxy
-// every connection comes from the proxy, so when the peer is on a loopback or
-// private network the last X-Forwarded-For entry, the one the proxy itself
-// added, is used; from a public peer the header would be the client's word.
-func clientAddr(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	peer, err := netip.ParseAddr(host)
-	if err != nil || !(peer.IsLoopback() || peer.IsPrivate()) {
-		return host
-	}
-	forwarded := r.Header.Values("X-Forwarded-For")
-	if len(forwarded) == 0 {
-		return host
-	}
-	parts := strings.Split(forwarded[len(forwarded)-1], ",")
-	if addr, err := netip.ParseAddr(strings.TrimSpace(parts[len(parts)-1])); err == nil {
-		return addr.String()
-	}
-	return host
-}
-
 // throttle slows password guessing: ten attempts a minute per client address.
 func (s *Server) throttle(w http.ResponseWriter, r *http.Request) bool {
-	ok, wait := s.app.Limits.Rate.TryAcquire("login:"+clientAddr(r), config.RateLimit{Requests: 10, Window: time.Minute})
+	ok, wait := s.app.Limits.Rate.TryAcquire("login:"+app.ClientAddr(r), config.RateLimit{Requests: 10, Window: time.Minute})
 	if !ok {
 		w.Header().Set("Retry-After", fmt.Sprint(int(wait.Seconds())+1))
 		writeError(w, http.StatusTooManyRequests, errors.New("too many attempts, try again in a minute"))

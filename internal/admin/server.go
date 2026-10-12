@@ -325,9 +325,11 @@ func (s *Server) handleListLogs(w http.ResponseWriter, r *http.Request) {
 	before, _ := strconv.ParseInt(q.Get("before"), 10, 64)
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	key, _ := strconv.ParseInt(q.Get("key"), 10, 64)
+	since, _ := strconv.ParseInt(q.Get("since"), 10, 64)
+	until, _ := strconv.ParseInt(q.Get("until"), 10, 64)
 	entries, err := s.app.Store.ListLogs(r.Context(), store.LogFilter{
 		Tool: q.Get("tool"), Status: q.Get("status"), Provider: q.Get("provider"), Source: q.Get("source"), APIKey: key,
-		Query: strings.TrimSpace(q.Get("q")), Fallback: q.Get("fallback") == "1", Before: before, Limit: limit,
+		Query: strings.TrimSpace(q.Get("q")), Fallback: q.Get("fallback") == "1", Since: since, Until: until, Before: before, Limit: limit,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -587,7 +589,7 @@ func (s *Server) handlePlaySearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	trace := core.NewTrace()
-	results, err := s.app.Search(core.WithTrace(r.Context(), trace), webui, body.Args, app.Override{Route: body.Route})
+	results, err := s.app.Search(core.WithTrace(r.Context(), trace), webui.From(r), body.Args, app.Override{Route: body.Route})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -611,7 +613,7 @@ func (s *Server) handlePlayDevSearch(w http.ResponseWriter, r *http.Request) {
 		o.Pin = body.Engine
 	}
 	trace := core.NewTrace()
-	result, err := s.app.DevSearch(core.WithTrace(r.Context(), trace), webui, body.DevArgs, o)
+	result, err := s.app.DevSearch(core.WithTrace(r.Context(), trace), webui.From(r), body.DevArgs, o)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -632,7 +634,7 @@ func (s *Server) handlePlayFetch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	trace := core.NewTrace()
-	result, err := s.app.Fetch(core.WithTrace(r.Context(), trace), webui, body.Args, app.Override{ExtractModel: body.Model, Route: body.Route, NoCache: body.NoCache})
+	result, err := s.app.Fetch(core.WithTrace(r.Context(), trace), webui.From(r), body.Args, app.Override{ExtractModel: body.Model, Route: body.Route, NoCache: body.NoCache})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -646,7 +648,7 @@ func (s *Server) handlePlayResearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	started := time.Now()
-	result, err := s.app.Research(r.Context(), webui, research.Request{Question: body.Question}, body.override(), nil)
+	result, err := s.app.Research(r.Context(), webui.From(r), research.Request{Question: body.Question}, body.override(), nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -672,7 +674,7 @@ func (s *Server) handleStartTask(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &body) {
 		return
 	}
-	id, err := s.app.StartResearch(r.Context(), webui, research.Request{Question: body.Question}, body.override())
+	id, err := s.app.StartResearch(r.Context(), webui.From(r), research.Request{Question: body.Question}, body.override())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

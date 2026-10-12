@@ -493,7 +493,7 @@ export function Meter({ used, limit, tone = "signal" }: { used: number; limit: n
   }
   return (
     <span className="inline-block h-1.5 w-24 overflow-hidden rounded-full bg-line" role="meter" aria-valuenow={used} aria-valuemax={limit}>
-      <span className={cx("block h-full rounded-full", color)} style={{ width: `${Math.min(100, (used / limit) * 100)}%` }} />
+      <span className={cx("block h-full rounded-full transition-[width] duration-500 ease-settle", color)} style={{ width: `${Math.min(100, (used / limit) * 100)}%` }} />
     </span>
   );
 }

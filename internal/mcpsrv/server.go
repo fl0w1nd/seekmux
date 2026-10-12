@@ -127,7 +127,7 @@ const researchDescription = "Hand a question to a research agent that searches a
 // newServer returns the server for one request r, with the tools its key may call.
 func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *mcp.Server {
 	snap := a.Snapshot()
-	caller := app.Caller{Source: app.SourceMCP, KeyID: key.ID, KeyName: key.Name}
+	caller := app.Caller{Source: app.SourceMCP, KeyID: key.ID, KeyName: key.Name}.From(r)
 	// The icons are the console's own, served without a login next to /mcp.
 	base := snap.PublicURL(r)
 	server := mcp.NewServer(&mcp.Implementation{

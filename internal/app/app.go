@@ -44,6 +44,16 @@ type Caller struct {
 	Source  string
 	KeyID   int64
 	KeyName string
+	// IP and UserAgent describe the client the call came from.
+	IP        string
+	UserAgent string
+}
+
+// From returns c with the client address and User-Agent of r.
+func (c Caller) From(r *http.Request) Caller {
+	c.IP = ClientAddr(r)
+	c.UserAgent = r.UserAgent()
+	return c
 }
 
 const (
@@ -302,6 +312,7 @@ func (a *App) logCall(s *Snapshot, caller Caller, tool string, trace *core.Trace
 	entry.Tool = tool
 	entry.Source = caller.Source
 	entry.APIKeyID, entry.APIKeyName = caller.KeyID, caller.KeyName
+	entry.ClientIP, entry.UserAgent = caller.IP, truncate(caller.UserAgent, 512)
 	entry.DurationMs = time.Since(trace.Start).Milliseconds()
 	entry.Usage = trace.Usage()
 	entry.Attempts, _ = json.Marshal(trace.Attempts())
@@ -431,6 +442,11 @@ func ResearchAvailable(s *Snapshot) bool {
 
 // Research runs the research agent to completion. progress may be nil.
 func (a *App) Research(ctx context.Context, caller Caller, req research.Request, o Override, progress func(research.Event)) (research.Result, error) {
+	return a.research(ctx, caller, req, o, "", progress)
+}
+
+// research runs as Research does; the log entry names the task of the run, if it has one.
+func (a *App) research(ctx context.Context, caller Caller, req research.Request, o Override, task string, progress func(research.Event)) (research.Result, error) {
 	s, err := a.Snapshot().with(config.ToolResearch, o)
 	if err != nil {
 		return research.Result{}, err
@@ -484,7 +500,7 @@ func (a *App) Research(ctx context.Context, caller Caller, req research.Request,
 		result, err = research.Run(ctx, s.Config.Research, model.Limited(a.Limits), tools, req, report)
 	}
 
-	entry := store.LogEntry{Status: store.StatusOK, Summary: req.Question, Provider: s.Config.Research.Model}
+	entry := store.LogEntry{Status: store.StatusOK, Summary: req.Question, Provider: s.Config.Research.Model, TaskID: task}
 	if err != nil {
 		entry.Status, entry.Error = store.StatusError, err.Error()
 	}
@@ -579,7 +595,7 @@ func (a *App) runTask(ctx context.Context, id string, caller Caller, req researc
 	a.running.Store(id, cancel)
 	defer a.running.Delete(id)
 	defer cancel(nil)
-	result, err := a.Research(run, caller, req, o, func(event research.Event) {
+	result, err := a.research(run, caller, req, o, id, func(event research.Event) {
 		if event.Kind != "" {
 			a.Store.AddTaskStep(a.background, id, store.TaskStep{Step: event.Step, Kind: event.Kind, Text: event.Text, Line: event.Line()})
 		}

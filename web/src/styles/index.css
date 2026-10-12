@@ -161,6 +161,11 @@
   --animate-spin: spin 0.8s linear infinite;
   --animate-fold-down: fold-down 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --animate-fold-up: fold-up 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* A row that just arrived in a live list: it fades in tinted and settles. */
+  --animate-arrive: arrive 1200ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Bars drawn for the first time grow from their baseline. */
+  --animate-grow-x: grow-x 480ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+  --animate-grow-y: grow-y 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 
   /* A quantity catching up with its new value: meters, counters. */
   --ease-settle: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -186,6 +191,26 @@
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+@keyframes arrive {
+  from {
+    opacity: 0;
+    background-color: color-mix(in oklch, var(--signal) 22%, transparent);
+  }
+  25% {
+    opacity: 1;
+    background-color: color-mix(in oklch, var(--signal) 18%, transparent);
+  }
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes grow-y {
+  from {
+    transform: scaleY(0);
   }
 }
 /* A region that folds open; Radix measures the height. */

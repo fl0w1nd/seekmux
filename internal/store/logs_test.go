@@ -71,3 +71,122 @@ func TestLogsAreTalliedAndFilteredByCaller(t *testing.T) {
 		t.Fatalf("entries = %+v, err = %v", entries, err)
 	}
 }
+
+func TestLogsKeepTheClientAndCanBeNarrowedInTime(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	now := time.Now().UnixMilli()
+	w := st.NewLogWriter()
+	for _, e := range []LogEntry{
+		{TS: now - 20*60_000, Tool: "search", Source: "mcp", APIKeyID: 1, ClientIP: "203.0.113.7", UserAgent: "claude-code/2.1", Status: StatusOK},
+		{TS: now - 10*60_000, Tool: "fetch", Source: "mcp", APIKeyID: 1, ClientIP: "198.51.100.2", UserAgent: "codex/0.4", Status: StatusOK},
+		{TS: now, Tool: "research", Source: "mcp", APIKeyID: 1, ClientIP: "203.0.113.7", TaskID: "rs_x", Status: StatusOK},
+	} {
+		w.Write(e)
+	}
+	w.Close()
+
+	byAgent, err := st.ListLogs(ctx, LogFilter{Query: "codex"})
+	if err != nil || len(byAgent) != 1 || byAgent[0].ClientIP != "198.51.100.2" || byAgent[0].UserAgent != "codex/0.4" {
+		t.Fatalf("a search matches the user agent, got %+v, err %v", byAgent, err)
+	}
+	byIP, _ := st.ListLogs(ctx, LogFilter{Query: "203.0.113.7"})
+	if len(byIP) != 2 {
+		t.Fatalf("a search matches the client address, got %+v", byIP)
+	}
+	window, _ := st.ListLogs(ctx, LogFilter{Since: now - 15*60_000, Until: now})
+	if len(window) != 1 || window[0].Tool != "fetch" {
+		t.Fatalf("since is inclusive and until exclusive, got %+v", window)
+	}
+	research, ok, err := st.GetLog(ctx, byIP[0].ID)
+	if err != nil || !ok || research.TaskID != "rs_x" {
+		t.Fatalf("the research entry names its task, got %+v, err %v", research, err)
+	}
+
+	stats, err := st.Stats(ctx, time.Hour, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stats.Callers) != 1 || stats.Callers[0].IPs != 2 {
+		t.Fatalf("callers = %+v", stats.Callers)
+	}
+	tools := map[string]int{}
+	for _, b := range stats.Buckets {
+		for tool, n := range b.Tools {
+			tools[tool] += n
+		}
+	}
+	if !reflect.DeepEqual(tools, map[string]int{"search": 1, "fetch": 1, "research": 1}) {
+		t.Fatalf("buckets count calls per tool, got %v", tools)
+	}
+}
+
+func TestStatsGroupTheFailedAttempts(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	now := time.Now().UnixMilli()
+	w := st.NewLogWriter()
+	for i, attempts := range []string{
+		`[{"kind":"search","provider":"brave","status":"error","http_status":429,"error":"first"},{"kind":"search","provider":"exa","status":"ok"}]`,
+		`[{"kind":"search","provider":"brave","status":"error","http_status":429,"error":"latest"}]`,
+		`[{"kind":"search","provider":"brave","status":"error","http_status":500,"error":"boom"},{"kind":"search","provider":"exa","status":"skipped"}]`,
+	} {
+		w.Write(LogEntry{TS: now + int64(i), Tool: "search", Source: "mcp", Status: StatusOK, Attempts: []byte(attempts)})
+	}
+	w.Close()
+
+	stats, err := st.Stats(ctx, time.Hour, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ErrorStats{
+		{Kind: "search", Provider: "brave", HTTPStatus: 429, Count: 2, Sample: "latest", LastTS: now + 1},
+		{Kind: "search", Provider: "brave", HTTPStatus: 500, Count: 1, Sample: "boom", LastTS: now + 2},
+	}
+	if !reflect.DeepEqual(stats.Errors, want) {
+		t.Fatalf("errors = %+v", stats.Errors)
+	}
+}
+
+func TestStatsOrderTiesByName(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	now := time.Now().UnixMilli()
+	w := st.NewLogWriter()
+	w.Write(LogEntry{TS: now, Tool: "search", Source: "mcp", Status: StatusError, Attempts: []byte(
+		`[{"kind":"search","provider":"tavily","status":"error","http_status":500},{"kind":"search","provider":"exa","status":"error","http_status":429},{"kind":"search","provider":"brave","status":"error","http_status":500}]`)})
+	w.Close()
+
+	// The groups are built in a map, so a tie must not decide the order.
+	for range 20 {
+		stats, err := st.Stats(context.Background(), time.Hour, 5*time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var errs, provs []string
+		for _, e := range stats.Errors {
+			errs = append(errs, e.Provider)
+		}
+		for _, p := range stats.Providers {
+			provs = append(provs, p.Provider)
+		}
+		want := []string{"brave", "exa", "tavily"}
+		if !reflect.DeepEqual(errs, want) || !reflect.DeepEqual(provs, want) {
+			t.Fatalf("errors %v, providers %v; want %v", errs, provs, want)
+		}
+	}
+}

@@ -142,6 +142,35 @@ func TestOpenAddsTaskHistoryToAnOldDatabase(t *testing.T) {
 	}
 }
 
+func TestOpenAddsTheClientToOldLogs(t *testing.T) {
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "seekmux.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE TABLE request_logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, tool TEXT NOT NULL, source TEXT NOT NULL,
+		api_key_id INTEGER NOT NULL DEFAULT 0, api_key_name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+		duration_ms INTEGER NOT NULL, provider TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',
+		request TEXT NOT NULL DEFAULT '', response TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
+		attempts TEXT NOT NULL DEFAULT '[]', input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0);
+		INSERT INTO request_logs (ts, tool, source, status, duration_ms, summary) VALUES (1, 'search', 'mcp', 'ok', 3, 'q')`)
+	db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	entries, err := s.ListLogs(context.Background(), LogFilter{})
+	if err != nil || len(entries) != 1 || entries[0].Summary != "q" || entries[0].ClientIP != "" {
+		t.Fatalf("an old entry reads as having no client, got %+v, err %v", entries, err)
+	}
+}
+
 func TestTasksAreKeptAsLongAsTheLogs(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

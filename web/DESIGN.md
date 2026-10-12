@@ -55,7 +55,10 @@ uppercase, tracked — the micro label on panels, columns and lanes).
 that folds open (`animate-fold-down` / `animate-fold-up`) and a quantity that
 moves to a new value (a gauge bar, a number followed with `useTween` from
 `lib/motion.ts`) use `ease-settle`, which arrives fast and comes to rest
-without overshoot. Motion only ever shows a change of state; nothing loops
+without overshoot. Bars drawn for the first time grow from their baseline
+(`animate-grow-x` / `animate-grow-y`), and a row that arrives in a live list
+fades in tinted with the signal color once (`animate-arrive`). Motion only
+ever shows a change of state; nothing loops
 except the dot of something that is live. All of it is disabled under
 `prefers-reduced-motion`.
 
@@ -88,7 +91,8 @@ except the dot of something that is live. All of it is disabled under
   (the Markdown styles at reading size, with a link written out as its own
   address drawn as a short citation marker), its contents alongside, and the
   pages the agent read as a numbered grid.
-- `components/` — `RouteList` (numbered priority lanes), `ModelRefEditor`,
+- `components/` — `ProviderName` (a provider's logo and name, or a model's
+  id; use it wherever a provider is named), `RouteList` (numbered priority lanes), `ModelRefEditor`,
   `ProviderPicker` (auto or one provider, with its health), `ModelOverride`
   (the assigned models or another one, for a single call),
   `Waterfall` (the upstream calls of one request on a shared time axis).

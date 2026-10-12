@@ -215,6 +215,10 @@ export interface LogEntry {
   source: "mcp" | "webui";
   api_key_id?: number;
   api_key_name?: string;
+  client_ip?: string;
+  user_agent?: string;
+  /** The research task a research call ran as; its report has a page. */
+  task_id?: string;
   status: "ok" | "error";
   duration_ms: number;
   provider?: string;
@@ -260,8 +264,21 @@ export interface CallerStats {
   errors: number;
   p50_ms: number;
   p95_ms: number;
+  /** The number of client addresses the calls came from. */
+  ips: number;
   input_tokens: number;
   output_tokens: number;
+}
+
+/** Failed upstream attempts of one provider and kind that ended with the same HTTP status. */
+export interface ErrorStats {
+  kind: string;
+  provider: string;
+  http_status?: number;
+  count: number;
+  /** The error of the latest of them. */
+  sample: string;
+  last_ts: number;
 }
 
 /** How a provider's attempt at a page ended; `missing` is the site saying the page does not exist. */
@@ -328,7 +345,8 @@ export interface Overview {
     tools: ToolStats[];
     providers: ProviderStats[];
     callers: CallerStats[];
-    buckets: { ts: number; calls: number; errors: number }[];
+    buckets: { ts: number; calls: number; errors: number; tools: Partial<Record<Tool, number>> }[];
+    errors: ErrorStats[];
     input_tokens: number;
     output_tokens: number;
     cache_read_tokens?: number;

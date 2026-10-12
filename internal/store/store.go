@@ -58,7 +58,10 @@ CREATE TABLE IF NOT EXISTS request_logs (
 	input_tokens  INTEGER NOT NULL DEFAULT 0,
 	output_tokens INTEGER NOT NULL DEFAULT 0,
 	cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
-	cache_write_tokens INTEGER NOT NULL DEFAULT 0
+	cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+	client_ip     TEXT NOT NULL DEFAULT '',
+	user_agent    TEXT NOT NULL DEFAULT '',
+	task_id       TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS request_logs_ts ON request_logs (ts);
 CREATE TABLE IF NOT EXISTS research_tasks (
@@ -93,6 +96,9 @@ CREATE TABLE IF NOT EXISTS domain_stats (
 var added = []struct{ table, column, definition string }{
 	{"request_logs", "cache_read_tokens", "INTEGER NOT NULL DEFAULT 0"},
 	{"request_logs", "cache_write_tokens", "INTEGER NOT NULL DEFAULT 0"},
+	{"request_logs", "client_ip", "TEXT NOT NULL DEFAULT ''"},
+	{"request_logs", "user_agent", "TEXT NOT NULL DEFAULT ''"},
+	{"request_logs", "task_id", "TEXT NOT NULL DEFAULT ''"},
 	{"research_tasks", "steps", "TEXT NOT NULL DEFAULT '[]'"},
 	{"research_tasks", "stats", "TEXT NOT NULL DEFAULT ''"},
 	{"research_tasks", "budget", "TEXT NOT NULL DEFAULT ''"},
