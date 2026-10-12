@@ -26,8 +26,9 @@ Around the tools:
 - **Failover** between providers, and along a chain of models for extraction.
 - **Service routing**: rules send the pages of a site to the providers that
   can read them. Built-in rules, off until you switch them on, send YouTube
-  videos to Tavily, which returns the transcript, X (Twitter) posts to Tavily
-  or Parallel, and Reddit threads to Parallel. Statistics per domain show
+  videos to Tavily, which returns the transcript, X (Twitter) and LinkedIn to
+  Tavily or Parallel, Reddit, Instagram, Threads, Facebook and TikTok to
+  Parallel, and arXiv to the providers that return a paper whole. Statistics per domain show
   where each provider is turned away, which is where the next rule belongs.
 - **Circuit breaker**: something that keeps failing is skipped for a while.
   A rejected API key or exhausted credits switch a provider off until you

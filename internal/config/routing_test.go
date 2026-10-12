@@ -14,16 +14,20 @@ func TestYouTubeIsRoutedToTheProvidersThatReadItOnceSwitchedOn(t *testing.T) {
 		t.Fatal(err)
 	}
 	rules := c.RoutingRules()
-	if len(rules) != 3 || rules[0].ID != "youtube" || rules[1].ID != "twitter" || rules[2].ID != "reddit" {
-		t.Fatalf("rules = %+v", rules)
+	var ids []string
+	for _, rule := range rules {
+		ids = append(ids, rule.ID)
+	}
+	if want := []string{"youtube", "twitter", "linkedin", "reddit", "instagram", "threads", "facebook", "tiktok", "arxiv"}; !slices.Equal(ids, want) {
+		t.Fatalf("rules = %v, want %v", ids, want)
 	}
 	for _, rule := range rules {
 		if rule.Enabled {
 			t.Fatalf("%s is on before anyone switched it on", rule.ID)
 		}
 	}
-	if !slices.Equal(rules[1].Providers, []string{"tavily", "parallel"}) || !slices.Equal(rules[2].Providers, []string{"parallel"}) {
-		t.Fatalf("providers = %v, %v", rules[1].Providers, rules[2].Providers)
+	if !slices.Equal(rules[1].Providers, []string{"tavily", "parallel"}) || !slices.Equal(rules[3].Providers, []string{"parallel"}) {
+		t.Fatalf("providers = %v, %v", rules[1].Providers, rules[3].Providers)
 	}
 	if _, ok := c.RuleFor("https://youtu.be/aircAruvnKk"); ok {
 		t.Fatal("a built-in rule must not match until it is switched on")
@@ -67,6 +71,74 @@ func TestTwitterAndRedditAreRoutedOnceSwitchedOn(t *testing.T) {
 		if got := rule.ID; (ok && got != want) || (!ok && want != "") {
 			t.Errorf("%s: rule = %q, want %q", url, got, want)
 		}
+	}
+}
+
+func TestSocialSitesAreRoutedOnceSwitchedOn(t *testing.T) {
+	c := Default()
+	c.Routing.Builtin = map[string]BuiltinRule{}
+	for _, id := range []string{"instagram", "threads", "facebook", "tiktok", "linkedin"} {
+		c.Routing.Builtin[id] = BuiltinRule{Enabled: true}
+	}
+	for url, want := range map[string]string{
+		"https://www.instagram.com/nasa/p/abc":        "instagram",
+		"https://instagr.am/p/abc":                    "instagram",
+		"https://www.threads.com/@zuck/post/abc":      "threads",
+		"https://www.threads.net/@zuck":               "threads",
+		"https://web.facebook.com/NASA/posts/abc":     "facebook",
+		"https://fb.watch/abc":                        "facebook",
+		"https://vm.tiktok.com/abc":                   "tiktok",
+		"https://www.tiktok.com/@nasa/video/1":        "tiktok",
+		"https://www.linkedin.com/posts/someone_abc":  "linkedin",
+		"https://lnkd.in/abc":                         "linkedin",
+		"https://notlinkedin.com/in/someone":          "",
+		"https://example.com/instagram.com/nasa":      "",
+		"https://arxiv.org/abs/1706.03762":            "",
+		"https://www.youtube.com/watch?v=aircAruvnKk": "",
+	} {
+		rule, ok := c.RuleFor(url)
+		if got := rule.ID; (ok && got != want) || (!ok && want != "") {
+			t.Errorf("%s: rule = %q, want %q", url, got, want)
+		}
+	}
+	rule, _ := c.RuleFor("https://www.linkedin.com/in/someone")
+	if !slices.Equal(rule.Providers, []string{"tavily", "parallel"}) {
+		t.Errorf("linkedin providers = %v", rule.Providers)
+	}
+	rule, _ = c.RuleFor("https://www.tiktok.com/@nasa")
+	if !slices.Equal(rule.Providers, []string{"parallel"}) {
+		t.Errorf("tiktok providers = %v", rule.Providers)
+	}
+}
+
+func TestArxivIsABuiltinRuleNoCapabilityStandsBehind(t *testing.T) {
+	for _, info := range Catalog {
+		for _, capability := range info.Capabilities {
+			if capability.ID == "arxiv" {
+				t.Fatalf("%s declares arxiv as a capability", info.ID)
+			}
+		}
+	}
+	c := Default()
+	if _, ok := c.RuleFor("https://arxiv.org/abs/1706.03762"); ok {
+		t.Fatal("a built-in rule must not match until it is switched on")
+	}
+	c.Routing.Builtin = map[string]BuiltinRule{"arxiv": {Enabled: true}}
+	c.Normalize()
+	rule, ok := c.RuleFor("https://arxiv.org/html/2501.12948v1")
+	if !ok || !rule.Builtin || !slices.Equal(rule.Providers, []string{"exa", "firecrawl", "parallel"}) {
+		t.Fatalf("rule = %+v, matched = %v", rule, ok)
+	}
+
+	// The order is the document's to change, and the catalog's list stays as it was.
+	c.Routing.Builtin = map[string]BuiltinRule{"arxiv": {Enabled: true, Providers: []string{"parallel", "exa"}}}
+	c.Normalize()
+	rule, _ = c.RuleFor("https://export.arxiv.org/pdf/1706.03762")
+	if !slices.Equal(rule.Providers, []string{"parallel", "exa"}) {
+		t.Errorf("providers = %v", rule.Providers)
+	}
+	if !slices.Equal(siteRules[0].Providers, []string{"exa", "firecrawl", "parallel"}) {
+		t.Errorf("the catalog's rule changed: %v", siteRules[0].Providers)
 	}
 }
 

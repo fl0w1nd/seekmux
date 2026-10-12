@@ -34,6 +34,40 @@ var capReddit = Capability{
 	Match: []string{"reddit.com", "redd.it"},
 }
 
+var capInstagram = Capability{
+	ID: "instagram", Name: "Instagram",
+	Match: []string{"instagram.com", "instagr.am"},
+}
+
+var capThreads = Capability{
+	ID: "threads", Name: "Threads",
+	Match: []string{"threads.com", "threads.net"},
+}
+
+var capFacebook = Capability{
+	ID: "facebook", Name: "Facebook",
+	Match: []string{"facebook.com", "fb.watch"},
+}
+
+var capTikTok = Capability{
+	ID: "tiktok", Name: "TikTok",
+	Match: []string{"tiktok.com"},
+}
+
+var capLinkedIn = Capability{
+	ID: "linkedin", Name: "LinkedIn",
+	Match: []string{"linkedin.com", "lnkd.in"},
+}
+
+// siteRules are the built-in rules that no capability stands behind: every
+// provider reads the site as an ordinary page, and the rule only keeps it to
+// the ones that return it whole.
+var siteRules = []Rule{
+	// Jina returns a figure caption for a paper's HTML version, Tavily drops
+	// the abstract and cuts the listings short, AnySearch reads no PDF.
+	{ID: "arxiv", Name: "arXiv", Match: []string{"arxiv.org"}, Providers: []string{"exa", "firecrawl", "parallel"}},
+}
+
 // Rule sends the pages it matches to its own providers in place of the fetch
 // routes: only those are tried, in this order. A provider serves a rule
 // whenever it has its credentials, whether or not its fetch route is enabled,
@@ -46,8 +80,8 @@ type Rule struct {
 	// its subdomains as well.
 	Match     []string `json:"match"`
 	Providers []string `json:"providers"`
-	// Builtin marks a rule that comes from a provider capability. It is never
-	// set on a stored rule.
+	// Builtin marks a rule that comes from the catalog. It is never set on a
+	// stored rule.
 	Builtin bool `json:"builtin,omitempty"`
 }
 
@@ -70,7 +104,7 @@ type Routing struct {
 }
 
 // BuiltinRules derives a rule from every capability in the catalog, with the
-// providers that declare it in catalog order.
+// providers that declare it in catalog order, and adds the site rules.
 func BuiltinRules() []Rule {
 	var rules []Rule
 	for _, info := range Catalog {
@@ -82,6 +116,10 @@ func BuiltinRules() []Rule {
 			}
 			rules[i].Providers = append(rules[i].Providers, info.ID)
 		}
+	}
+	for _, rule := range siteRules {
+		rule.Builtin, rule.Providers = true, slices.Clone(rule.Providers)
+		rules = append(rules, rule)
 	}
 	return rules
 }

@@ -169,6 +169,9 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
   const [chosen, setChosen] = useState(rule.providers);
 
   const builtin = meta.rules.find((r) => r.id === rule.id);
+  // The providers that declare the rule as a capability; none for a rule that
+  // is only a choice among providers that all read the site.
+  const capable = builtin ? meta.catalog.filter((info) => info.capabilities?.some((c) => c.id === builtin.id)).map((info) => info.id) : [];
   const stored = config.routing.rules.findIndex((r) => r.id === rule.id);
   const fetchers = meta.catalog.filter((info) => info.tools.includes("fetch")).map((info) => info.id);
   const lanes = [...chosen, ...fetchers.filter((id) => !chosen.includes(id))];
@@ -266,7 +269,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
                   <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                     <BrandIcon id={id} className="size-4" />
                     {provider(id).name}
-                    {builtin?.providers.includes(id) && (
+                    {builtin && capable.includes(id) && (
                       <Badge tone="info">
                         <BrandIcon id={builtin.id} className="size-3" />
                         {builtin.name}
@@ -289,7 +292,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
           </ol>
           <span className="text-xs text-ink-3">只在选中的提供商中按顺序尝试，全部失败即报错，不会退回其它提供商。</span>
         </div>
-        {builtin && chosen.some((id) => !builtin.providers.includes(id)) && (
+        {builtin && capable.length > 0 && chosen.some((id) => !capable.includes(id)) && (
           <Notice tone="warn">未标注「{builtin.name}」的提供商读不出这类页面的专有内容（例如视频字幕），由它们返回的结果会附带一条提示。</Notice>
         )}
       </div>
