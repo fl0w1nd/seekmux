@@ -49,7 +49,7 @@ jobs:
           node-version: lts/*
 
       - name: Install pnpm
-        run: npm install -g pnpm@10.33.0
+        run: npm install -g pnpm@10.34.9
 
       - name: Install web dependencies
         run: pnpm --dir web install --frozen-lockfile
@@ -122,7 +122,7 @@ jobs:
           node-version: lts/*
 
       - name: Install pnpm
-        run: npm install -g pnpm@10.33.0
+        run: npm install -g pnpm@10.34.9
 
       - name: Install web dependencies
         run: pnpm --dir web install --frozen-lockfile

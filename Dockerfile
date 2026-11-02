@@ -4,12 +4,12 @@ FROM --platform=$BUILDPLATFORM node:lts-alpine AS web-builder
 
 WORKDIR /build/web
 COPY web/package.json web/pnpm-lock.yaml ./
-RUN npm install -g pnpm@10.33.0 && pnpm install --frozen-lockfile
+RUN npm install -g pnpm@10.34.9 && pnpm install --frozen-lockfile
 
 COPY web ./
 RUN pnpm build
 
-FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS builder
 
 WORKDIR /build
 COPY go.mod go.sum ./
