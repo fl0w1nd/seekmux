@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Braces, ExternalLink, FileText, Flag, MessageSquareText, RotateCcw, Search, SlidersHorizontal, Square, Undo2 } from "lucide-react";
+import { Bot, Braces, ExternalLink, FileText, Flag, History, MessageSquareText, RotateCcw, Search, SlidersHorizontal, Square, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { hasOtherModels, ModelOverride } from "../../components/ModelPicker";
@@ -20,8 +20,8 @@ import { ago, compact, duration, percent } from "../../lib/format";
 import { useNow, useTween } from "../../lib/motion";
 import { Markdown } from "../../ui/markdown";
 import { Popover, useConfirm, useToast } from "../../ui/overlays";
-import { Badge, Button, CodeBlock, CopyButton, cx, Dot, Empty, Notice, NumberInput, Segmented, Spinner, TabList, Tabs, Tooltip, type Tone } from "../../ui/primitives";
-import { bare, Chip, CodeButton, Composer, Examples, Group, host, LocalNotice, LocalTag, onModEnter, OptionGroup, ResetButton, RunButton, Stage, Summary, TabPanel } from "./kit";
+import { Badge, Button, CodeBlock, CopyButton, cx, Dot, Empty, Notice, NumberInput, Panel, Segmented, Spinner, TabList, Tabs, Tooltip, type Tone } from "../../ui/primitives";
+import { Chip, CodeButton, Composer, Examples, Group, host, LocalNotice, LocalTag, onModEnter, OptionGroup, ResetButton, RunButton, Stage, TabPanel } from "./kit";
 
 /** Where the task on show is remembered, so a reload returns to it. */
 const taskKey = "seekmux-play-research-task";
@@ -128,7 +128,7 @@ export function ResearchPlay() {
     void task.refetch();
   };
   /** Takes the question and the settings of a past run back into the composer. */
-  const reuse = (from: ResearchTask) => {
+  const reuse = (from: ResearchTask | ResearchTaskSummary) => {
     setQuestion(from.question);
     const b = from.budget;
     if (!b) return;
@@ -137,125 +137,141 @@ export function ResearchPlay() {
     for (const { key } of limits) if (b[key] !== saved[key]) next[key] = b[key];
     if (b.reading !== saved.reading) next.reading = b.reading;
     setOverride(next);
-    if (Object.keys(next).length > 0) setOpen(true);
   };
 
   return (
-    <>
-      <Stage title="发起研究" description="调用 research 工具：研究 Agent 用本网关的搜索与抓取反复查证，最后写出附带出处的报告。预算在运行中实时跟踪，可只为这一次调整。">
-        {!saved.enabled && (
-          <Notice tone="warn" className="mb-3">
-            深度研究尚未启用。请前往{" "}
-            <Link href="/tools/research" className="text-ink underline underline-offset-2">
-              深度研究
-            </Link>{" "}
-            选择模型并启用。
-          </Notice>
-        )}
-        <Composer
-          open={open}
-          tools={
-            <>
-              <Chip icon={<SlidersHorizontal />} label="预算" aria-pressed={open} changed={changed > 0} onClick={() => setOpen(!open)} />
-              {saved.enabled && hasOtherModels(config, assigned) && (
-                <Popover className="w-84 p-2" trigger={<Chip icon={<Bot />} value={<span className="num">{model || saved.model}</span>} changed={model !== ""} />}>
+    <Stage tool="research" title="深度研究" description="调用 research 工具：研究 Agent 调用网关的搜索与抓取工具多轮查证，最终生成附带引用出处的深度报告。">
+      {!saved.enabled && (
+        <Notice tone="warn">
+          深度研究尚未启用。请前往{" "}
+          <Link href="/tools/research" className="text-ink underline underline-offset-2">
+            深度研究
+          </Link>{" "}
+          选择模型并启用。
+        </Notice>
+      )}
+      <Composer
+        open={open}
+        splitPanel={false}
+        tools={
+          <>
+            <Segmented
+              size="sm"
+              value={budget.reading}
+              onChange={(reading: Research["reading"]) => set("reading", reading)}
+              options={[
+                { value: "raw", label: "读原文" },
+                { value: "extract", label: "读归纳" },
+              ]}
+            />
+            {saved.enabled &&
+              (hasOtherModels(config, assigned) ? (
+                <Popover className="w-84 p-2" trigger={<Chip icon={<Bot />} label="模型" value={<span className="num">{model || saved.model}</span>} changed={model !== ""} />}>
                   <ModelOverride assigned={assigned} value={model} onChange={setModel} />
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pt-2 pb-0.5 text-xs text-ink-3">
                     <LocalTag />
                     研究全程只用这一个模型，不做故障转移。
                   </p>
                 </Popover>
-              )}
-              <Summary onClick={() => setOpen(true)}>{budgetText(budget)}</Summary>
-            </>
-          }
-          actions={
-            <>
-              <CodeButton
-                tool="research"
-                args={{ question: question.trim() }}
-                notices={<LocalNotice items={[model && `模型 ${model}`, changed > 0 && `临时预算（${budgetText(budget)}${override.reading ? `，${override.reading === "raw" ? "读原文" : "读归纳"}` : ""}）`]} />}
-              />
-              {/* One run at a time here; it is stopped from its own header. */}
-              <RunButton label={running ? "研究中" : "开始研究"} loading={start.isPending || running} disabled={!ready || running} onClick={submit} />
-            </>
-          }
-          panel={
-            <>
-              <OptionGroup title="本次预算" local action={changed > 0 && <ResetButton onClick={() => setOverride({})} />}>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-4">
-                  {limits.map((limit) => {
-                    const base = saved[limit.key];
-                    return (
-                      <Group key={limit.key} label={limit.label} hint={limit.hint}>
-                        <div className="flex items-center gap-1">
-                          <NumberInput
-                            className="min-w-0 flex-1"
-                            min={limit.min}
-                            suffix={limit.suffix}
-                            value={budget[limit.key]}
-                            aria-label={limit.label}
-                            onChange={(v) => set(limit.key, Math.min(limit.max, Math.round(v)))}
-                          />
-                          {budget[limit.key] !== base && (
-                            <Tooltip content={`恢复配置值 ${base}`}>
-                              <Button size="sm" variant="ghost" icon={<RotateCcw />} aria-label={`恢复${limit.label}的配置值`} onClick={() => set(limit.key, base)} />
-                            </Tooltip>
-                          )}
-                        </div>
-                      </Group>
-                    );
-                  })}
-                </div>
-                <p className="text-xs text-ink-3">任一项耗尽时，Agent 停止检索并基于现有材料撰写报告。</p>
-              </OptionGroup>
-              <OptionGroup title="内容读取模式" local>
-                <Segmented
-                  stretch
-                  size="sm"
-                  value={budget.reading}
-                  onChange={(reading: Research["reading"]) => set("reading", reading)}
-                  options={[
-                    { value: "raw", label: "原文" },
-                    { value: "extract", label: "归纳" },
-                  ]}
-                />
-                <p className="text-xs text-ink-3">
-                  {budget.reading === "raw"
-                    ? "研究模型直接读取网页原文，长页面分段读取；最接近一手材料，但上下文消耗最大"
-                    : config.fetch.extract.models.length > 0
-                      ? "由提取模型先按研究模型的提问提炼各网页，仅将结果交给研究模型；需要代码或原话时仍可按页读取原文。节省上下文，准确度取决于提取模型"
-                      : "尚未配置提取模型，网页仍按原文返回。"}
-                </p>
-                <p className="mt-auto text-xs text-ink-3">
-                  初始值取自{" "}
-                  <Link href="/tools/research" className="text-ink-2 underline underline-offset-2 hover:text-ink">
-                    深度研究
-                  </Link>{" "}
-                  的配置。这里的改动只随下一次运行发出，不保存，MCP 调用始终按配置运行。
-                </p>
-              </OptionGroup>
-            </>
-          }
-        >
+              ) : (
+                saved.model && (
+                  <span className="inline-flex h-7 items-center gap-1.5 rounded-ctl border border-line bg-surface px-2.5 text-xs text-ink-3">
+                    <Bot className="size-3.5" />
+                    <span className="num text-ink-2">{saved.model}</span>
+                  </span>
+                )
+              ))}
+            <Chip
+              icon={<SlidersHorizontal />}
+              label="预算"
+              value={<span className="num">{budgetText(budget)}</span>}
+              aria-expanded={open}
+              aria-pressed={open}
+              changed={changed > 0}
+              onClick={() => setOpen(!open)}
+              className="max-w-md"
+            />
+          </>
+        }
+        toolbarRight={
+          <CodeButton
+            tool="research"
+            args={{ question: question.trim() }}
+            notices={<LocalNotice items={[model && `模型 ${model}`, changed > 0 && `临时预算（${budgetText(budget)}${override.reading ? `，${override.reading === "raw" ? "读原文" : "读归纳"}` : ""}）`]} />}
+          />
+        }
+        panel={
+          <OptionGroup title="本次运行预算与读取方式" local action={changed > 0 && <ResetButton onClick={() => setOverride({})} />}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {limits.map((limit) => {
+                const base = saved[limit.key];
+                return (
+                  <Group key={limit.key} label={limit.label} hint={limit.hint}>
+                    <div className="flex items-center gap-1">
+                      <NumberInput
+                        className="min-w-0 flex-1"
+                        min={limit.min}
+                        suffix={limit.suffix}
+                        value={budget[limit.key]}
+                        aria-label={limit.label}
+                        onChange={(v) => set(limit.key, Math.min(limit.max, Math.round(v)))}
+                      />
+                      {budget[limit.key] !== base && (
+                        <Tooltip content={`恢复配置值 ${base}`}>
+                          <Button size="sm" variant="ghost" icon={<RotateCcw />} aria-label={`恢复${limit.label}的配置值`} onClick={() => set(limit.key, base)} />
+                        </Tooltip>
+                      )}
+                    </div>
+                  </Group>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-xs text-ink-3">
+              <span>
+                {budget.reading === "raw"
+                  ? "读原文：研究模型直接读取网页 Markdown 原文，最接近一手材料，上下文消耗较大。"
+                  : config.fetch.extract.models.length > 0
+                    ? "读归纳：由提取模型先按问题提炼各网页，仅将提炼结果交给研究模型，显著节省上下文。"
+                    : "尚未配置提取模型，网页仍按原文返回。"}
+              </span>
+              <span>
+                永久修改请前往{" "}
+                <Link href="/tools/research" className="text-ink-2 underline underline-offset-2 hover:text-ink">
+                  深度研究设置
+                </Link>
+              </span>
+            </div>
+          </OptionGroup>
+        }
+        footer={
+          saved.enabled && (
+            <Examples
+              mono={false}
+              items={["对比 Brave、Exa、Tavily 搜索 API 的定价与限流", "SQLite WAL 模式在高并发写入下的取舍"]}
+              current={question}
+              onPick={setQuestion}
+              onClear={() => setQuestion("")}
+            />
+          )
+        }
+        actions={<RunButton label={running ? "研究中" : "开始研究"} loading={start.isPending || running} disabled={!ready || running} onClick={submit} />}
+      >
+        <div className="flex items-start px-3.5 py-2.5">
+          <span className="tag w-12 shrink-0 pt-1 text-ink-3">课题</span>
           <textarea
             rows={3}
             value={question}
             aria-label="研究问题"
             disabled={!saved.enabled}
-            placeholder="写下需要多方查证的问题，并说明背景、约束和想要的答案形式"
-            className={cx(bare, "resize-none pt-3.5 pb-2 leading-6")}
+            placeholder="写下需要多方查证的问题，并说明背景、约束和期望的报告结构"
+            className="min-w-0 flex-1 resize-none bg-transparent text-sm leading-6 text-ink placeholder:text-ink-3 focus:outline-none disabled:opacity-50"
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={onModEnter(submit)}
           />
-        </Composer>
-        {start.error && (
-          <Notice tone="err" className="mt-3">
-            {start.error.message}
-          </Notice>
-        )}
-        {question.trim() === "" && saved.enabled && <Examples mono={false} items={["对比 Brave、Exa、Tavily 搜索 API 的定价与限流", "SQLite WAL 模式在高并发写入下的取舍"]} onPick={setQuestion} />}
-      </Stage>
+        </div>
+      </Composer>
+
+      {start.error && <Notice tone="err">{start.error.message}</Notice>}
 
       {taskId !== null &&
         !gone &&
@@ -263,13 +279,13 @@ export function ResearchPlay() {
           // The clock of the server, so a run is timed the same wherever the console is opened.
           <Run key={data.id} task={data} skew={data.now - task.dataUpdatedAt} onStop={() => void stop()} onReuse={() => reuse(data)} onClose={() => show(null)} />
         ) : (
-          <section className="mt-6 grid place-items-center rounded-panel border border-line bg-surface py-20">
+          <section className="grid place-items-center rounded-panel border border-line bg-surface py-16">
             {task.error ? <Notice tone="err">{task.error.message}</Notice> : <Spinner />}
           </section>
         ))}
 
-      <Tasks tasks={tasks.data} pending={tasks.isPending} days={config.logs.retention_days} active={taskId} onPick={show} />
-    </>
+      <Tasks tasks={tasks.data} pending={tasks.isPending} days={config.logs.retention_days} active={taskId} onPick={show} onReuse={reuse} />
+    </Stage>
   );
 }
 
@@ -328,14 +344,14 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
           ? "正在搜索，等待结果"
           : last?.kind === "dev_search" && last.step === spent.steps
             ? "正在搜索开发资料，等待结果"
-          : last?.kind === "fetch" && last.step === spent.steps
-            ? `正在读取 ${host(last.text)}`
-            : spent.steps <= 1 && rows.length === 0
-              ? "正在规划"
-              : "模型正在思考下一步";
+            : last?.kind === "fetch" && last.step === spent.steps
+              ? `正在读取 ${host(last.text)}`
+              : spent.steps <= 1 && rows.length === 0
+                ? "正在规划"
+                : "模型正在思考下一步";
 
   return (
-    <section ref={ref} className="mt-6 min-w-0 scroll-mt-6 rounded-panel border border-line bg-surface">
+    <section ref={ref} className="min-w-0 scroll-mt-6 rounded-panel border border-line bg-surface">
       <header className="flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-line px-4 py-3">
         <div className="min-w-0 flex-1 basis-72">
           <div className="flex items-center gap-2 text-xs">
@@ -742,48 +758,108 @@ function Report({ task, spent, rendered }: { task: ResearchTask; spent: Research
 
 /* ---------- Past runs ---------- */
 
-function Tasks({ tasks, pending, days, active, onPick }: { tasks: ResearchTaskSummary[] | undefined; pending: boolean; /** How long tasks are kept. */ days: number; active: string | null; onPick: (id: string) => void }) {
+function Tasks({
+  tasks,
+  pending,
+  days,
+  active,
+  onPick,
+  onReuse,
+}: {
+  tasks: ResearchTaskSummary[] | undefined;
+  pending: boolean;
+  /** How long tasks are kept. */
+  days: number;
+  active: string | null;
+  onPick: (id: string) => void;
+  onReuse: (task: ResearchTaskSummary) => void;
+}) {
   const list = tasks ?? [];
   return (
-    <section className="mt-6">
-      <header className="mb-2 flex items-baseline justify-between px-1">
-        <h2 className="tag">最近的研究</h2>
-        <span className="text-xs text-ink-3">与日志一同保留 {days} 天，含经 MCP 发起的任务</span>
-      </header>
-      <div className="rounded-panel border border-line bg-surface">
-        {list.length === 0 ? (
-          <Empty title={pending ? "正在读取…" : "还没有研究任务"}>{!pending && "从上方发起一次研究后，任务会出现在这里；点击可回看它的过程与报告。"}</Empty>
-        ) : (
-          <ol>
-            {list.map((task) => {
-              const meta = statusMeta[task.status];
-              const spent = spentOf(task);
-              return (
-                <li key={task.id} className="border-b border-line last:border-b-0">
-                  <button
-                    type="button"
-                    aria-current={task.id === active}
-                    onClick={() => onPick(task.id)}
-                    className="flex min-h-10 w-full items-center gap-3 px-4 py-1.5 text-left transition-colors hover:bg-raised/60 aria-[current=true]:bg-raised"
-                  >
-                    <span className="flex w-16 shrink-0 items-center gap-1.5 text-xs text-ink-2">
-                      <Dot tone={meta.tone} live={task.status === "running"} />
-                      {meta.label}
+    <Panel
+      flush
+      title={
+        <span className="flex items-center gap-2 self-center">
+          <History className="size-4 text-ink-3" />
+          <span>最近的研究</span>
+          {list.length > 0 && <Badge>{list.length}</Badge>}
+        </span>
+      }
+      actions={<span className="text-xs text-ink-3">与日志一同保留 {days} 天，含经 MCP 发起的任务</span>}
+    >
+      {list.length === 0 ? (
+        <div className="px-4 py-5 text-xs text-ink-3">
+          {pending ? "正在读取研究任务…" : "尚无研究任务记录。从上方发起一次研究后，可在此回看其过程、报告或载入当时的设置。"}
+        </div>
+      ) : (
+        <ol className="divide-y divide-line">
+          {list.map((task) => {
+            const meta = statusMeta[task.status];
+            const spent = spentOf(task);
+            const isCurrent = task.id === active;
+            const tokens = spent.input_tokens + spent.output_tokens;
+            return (
+              <li key={task.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-current={isCurrent ? "true" : undefined}
+                  onClick={() => onPick(task.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onPick(task.id);
+                    }
+                  }}
+                  className={cx(
+                    "group relative flex min-h-11 w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-raised/60",
+                    isCurrent && "bg-raised",
+                  )}
+                >
+                  {isCurrent && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-signal-text" />}
+                  <span className="flex w-16 shrink-0 items-center gap-1.5 text-xs text-ink-2">
+                    <Dot tone={meta.tone} live={task.status === "running"} />
+                    {meta.label}
+                  </span>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-ink">{task.question}</div>
+                    {task.error && <div className="mt-0.5 truncate text-xs text-err">{task.error}</div>}
+                    {task.status === "running" && task.progress && <div className="mt-0.5 truncate text-xs text-ink-3">{task.progress}</div>}
+                  </div>
+
+                  {task.budget && (
+                    <span className="flex shrink-0 items-center gap-1.5 max-lg:hidden">
+                      <Badge>{task.budget.model}</Badge>
+                      <span className="text-xs text-ink-3">{task.budget.reading === "raw" ? "原文" : "归纳"}</span>
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-sm">{task.question}</span>
-                    {task.budget && <Badge className="max-lg:hidden">{task.budget.model}</Badge>}
-                    <span className="num w-32 shrink-0 text-right text-xs text-ink-3 max-sm:hidden">
-                      {task.budget ? Math.min(spent.steps, task.budget.max_steps) : spent.steps} 步 · {compact(spent.input_tokens + spent.output_tokens)} token
-                    </span>
-                    <span className="num w-14 shrink-0 text-right text-xs text-ink-2">{task.status === "running" ? "—" : duration(task.updated_at - task.created_at)}</span>
-                    <span className="w-16 shrink-0 text-right text-xs text-ink-3">{ago(task.created_at)}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </div>
-    </section>
+                  )}
+
+                  <span className="num w-32 shrink-0 text-right text-xs text-ink-3 max-sm:hidden">
+                    {task.budget ? Math.min(spent.steps, task.budget.max_steps) : spent.steps} 步 · {compact(tokens)} tok
+                  </span>
+                  <span className="num w-14 shrink-0 text-right text-xs text-ink-2">{task.status === "running" ? "—" : duration(task.updated_at - task.created_at)}</span>
+                  <span className="w-16 shrink-0 text-right text-xs text-ink-3 max-sm:hidden">{ago(task.created_at)}</span>
+
+                  <Tooltip content="载入该次研究的课题与设置">
+                    <button
+                      type="button"
+                      aria-label="载入设置"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onReuse(task);
+                      }}
+                      className="grid size-7 shrink-0 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-surface hover:text-ink"
+                    >
+                      <RotateCcw className="size-3.5" />
+                    </button>
+                  </Tooltip>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </Panel>
   );
 }

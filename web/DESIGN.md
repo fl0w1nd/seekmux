@@ -97,13 +97,14 @@ except the dot of something that is live. All of it is disabled under
   (the assigned models or another one, for a single call),
   `Waterfall` (the upstream calls of one request on a shared time axis).
 - `pages/play/kit.tsx` — what the playground pages are built from: `Stage`
-  (the page head and the hairline frame the composer stands on), `Composer`
-  (the main input, a bar of `Chip`s that name a setting and show its value,
-  and a parameter panel that folds open), `Output` (the pane a call answers
-  into, with its result and its upstream calls), `Recent` (past runs, a click
-  takes their arguments back). A chip carries a signal dot when its value is
-  not the configured one, and whatever applies to one call only is marked
-  `仅调试台`.
+  (the page head and the full-width workbench stack), `Composer`
+  (a top instrument bar of `Chip`s and quick controls, a parameter panel that
+  folds open, the structured input area, and a bottom bar with examples and
+  the primary run action), `Output` (the pane a call answers into, with its
+  result and its upstream calls), `Recent` (past runs, a click inspects the
+  run in `Output` and restores its arguments). A chip carries a signal dot
+  when its value is not the configured one, and whatever applies to one call
+  only is marked `仅调试台`.
 
 ## Rules
 

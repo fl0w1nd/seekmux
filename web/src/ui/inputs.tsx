@@ -32,10 +32,10 @@ export function RateLimitInput({ value, onChange, fallback = "5/m" }: { value: s
   };
   return (
     <div className="flex items-center gap-1.5 text-xs text-ink-3">
-      <NumberInput className="w-16" min={1} value={limit.requests} onChange={(requests) => emit({ requests })} aria-label="请求数" />
-      <span>次 /</span>
-      <NumberInput className="w-14" min={1} value={limit.every} onChange={(every) => emit({ every })} aria-label="时间窗口" />
-      <Select className="w-20" value={limit.unit} onChange={(e) => emit({ unit: e.target.value as Unit })} aria-label="时间单位">
+      <NumberInput className="w-14" min={1} value={limit.requests} onChange={(requests) => emit({ requests })} aria-label="请求数" />
+      <span className="shrink-0">次 /</span>
+      <NumberInput className="w-12" min={1} value={limit.every} onChange={(every) => emit({ every })} aria-label="时间窗口" />
+      <Select className="w-18" value={limit.unit} onChange={(e) => emit({ unit: e.target.value as Unit })} aria-label="时间单位">
         {Object.entries(units).map(([unit, label]) => (
           <option key={unit} value={unit}>
             {label}

@@ -74,28 +74,43 @@ export function ModelsPage() {
         <div className="flex flex-col gap-4">
           {providers.map((p, pi) => {
             const inUse = p.models.some((m) => rolesOf(config, m.id).length > 0);
+            const hasKey = Boolean(p.api_key || (p.api_key_hint && !p.clear_api_key));
+            const headerCount = p.headers ? Object.keys(p.headers).length : 0;
             return (
               <Panel
                 key={p.id}
                 flush
+                index={String(pi + 1).padStart(2, "0")}
                 title={
-                  <span className="flex flex-wrap items-center gap-2">
-                    {p.name || p.id}
+                  <span className="flex flex-wrap items-center gap-2 self-center">
+                    <span>{p.name || p.id}</span>
+                    {p.name && p.name !== p.id && <span className="num text-xs font-normal text-ink-3">{p.id}</span>}
                     <Badge>{typeLabel[p.type]}</Badge>
-                    {!p.api_key && !(p.api_key_hint && !p.clear_api_key) && (
+                    {hasKey ? (
+                      <Badge tone="ok" dot>
+                        已配置
+                      </Badge>
+                    ) : (
                       <Badge tone="warn" dot>
                         未设置密钥
                       </Badge>
                     )}
                   </span>
                 }
-                description={<span className="num">{p.base_url || "官方地址"}</span>}
+                description={
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="num">{p.base_url || "https://api.anthropic.com"}</span>
+                    {headerCount > 0 && <span>· 自定义请求头 {headerCount} 项</span>}
+                  </span>
+                }
                 actions={
                   <>
                     <Button size="sm" icon={<Plus />} onClick={() => setEditing({ kind: "model", provider: pi, index: -1 })}>
                       添加模型
                     </Button>
-                    <Button size="sm" variant="ghost" icon={<Pencil />} aria-label={`编辑接口 ${p.name || p.id}`} onClick={() => setEditing({ kind: "provider", index: pi })} />
+                    <Button size="sm" variant="ghost" icon={<Pencil />} onClick={() => setEditing({ kind: "provider", index: pi })}>
+                      编辑接口
+                    </Button>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -119,11 +134,8 @@ export function ModelsPage() {
                         <tr>
                           <Th>模型 ID</Th>
                           <Th>上游模型名</Th>
-                          <Th>限流</Th>
-                          <Th className="text-right">并发</Th>
-                          <Th className="text-right">最大输出</Th>
-                          <Th>推理</Th>
-                          <Th>附加字段</Th>
+                          <Th>配额限流</Th>
+                          <Th>推理与参数</Th>
                           <Th>用于</Th>
                           <Th />
                         </tr>
@@ -132,6 +144,7 @@ export function ModelsPage() {
                         {p.models.map((m, mi) => {
                           const roles = rolesOf(config, m.id);
                           const health = status?.models.find((s) => s.id === m.id);
+                          const extraKeys = m.extra_body ? Object.keys(m.extra_body) : [];
                           return (
                             <tr key={m.id} className="last:[&>td]:border-b-0">
                               <Td className="num font-medium whitespace-nowrap">
@@ -147,13 +160,23 @@ export function ModelsPage() {
                                 </span>
                               </Td>
                               <Td className="num text-xs whitespace-nowrap text-ink-2">{m.name}</Td>
-                              <Td className="num text-xs whitespace-nowrap text-ink-2">{m.rate_limit || "不限"}</Td>
-                              <Td className="num text-right text-xs text-ink-2">{m.concurrency || "不限"}</Td>
-                              <Td className="num text-right text-xs text-ink-2">{m.max_output_tokens ? compact(m.max_output_tokens) : "默认"}</Td>
-                              <Td className="text-xs whitespace-nowrap text-ink-2">{reasoningLabel(m.reasoning)}</Td>
-                              <Td className="num max-w-48 truncate text-xs text-ink-3">{m.extra_body ? Object.keys(m.extra_body).join(", ") : "—"}</Td>
+                              <Td className="num text-xs whitespace-nowrap text-ink-2">
+                                {m.rate_limit || "不限流"}
+                                {m.concurrency > 0 && <span className="text-ink-3"> · 并发 {m.concurrency}</span>}
+                              </Td>
+                              <Td className="text-xs whitespace-nowrap text-ink-2">
+                                <span className="flex flex-wrap items-center gap-1.5">
+                                  <span>推理：{reasoningLabel(m.reasoning)}</span>
+                                  {m.max_output_tokens ? <span className="num text-ink-3">· 输出 ≤ {compact(m.max_output_tokens)}</span> : null}
+                                  {extraKeys.length > 0 && (
+                                    <Tooltip content={`附加请求字段：${extraKeys.join(", ")}`}>
+                                      <span className="num text-ink-3">· +{extraKeys.length} 字段</span>
+                                    </Tooltip>
+                                  )}
+                                </span>
+                              </Td>
                               <Td>
-                                <span className="flex gap-1">
+                                <span className="flex flex-wrap gap-1">
                                   {roles.length === 0 ? (
                                     <span className="text-xs text-ink-3">未关联</span>
                                   ) : (

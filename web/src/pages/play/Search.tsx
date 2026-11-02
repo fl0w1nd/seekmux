@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { ExternalLink, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
+import { ProviderNames } from "../../components/ProviderName";
 import { api, type SearchArgs, type SearchResult } from "../../lib/api";
 import { useConfig } from "../../lib/config";
 import { duration } from "../../lib/format";
@@ -8,14 +9,16 @@ import { useElapsed } from "../../lib/motion";
 import { ChipInput } from "../../ui/inputs";
 import { Badge, cx, Dot, Empty, Notice, NumberInput, Segmented } from "../../ui/primitives";
 import {
-  bare,
   Chip,
   CodeButton,
   Composer,
   Examples,
   Failure,
   Group,
+  HistoricalFallback,
+  HistoryBanner,
   host,
+  type InspectedRun,
   JSONView,
   LocalNotice,
   onModEnter,
@@ -24,6 +27,7 @@ import {
   ProviderChip,
   ProviderParams,
   Recent,
+  ResetButton,
   RunButton,
   Stage,
   Summary,
@@ -45,7 +49,7 @@ const ranges = [
   { value: "", label: "不限" },
   { value: "day", label: "一天" },
   { value: "week", label: "一周" },
-  { value: "month", label: "一个月" },
+  { value: "month", label: "一月" },
   { value: "year", label: "一年" },
 ];
 
@@ -67,6 +71,7 @@ export function SearchPlay() {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"result" | "trace">("result");
   const [format, setFormat] = useState<"visual" | "json">("visual");
+  const [inspected, setInspected] = useState<InspectedRun<SearchResult[]> | null>(null);
   const tuning = useTuning("search", engine);
   const run = useMutation({ mutationFn: api.playSearch });
   const elapsed = useElapsed(run.isPending);
@@ -86,6 +91,7 @@ export function SearchPlay() {
   const ready = queries.length > 0 && !over;
   const submit = () => {
     if (!ready || run.isPending) return;
+    setInspected(null);
     setView("result");
     run.mutate({ ...args, route: tuning.route });
   };
@@ -101,93 +107,150 @@ export function SearchPlay() {
     setEngine(config.search.routes.some((r) => r.enabled && r.provider === pinned) ? pinned : "auto");
   };
 
+  const hasDomainFilter = include.length > 0 || exclude.length > 0;
+  const domainSummary = [include.length > 0 && `限定 ${include.length} 域名`, exclude.length > 0 && `排除 ${exclude.length} 域名`].filter(Boolean).join(" · ");
+
   const data = run.data;
-  const found = data?.results.reduce((n, r) => n + (r.web?.length ?? 0) + (r.videos?.length ?? 0), 0) ?? 0;
-  const engines = [...new Set(data?.results.map((r) => r.search_engine).filter(Boolean))];
-  const filters = [include.length > 0 && `限定 ${include.length} 个域名`, exclude.length > 0 && `排除 ${exclude.length} 个域名`].filter(Boolean);
+  const activeResults = inspected ? inspected.response : data?.results;
+  const activeAttempts = inspected ? inspected.entry.attempts : data?.attempts;
+  const activeDuration = inspected ? inspected.entry.duration_ms : (data?.duration_ms ?? 0);
+  const found = activeResults?.reduce((n, r) => n + (r.web?.length ?? 0) + (r.videos?.length ?? 0), 0) ?? 0;
+  const engines = inspected
+    ? (inspected.entry.provider ? inspected.entry.provider.split(",") : [])
+    : [...new Set(data?.results.map((r) => r.search_engine).filter((e): e is string => Boolean(e)))];
+
+  const showOutput = run.isPending || Boolean(run.error) || Boolean(data) || Boolean(inspected);
 
   return (
-    <>
-      <Stage title="搜索网页" description="调用 search 工具。路由、限流与故障转移均与 MCP 调用一致，调用记入请求日志。">
-        <Composer
-          open={open}
-          tools={
-            <>
-              <Chip icon={<SlidersHorizontal />} label="参数" aria-pressed={open} onClick={() => setOpen(!open)} />
-              <ProviderChip tool="search" value={engine} onChange={setEngine} changed={tuning.changed} />
-              <Summary onClick={() => setOpen(true)}>{[`${maxResults} 条`, range ? `近${ranges.find((r) => r.value === range)?.label}` : "时间不限", ...filters].join(" · ")}</Summary>
-            </>
-          }
-          actions={
-            <>
-              <CodeButton
-                tool="search"
-                args={args}
-                notices={
-                  <>
-                    {over && (
-                      <Notice tone="warn">
-                        已输入 {queries.length} 条查询，单次最多执行前 {maxQueries} 条，超出部分已被忽略
-                      </Notice>
-                    )}
-                    <LocalNotice items={[tuning.changed && `${provider(engine).name} 的临时参数`]} />
-                  </>
-                }
+    <Stage tool="search" title="网页搜索" description="调用 search 工具。支持最多 3 条查询并行检索，路由、限流与故障转移均与 MCP 调用一致。">
+      <Composer
+        open={open}
+        splitPanel={engine !== "auto"}
+        tools={
+          <>
+            <ProviderChip tool="search" value={engine} onChange={setEngine} changed={tuning.changed} />
+            <div className="flex items-center gap-1.5 text-xs text-ink-3">
+              <span>每条</span>
+              <NumberInput
+                className="w-20"
+                min={1}
+                suffix="条"
+                value={maxResults}
+                aria-label="每条查询的结果数"
+                onChange={(v) => setMaxResults(Math.min(maxResultsLimit, Math.max(1, Math.round(v))))}
               />
-              <RunButton label="搜索" loading={run.isPending} disabled={!ready} onClick={submit} />
-            </>
-          }
-          panel={
-            <>
-              <OptionGroup title="调用参数">
-                <Group label="每条查询的结果数" hint={`1–${maxResultsLimit}，默认 ${defaultMaxResults}`}>
-                  <NumberInput className="w-28" min={1} suffix="条" value={maxResults} aria-label="每条查询的结果数" onChange={(v) => setMaxResults(Math.min(maxResultsLimit, Math.max(1, Math.round(v))))} />
-                </Group>
-                <Group label="发布时间" hint="仅返回该时间范围内发布的结果，适用于时效性强的查询">
-                  <Segmented stretch size="sm" value={range} onChange={setRange} options={ranges} />
-                </Group>
-                <Group label="限定域名" hint="含子域名">
+            </div>
+            <Segmented size="sm" value={range} onChange={setRange} options={ranges} />
+          </>
+        }
+        toolbarRight={
+          <>
+            {domainSummary && <Summary onClick={() => setOpen(true)}>{domainSummary}</Summary>}
+            <Chip
+              icon={<SlidersHorizontal />}
+              label="域名与参数"
+              changed={hasDomainFilter || tuning.changed}
+              aria-expanded={open}
+              aria-pressed={open}
+              onClick={() => setOpen(!open)}
+            />
+            <CodeButton
+              tool="search"
+              args={args}
+              notices={
+                <>
+                  {over && (
+                    <Notice tone="warn">
+                      已输入 {queries.length} 条查询，单次最多执行前 {maxQueries} 条，超出部分已被忽略
+                    </Notice>
+                  )}
+                  <LocalNotice items={[tuning.changed && `${provider(engine).name} 的临时参数`]} />
+                </>
+              }
+            />
+          </>
+        }
+        panel={
+          <>
+            <OptionGroup
+              title="域名过滤"
+              action={
+                hasDomainFilter && (
+                  <ResetButton
+                    label="清空域名"
+                    onClick={() => {
+                      setInclude([]);
+                      setExclude([]);
+                    }}
+                  />
+                )
+              }
+            >
+              <div className={cx("grid gap-4", engine === "auto" && "sm:grid-cols-2")}>
+                <Group label="限定域名" hint="仅返回这些域名（含子域名）下的结果，最多 10 个">
                   <ChipInput value={include} onChange={setInclude} max={maxDomains} normalize={domain} placeholder="docs.python.org" aria-label="限定域名" />
                 </Group>
-                <Group label="排除域名">
+                <Group label="排除域名" hint="从结果中剔除这些域名（含子域名），最多 10 个">
                   <ChipInput value={exclude} onChange={setExclude} max={maxDomains} normalize={domain} placeholder="pinterest.com" aria-label="排除域名" />
                 </Group>
-              </OptionGroup>
-              <ProviderParams tool="search" engine={engine} tuning={tuning} />
-            </>
-          }
-        >
+              </div>
+            </OptionGroup>
+            <ProviderParams tool="search" engine={engine} tuning={tuning} />
+          </>
+        }
+        footer={
+          <>
+            <Examples
+              items={["mcp streamable http spec", "go 1.27 release notes", "sqlite wal mode performance"]}
+              current={text}
+              onPick={setText}
+              onClear={() => setText("")}
+            />
+            {queries.length > 0 && (
+              <span className={cx("num ml-auto text-xs", over ? "font-medium text-err" : "text-ink-3")}>
+                {queries.length} / {maxQueries} 条查询{over && "（超出上限）"}
+              </span>
+            )}
+          </>
+        }
+        actions={<RunButton label="搜索" loading={run.isPending} disabled={!ready} onClick={submit} />}
+      >
+        <div className="flex items-start px-3.5 py-2.5">
+          <span className="tag w-12 shrink-0 pt-1 text-ink-3">查询</span>
           <textarea
             rows={3}
             value={text}
             spellCheck={false}
             aria-label="查询"
-            placeholder={"每行一条查询，最多 3 条，并行执行"}
-            className={cx(bare, "num resize-none pt-3.5 pb-2 text-sm leading-6")}
+            placeholder="每行一条查询词，最多 3 条并行检索"
+            className="num min-w-0 flex-1 resize-none bg-transparent text-sm leading-6 text-ink placeholder:text-ink-3 focus:outline-none"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={onModEnter(submit)}
           />
-          {over && (
-            <div className="px-4 pb-2 text-xs text-err">
-              <span className="num">{queries.length}</span> 条查询，单次上限 {maxQueries} 条
-            </div>
-          )}
-        </Composer>
-        {queries.length === 0 && <Examples items={["mcp streamable http spec", "go 1.27 release notes", "sqlite wal mode performance"]} onPick={setText} />}
-      </Stage>
+        </div>
+      </Composer>
 
-      {(run.isPending || run.error || data) && (
+      {showOutput && (
         <Output
-          stamp={run.submittedAt}
+          stamp={inspected ? inspected.entry.id : run.submittedAt}
           view={view}
           onView={setView}
+          banner={
+            inspected && (
+              <HistoryBanner
+                entry={inspected.entry}
+                onRerun={submit}
+                onClose={() => setInspected(null)}
+              />
+            )
+          }
           tabs={[
             { value: "result", label: "结果" },
-            { value: "trace", label: traceLabel(data?.attempts) },
+            { value: "trace", label: traceLabel(activeAttempts) },
           ]}
           actions={
             view === "result" &&
-            data && (
+            activeResults && (
               <Segmented
                 size="sm"
                 value={format}
@@ -200,19 +263,17 @@ export function SearchPlay() {
             )
           }
           strip={
-            data &&
-            !run.isPending && (
+            !run.isPending &&
+            (inspected || data) && (
               <>
-                <span className="num text-ink">{duration(data.duration_ms)}</span>
-                {engines.map((e) => (
-                  <Badge key={e} tone="signal">
-                    {e}
-                  </Badge>
-                ))}
-                <span>
-                  {data.results.length} 条查询 · {found} 条结果
-                </span>
-                {run.variables?.route && <Badge>临时参数</Badge>}
+                <span className="num font-medium text-ink">{duration(activeDuration)}</span>
+                {engines.length > 0 && <ProviderNames ids={engines.join(",")} />}
+                {activeResults && (
+                  <span>
+                    {activeResults.length} 条查询 · {found} 条结果
+                  </span>
+                )}
+                {!inspected && run.variables?.route && <Badge>临时参数</Badge>}
               </>
             )
           }
@@ -220,22 +281,33 @@ export function SearchPlay() {
           <TabPanel value="result">
             {run.isPending ? (
               <Waiting label={run.variables?.queries.join(" · ")} elapsed={elapsed} />
-            ) : run.error ? (
+            ) : !inspected && run.error ? (
               <Failure error={run.error} />
-            ) : data && format === "json" ? (
-              <JSONView value={data.results} />
+            ) : inspected && !inspected.response ? (
+              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={submit} />
+            ) : activeResults && format === "json" ? (
+              <JSONView value={activeResults} />
             ) : (
-              data && <SearchResults key={run.submittedAt} results={data.results} />
+              activeResults && <SearchResults key={inspected ? inspected.entry.id : run.submittedAt} results={activeResults} />
             )}
           </TabPanel>
           <TabPanel value="trace">
-            <TraceView attempts={run.isPending ? undefined : data?.attempts} total={data?.duration_ms ?? 0} />
+            <TraceView attempts={run.isPending ? undefined : activeAttempts} total={activeDuration} />
           </TabPanel>
         </Output>
       )}
 
-      <Recent tool="search" stamp={run.isPending ? undefined : run.submittedAt || undefined} onPick={restore} />
-    </>
+      <Recent<SearchResult[]>
+        tool="search"
+        stamp={run.isPending ? undefined : run.submittedAt || undefined}
+        activeId={inspected?.entry.id}
+        onPick={restore}
+        onInspect={(item) => {
+          setInspected(item);
+          setView("result");
+        }}
+      />
+    </Stage>
   );
 }
 
@@ -285,9 +357,9 @@ function QueryResult({ result }: { result: SearchResult }) {
   }
   if (items.length === 0) return <Empty title="该查询没有结果">可放宽时间范围或域名过滤后重试。</Empty>;
   return (
-    <ol>
+    <ol className="divide-y divide-line">
       {items.map((item, i) => (
-        <li key={`${item.url}-${i}`} className="flex gap-3 border-b border-line px-4 py-3 last:border-b-0">
+        <li key={`${item.url}-${i}`} className="flex gap-3 px-4 py-3">
           <span className="tag w-5 shrink-0 pt-0.5">{String(i + 1).padStart(2, "0")}</span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-xs text-ink-3">

@@ -1,7 +1,8 @@
 import { useMutation } from "@tanstack/react-query";
 import { ExternalLink, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
-import { api, type DevSearchArgs, type DevSearchItem } from "../../lib/api";
+import { ProviderNames } from "../../components/ProviderName";
+import { api, type DevSearchArgs, type DevSearchItem, type DevSearchResult } from "../../lib/api";
 import { useConfig } from "../../lib/config";
 import { duration } from "../../lib/format";
 import { useElapsed } from "../../lib/motion";
@@ -9,14 +10,16 @@ import { ChipInput } from "../../ui/inputs";
 import { Markdown } from "../../ui/markdown";
 import { Badge, cx, Empty, NumberInput, Segmented } from "../../ui/primitives";
 import {
-  bare,
   Chip,
   CodeButton,
   Composer,
   Examples,
   Failure,
   Group,
+  HistoricalFallback,
+  HistoryBanner,
   host,
+  type InspectedRun,
   JSONView,
   LocalNotice,
   onModEnter,
@@ -25,6 +28,7 @@ import {
   ProviderChip,
   ProviderParams,
   Recent,
+  ResetButton,
   RunButton,
   Stage,
   Summary,
@@ -67,6 +71,7 @@ export function DevSearchPlay() {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"result" | "trace">("result");
   const [format, setFormat] = useState<"visual" | "json">("visual");
+  const [inspected, setInspected] = useState<InspectedRun<DevSearchResult> | null>(null);
   const tuning = useTuning("dev_search", engine);
   const run = useMutation({ mutationFn: api.playDevSearch });
   const elapsed = useElapsed(run.isPending);
@@ -79,6 +84,7 @@ export function DevSearchPlay() {
   const ready = args.query !== "";
   const submit = () => {
     if (!ready || run.isPending) return;
+    setInspected(null);
     setView("result");
     run.mutate({ ...args, search_engine: engine === "auto" ? undefined : engine, route: tuning.route });
   };
@@ -91,93 +97,132 @@ export function DevSearchPlay() {
   };
 
   const data = run.data;
-  const typeSummary = types.length > 0 ? devTypes.filter((t) => types.includes(t.value)).map((t) => t.label).join("、") : "全部类型";
+  const activeResult = inspected ? inspected.response : data?.result;
+  const activeAttempts = inspected ? inspected.entry.attempts : data?.attempts;
+  const activeDuration = inspected ? inspected.entry.duration_ms : (data?.duration_ms ?? 0);
+  const activeEngine = inspected ? inspected.entry.provider : data?.result.search_engine;
+  const showOutput = run.isPending || Boolean(run.error) || Boolean(data) || Boolean(inspected);
 
   return (
-    <>
-      <Stage title="搜索开发资料" description="调用 dev_search 工具。检索范围是公开代码仓库的 issue、已合并 PR、README 与文档站，不是开放网页。">
-        <Composer
-          open={open}
-          tools={
-            <>
-              <Chip icon={<SlidersHorizontal />} label="参数" aria-pressed={open} onClick={() => setOpen(!open)} />
-              <ProviderChip tool="dev_search" value={engine} onChange={setEngine} changed={tuning.changed} />
-              <Summary onClick={() => setOpen(true)}>{[`${maxResults} 条`, typeSummary, repos.length > 0 && `限定 ${repos.length} 个仓库`].filter(Boolean).join(" · ")}</Summary>
-            </>
-          }
-          actions={
-            <>
-              <CodeButton
-                tool="dev_search"
-                args={args}
-                notices={<LocalNotice items={[engine !== "auto" && `固定提供商 ${provider(engine).name}`, tuning.changed && `${provider(engine).name} 的临时参数`]} />}
+    <Stage tool="dev_search" title="开发搜索" description="调用 dev_search 工具。检索范围是公开代码仓库的 Issue、已合并 PR、README 与技术文档站，返回匹配段落。">
+      <Composer
+        open={open}
+        splitPanel={engine !== "auto"}
+        tools={
+          <>
+            <ProviderChip tool="dev_search" value={engine} onChange={setEngine} changed={tuning.changed} />
+            <div className="flex items-center gap-1.5 text-xs text-ink-3">
+              <span>结果</span>
+              <NumberInput
+                className="w-20"
+                min={1}
+                suffix="条"
+                value={maxResults}
+                aria-label="结果数"
+                onChange={(v) => setMaxResults(Math.min(devMaxResults, Math.max(1, Math.round(v))))}
               />
-              <RunButton label="搜索" loading={run.isPending} disabled={!ready} onClick={submit} />
-            </>
-          }
-          panel={
-            <>
-              <OptionGroup title="调用参数">
-                <Group label="结果数" hint={`1–${devMaxResults}，默认 ${defaultMaxResults}。每条结果附带匹配段落，篇幅远大于普通搜索的摘要`}>
-                  <NumberInput className="w-28" min={1} suffix="条" value={maxResults} aria-label="结果数" onChange={(v) => setMaxResults(Math.min(devMaxResults, Math.max(1, Math.round(v))))} />
-                </Group>
-                <Group label="结果类型" hint="不选即全部">
-                  <div className="flex flex-wrap gap-2">
-                    {devTypes.map((type) => {
-                      const on = types.includes(type.value);
-                      return (
-                        <button
-                          key={type.value}
-                          type="button"
-                          aria-pressed={on}
-                          onClick={() => setTypes(on ? types.filter((t) => t !== type.value) : [...types, type.value])}
-                          className={cx(
-                            "flex h-7 items-center rounded-ctl border px-2.5 text-xs transition-colors",
-                            on ? "border-signal-text bg-signal/12 text-ink" : "border-line text-ink-3 hover:border-line-strong",
-                          )}
-                        >
-                          {type.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </Group>
-                <Group label="限定仓库" hint="只检索这些仓库的 issue、PR 与 README；对文档类结果无效">
-                  <ChipInput value={repos} onChange={setRepos} max={devMaxRepos} normalize={repo} placeholder="modelcontextprotocol/go-sdk" aria-label="限定仓库" />
-                </Group>
-              </OptionGroup>
-              <ProviderParams tool="dev_search" engine={engine} tuning={tuning} />
-            </>
-          }
-        >
+            </div>
+            <div className="flex flex-wrap items-center gap-1" role="group" aria-label="结果类型">
+              {devTypes.map((type) => {
+                const on = types.includes(type.value);
+                return (
+                  <button
+                    key={type.value}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setTypes(on ? types.filter((t) => t !== type.value) : [...types, type.value])}
+                    className={cx(
+                      "flex h-7 items-center rounded-ctl border px-2 text-xs transition-colors",
+                      on
+                        ? "border-signal-text bg-signal/12 font-medium text-ink"
+                        : "border-line bg-surface text-ink-3 hover:border-line-strong hover:text-ink",
+                    )}
+                  >
+                    {type.label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        }
+        toolbarRight={
+          <>
+            {repos.length > 0 && <Summary onClick={() => setOpen(true)}>限定 {repos.length} 个仓库</Summary>}
+            <Chip
+              icon={<SlidersHorizontal />}
+              label="仓库与参数"
+              changed={repos.length > 0 || tuning.changed}
+              aria-expanded={open}
+              aria-pressed={open}
+              onClick={() => setOpen(!open)}
+            />
+            <CodeButton
+              tool="dev_search"
+              args={args}
+              notices={<LocalNotice items={[engine !== "auto" && `固定提供商 ${provider(engine).name}`, tuning.changed && `${provider(engine).name} 的临时参数`]} />}
+            />
+          </>
+        }
+        panel={
+          <>
+            <OptionGroup
+              title="仓库过滤"
+              action={repos.length > 0 && <ResetButton label="清空仓库" onClick={() => setRepos([])} />}
+            >
+              <Group label="限定仓库" hint="仅检索这些 GitHub 仓库（owner/repo）的 Issue、PR 与 README；对文档站结果无效，最多 10 个">
+                <ChipInput value={repos} onChange={setRepos} max={devMaxRepos} normalize={repo} placeholder="modelcontextprotocol/go-sdk" aria-label="限定仓库" />
+              </Group>
+            </OptionGroup>
+            <ProviderParams tool="dev_search" engine={engine} tuning={tuning} />
+          </>
+        }
+        footer={
+          <Examples
+            items={["go-sdk streamable http stateless mode behind a reverse proxy", "sqlite busy_timeout with WAL mode", "vite proxy websocket not forwarded"]}
+            current={query}
+            onPick={setQuery}
+            onClear={() => setQuery("")}
+          />
+        }
+        actions={<RunButton label="搜索" loading={run.isPending} disabled={!ready} onClick={submit} />}
+      >
+        <div className="flex items-start px-3.5 py-2.5">
+          <span className="tag w-12 shrink-0 pt-1 text-ink-3">问题</span>
           <textarea
             rows={3}
             value={query}
             spellCheck={false}
             aria-label="问题"
-            placeholder="用自然语言提问，并写明库或框架的名称"
-            className={cx(bare, "resize-none pt-3.5 pb-2 leading-6")}
+            placeholder="用自然语言描述技术问题，并写明库或框架的名称"
+            className="min-w-0 flex-1 resize-none bg-transparent text-sm leading-6 text-ink placeholder:text-ink-3 focus:outline-none"
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onModEnter(submit)}
           />
-        </Composer>
-        {args.query === "" && (
-          <Examples items={["go-sdk streamable http stateless mode behind a reverse proxy", "sqlite busy_timeout with WAL mode", "vite proxy websocket not forwarded"]} onPick={setQuery} />
-        )}
-      </Stage>
+        </div>
+      </Composer>
 
-      {(run.isPending || run.error || data) && (
+      {showOutput && (
         <Output
-          stamp={run.submittedAt}
+          stamp={inspected ? inspected.entry.id : run.submittedAt}
           view={view}
           onView={setView}
+          banner={
+            inspected && (
+              <HistoryBanner
+                entry={inspected.entry}
+                onRerun={submit}
+                onClose={() => setInspected(null)}
+              />
+            )
+          }
           tabs={[
             { value: "result", label: "结果" },
-            { value: "trace", label: traceLabel(data?.attempts) },
+            { value: "trace", label: traceLabel(activeAttempts) },
           ]}
           actions={
             view === "result" &&
-            data && (
+            activeResult &&
+            !activeResult.error && (
               <Segmented
                 size="sm"
                 value={format}
@@ -190,13 +235,13 @@ export function DevSearchPlay() {
             )
           }
           strip={
-            data &&
-            !run.isPending && (
+            !run.isPending &&
+            (inspected || data) && (
               <>
-                <span className="num text-ink">{duration(data.duration_ms)}</span>
-                {data.result.search_engine && <Badge tone="signal">{data.result.search_engine}</Badge>}
-                <span>{data.result.results.length} 条结果</span>
-                {run.variables?.route && <Badge>临时参数</Badge>}
+                <span className="num font-medium text-ink">{duration(activeDuration)}</span>
+                {activeEngine && <ProviderNames ids={activeEngine} />}
+                {activeResult?.results && <span>{activeResult.results.length} 条结果</span>}
+                {!inspected && run.variables?.route && <Badge>临时参数</Badge>}
               </>
             )
           }
@@ -204,33 +249,44 @@ export function DevSearchPlay() {
           <TabPanel value="result">
             {run.isPending ? (
               <Waiting label={run.variables?.query} elapsed={elapsed} />
-            ) : run.error ? (
+            ) : !inspected && run.error ? (
               <Failure error={run.error} />
-            ) : data?.result.error ? (
-              <Failure error={new Error(data.result.error)} />
-            ) : data && format === "json" ? (
-              <JSONView value={data.result} />
+            ) : inspected && !inspected.response ? (
+              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={submit} />
+            ) : activeResult?.error ? (
+              <Failure error={new Error(activeResult.error)} />
+            ) : activeResult && format === "json" ? (
+              <JSONView value={activeResult} />
             ) : (
-              data && <DevResults key={run.submittedAt} items={data.result.results} />
+              activeResult && <DevResults key={inspected ? inspected.entry.id : run.submittedAt} items={activeResult.results ?? []} />
             )}
           </TabPanel>
           <TabPanel value="trace">
-            <TraceView attempts={run.isPending ? undefined : data?.attempts} total={data?.duration_ms ?? 0} />
+            <TraceView attempts={run.isPending ? undefined : activeAttempts} total={activeDuration} />
           </TabPanel>
         </Output>
       )}
 
-      <Recent tool="dev_search" stamp={run.isPending ? undefined : run.submittedAt || undefined} onPick={restore} />
-    </>
+      <Recent<DevSearchResult>
+        tool="dev_search"
+        stamp={run.isPending ? undefined : run.submittedAt || undefined}
+        activeId={inspected?.entry.id}
+        onPick={restore}
+        onInspect={(item) => {
+          setInspected(item);
+          setView("result");
+        }}
+      />
+    </Stage>
   );
 }
 
 function DevResults({ items }: { items: DevSearchItem[] }) {
   if (items.length === 0) return <Empty title="没有结果">可放宽类型或仓库限定后重试。</Empty>;
   return (
-    <ol>
+    <ol className="divide-y divide-line">
       {items.map((item, i) => (
-        <li key={`${item.url}-${i}`} className="flex gap-3 border-b border-line px-4 py-3 last:border-b-0">
+        <li key={`${item.url}-${i}`} className="flex gap-3 px-4 py-3">
           <span className="tag w-5 shrink-0 pt-0.5">{String(i + 1).padStart(2, "0")}</span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-xs text-ink-3">

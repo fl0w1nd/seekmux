@@ -3,21 +3,24 @@ import { Bot, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
 import { allModels, hasOtherModels, ModelOverride } from "../../components/ModelPicker";
+import { ProviderNames } from "../../components/ProviderName";
 import { api, type FetchArgs, type FetchResult } from "../../lib/api";
 import { useConfig } from "../../lib/config";
 import { compact, duration } from "../../lib/format";
 import { useElapsed } from "../../lib/motion";
 import { Markdown } from "../../ui/markdown";
 import { Popover } from "../../ui/overlays";
-import { Badge, Button, CodeBlock, cx, Notice, NumberInput, Segmented, Switch } from "../../ui/primitives";
+import { Badge, Button, CodeBlock, Notice, NumberInput, Segmented, Switch } from "../../ui/primitives";
 import {
-  bare,
   Chip,
   CodeButton,
   Composer,
   Examples,
   Failure,
   Group,
+  HistoricalFallback,
+  HistoryBanner,
+  type InspectedRun,
   JSONView,
   LocalNotice,
   LocalTag,
@@ -45,6 +48,8 @@ const address = (text: string) => {
   return url === "" || /^[a-z][a-z\d+.-]*:\/\//i.test(url) ? url : `https://${url}`;
 };
 
+const defaultExamplePrompt = "概括这篇文档的核心内容与关键技术要点";
+
 export function FetchPlay() {
   const { config, provider } = useConfig();
   const chain = config.fetch.extract.models;
@@ -61,6 +66,7 @@ export function FetchPlay() {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<"result" | "trace">("result");
   const [format, setFormat] = useState<"rendered" | "text" | "json">("rendered");
+  const [inspected, setInspected] = useState<InspectedRun<FetchResult> | null>(null);
   const tuning = useTuning("fetch", engine);
   const run = useMutation({ mutationFn: api.playFetch });
   const elapsed = useElapsed(run.isPending);
@@ -76,6 +82,7 @@ export function FetchPlay() {
 
   const ready = args.url !== "" && (!extract || args.prompt !== "");
   const send = (next: Sent) => {
+    setInspected(null);
     setView("result");
     run.mutate(next);
   };
@@ -96,124 +103,186 @@ export function FetchPlay() {
   };
 
   const data = run.data;
-  const cached = data?.attempts?.some((a) => a.status === "cached");
+  const activeResult = inspected ? inspected.response : data?.result;
+  const activeAttempts = inspected ? inspected.entry.attempts : data?.attempts;
+  const activeDuration = inspected ? inspected.entry.duration_ms : (data?.duration_ms ?? 0);
+  const activeEngine = inspected ? inspected.entry.provider : data?.result.fetch_engine;
+  const cached = activeAttempts?.some((a) => a.status === "cached");
   // Tuned parameters bypass the cache by themselves.
   const fresh = noCache || tuning.changed;
+  const showOutput = run.isPending || Boolean(run.error) || Boolean(data) || Boolean(inspected);
 
   return (
-    <>
-      <Stage title="抓取页面" description="调用 fetch 工具：读取一个页面，由提取模型按问题提炼回答，或直接返回原文。调用记入请求日志。">
-        <Composer
-          open={open}
-          tools={
-            <>
-              <Chip icon={<SlidersHorizontal />} label="参数" aria-pressed={open} onClick={() => setOpen(!open)} />
-              <ProviderChip tool="fetch" value={engine} onChange={setEngine} changed={tuning.changed} />
-              {canExtract && (
-                <Segmented
-                  value={extract ? "answer" : "raw"}
-                  onChange={(v) => setAnswer(v === "answer")}
-                  options={[
-                    { value: "answer", label: "提取回答" },
-                    { value: "raw", label: "原文" },
-                  ]}
-                />
-              )}
-              {extract && hasOtherModels(config, chain) && (
-                <Popover className="w-84 p-2" trigger={<Chip icon={<Bot />} value={<span className="num">{override ?? chain[0]}</span>} changed={model !== ""} />}>
+    <Stage tool="fetch" title="网页抓取" description="调用 fetch 工具：读取页面并由提取模型按问题提炼回答，或直接返回 Markdown 原文。">
+      <Composer
+        open={open}
+        splitPanel={engine !== "auto"}
+        tools={
+          <>
+            {canExtract && (
+              <Segmented
+                size="sm"
+                value={extract ? "answer" : "raw"}
+                onChange={(v) => setAnswer(v === "answer")}
+                options={[
+                  { value: "answer", label: "提取回答" },
+                  { value: "raw", label: "原文" },
+                ]}
+              />
+            )}
+            <ProviderChip tool="fetch" value={engine} onChange={setEngine} changed={tuning.changed} />
+            {extract &&
+              (hasOtherModels(config, chain) ? (
+                <Popover className="w-84 p-2" trigger={<Chip icon={<Bot />} label="模型" value={<span className="num">{override ?? chain[0]}</span>} changed={model !== ""} />}>
                   <ModelOverride assigned={chain} value={model} onChange={setModel} />
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pt-2 pb-0.5 text-xs text-ink-3">
                     <LocalTag />
                     使用所选模型提取，不触发故障转移
                   </p>
                 </Popover>
+              ) : (
+                (override ?? chain[0]) && (
+                  <span className="inline-flex h-7 items-center gap-1.5 rounded-ctl border border-line bg-surface px-2.5 text-xs text-ink-3">
+                    <Bot className="size-3.5" />
+                    <span className="num text-ink-2">{override ?? chain[0]}</span>
+                  </span>
+                )
+              ))}
+            {!extract && (
+              <div className="flex items-center gap-1.5 text-xs text-ink-3">
+                <span>偏移</span>
+                <NumberInput
+                  className="w-28"
+                  min={0}
+                  suffix="字节"
+                  value={offset}
+                  aria-label="起始位置"
+                  onChange={(v) => setOffset(Math.round(v))}
+                />
+              </div>
+            )}
+          </>
+        }
+        toolbarRight={
+          <>
+            {fresh && <Summary onClick={() => setOpen(true)}>不读写缓存</Summary>}
+            <Chip
+              icon={<SlidersHorizontal />}
+              label="缓存与参数"
+              changed={noCache || tuning.changed}
+              aria-expanded={open}
+              aria-pressed={open}
+              onClick={() => setOpen(!open)}
+            />
+            <CodeButton
+              tool="fetch"
+              args={args}
+              notices={<LocalNotice items={[override && `提取模型 ${override}`, noCache && "绕过缓存", tuning.changed && `${provider(engine).name} 的临时参数`]} />}
+            />
+          </>
+        }
+        panel={
+          <>
+            <OptionGroup title="调用参数">
+              {!canExtract && (
+                <Notice tone="warn">
+                  尚未配置模型，仅可返回原文。请前往{" "}
+                  <Link href="/models" className="text-ink underline underline-offset-2">
+                    模型接口
+                  </Link>{" "}
+                  页添加。
+                </Notice>
               )}
-              {(fresh || (!extract && offset > 0)) && (
-                <Summary onClick={() => setOpen(true)}>{[!extract && offset > 0 && `从 ${compact(offset)} 字节起`, fresh && "不读写缓存"].filter(Boolean).join(" · ")}</Summary>
-              )}
-            </>
-          }
-          actions={
-            <>
-              <CodeButton
-                tool="fetch"
-                args={args}
-                notices={<LocalNotice items={[override && `提取模型 ${override}`, noCache && "绕过缓存", tuning.changed && `${provider(engine).name} 的临时参数`]} />}
-              />
-              <RunButton label="抓取" loading={run.isPending} disabled={!ready} onClick={submit} />
-            </>
-          }
-          panel={
-            <>
-              <OptionGroup title="调用参数">
-                {!canExtract && (
-                  <Notice tone="warn">
-                    尚未配置模型，仅可返回原文。请前往{" "}
-                    <Link href="/models" className="text-ink underline underline-offset-2">
-                      模型接口
-                    </Link>{" "}
-                    页添加。
-                  </Notice>
-                )}
-                {canExtract && chain.length === 0 && <Notice tone="info">抓取工具尚未关联提取模型，Agent 仅能获得原文。此处用所选模型试用提取。</Notice>}
-                <p className="text-xs text-ink-3">
-                  {extract ? "提取回答：提取模型读取整页内容，仅返回与问题相关的部分，这是 Agent 的默认调用方式。" : "原文：返回页面的 Markdown 原文，较长的页面分段返回。"}
-                </p>
-                {!extract && (
-                  <Group label="起始位置" hint="读取的起始偏移量；续读长页面时填入上一段返回的位置">
-                    <NumberInput className="w-36" min={0} suffix="字节" value={offset} aria-label="起始位置" onChange={(v) => setOffset(Math.round(v))} />
-                  </Group>
-                )}
-                <Group label="绕过缓存" local hint={tuning.changed ? "已调整提供商参数，这次抓取本就不读写缓存。" : "重新向提供商请求页面，不读取也不写入页面缓存与回答缓存。"}>
+              {canExtract && chain.length === 0 && <Notice tone="info">抓取工具尚未关联提取模型，Agent 仅能获得原文。此处用所选模型试用提取。</Notice>}
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <Group
+                  label="绕过缓存"
+                  local
+                  hint={tuning.changed ? "已调整提供商参数，这次抓取本就不读写缓存。" : "重新向提供商请求页面，不读取也不写入页面缓存与回答缓存。"}
+                >
                   <Switch checked={fresh} disabled={tuning.changed} onCheckedChange={setNoCache} aria-label="绕过缓存" />
                 </Group>
-              </OptionGroup>
-              <ProviderParams tool="fetch" engine={engine} tuning={tuning} note="带临时参数的抓取不读写缓存。" />
-            </>
-          }
-        >
+              </div>
+            </OptionGroup>
+            <ProviderParams tool="fetch" engine={engine} tuning={tuning} note="带临时参数的抓取不读写缓存。" />
+          </>
+        }
+        footer={
+          <Examples
+            items={["https://modelcontextprotocol.io/specification/draft/basic/transports", "https://go.dev/doc/devel/release"]}
+            current={url}
+            onPick={(picked) => {
+              changeUrl(picked);
+              if (extract && prompt.trim() === "") setPrompt(defaultExamplePrompt);
+            }}
+            onClear={() => {
+              changeUrl("");
+              setPrompt("");
+            }}
+          />
+        }
+        actions={<RunButton label="抓取" loading={run.isPending} disabled={!ready} onClick={submit} />}
+      >
+        <div className="flex items-center border-b border-line px-3.5">
+          <span className="tag w-12 shrink-0 text-ink-3">URL</span>
           <input
             value={url}
             spellCheck={false}
             autoComplete="off"
             aria-label="URL"
             placeholder="https://example.com/article"
-            className={cx(bare, "num h-12 text-sm")}
+            className="num h-11 min-w-0 flex-1 bg-transparent text-sm text-ink placeholder:text-ink-3 focus:outline-none"
             onChange={(e) => changeUrl(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && ready) {
                 e.preventDefault();
                 submit();
               }
             }}
           />
-          {extract && (
+        </div>
+        {extract ? (
+          <div className="flex items-start px-3.5 py-2.5">
+            <span className="tag w-12 shrink-0 pt-1 text-ink-3">问题</span>
             <textarea
               rows={2}
               value={prompt}
               aria-label="针对页面的问题"
               placeholder="想从这个页面知道什么？例如：这个版本有哪些破坏性变更"
-              className={cx(bare, "resize-none border-t border-line pt-3 pb-2 leading-6")}
+              className="min-w-0 flex-1 resize-none bg-transparent text-sm leading-6 text-ink placeholder:text-ink-3 focus:outline-none"
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={onModEnter(submit)}
             />
-          )}
-        </Composer>
-        {url.trim() === "" && <Examples items={["https://modelcontextprotocol.io/specification/draft/basic/transports", "https://go.dev/doc/devel/release"]} onPick={changeUrl} />}
-      </Stage>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 px-3.5 py-2.5 text-xs text-ink-3">
+            <span className="tag w-12 shrink-0">模式</span>
+            <span>直接返回页面的 Markdown 原文；较长的页面分段返回，可通过顶部「偏移」或结果底部的「继续读取」翻页。</span>
+          </div>
+        )}
+      </Composer>
 
-      {(run.isPending || run.error || data) && (
+      {showOutput && (
         <Output
-          stamp={run.submittedAt}
+          stamp={inspected ? inspected.entry.id : run.submittedAt}
           view={view}
           onView={setView}
+          banner={
+            inspected && (
+              <HistoryBanner
+                entry={inspected.entry}
+                onRerun={submit}
+                onClose={() => setInspected(null)}
+              />
+            )
+          }
           tabs={[
             { value: "result", label: "结果" },
-            { value: "trace", label: traceLabel(data?.attempts) },
+            { value: "trace", label: traceLabel(activeAttempts) },
           ]}
           actions={
             view === "result" &&
-            data && (
+            activeResult && (
               <Segmented
                 size="sm"
                 value={format}
@@ -227,16 +296,16 @@ export function FetchPlay() {
             )
           }
           strip={
-            data &&
-            !run.isPending && (
+            !run.isPending &&
+            (inspected || data) && (
               <>
-                <span className="num text-ink">{duration(data.duration_ms)}</span>
-                {data.result.fetch_engine && <Badge tone="signal">{data.result.fetch_engine}</Badge>}
+                <span className="num font-medium text-ink">{duration(activeDuration)}</span>
+                {activeEngine && <ProviderNames ids={activeEngine} />}
                 {cached && <Badge tone="info">缓存命中</Badge>}
-                {run.variables?.model && <Badge>{run.variables.model}</Badge>}
-                {run.variables?.route && <Badge>临时参数</Badge>}
-                <span>{data.result.answer !== undefined ? "提取回答" : "原文"}</span>
-                {data.result.content_length !== undefined && <span className="num">全文 {compact(data.result.content_length)} 字节</span>}
+                {!inspected && run.variables?.model && <Badge>{run.variables.model}</Badge>}
+                {!inspected && run.variables?.route && <Badge>临时参数</Badge>}
+                {activeResult && <span>{activeResult.answer !== undefined ? "提取回答" : "原文"}</span>}
+                {activeResult?.content_length !== undefined && <span className="num">全文 {compact(activeResult.content_length)} 字节</span>}
               </>
             )
           }
@@ -244,38 +313,51 @@ export function FetchPlay() {
           <TabPanel value="result" className="flex flex-col">
             {run.isPending ? (
               <Waiting label={run.variables?.url} elapsed={elapsed} />
-            ) : run.error ? (
+            ) : !inspected && run.error ? (
               <Failure error={run.error} />
-            ) : data && format === "json" ? (
-              <JSONView value={data.result} />
+            ) : inspected && !inspected.response ? (
+              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={submit} />
+            ) : activeResult && format === "json" ? (
+              <JSONView value={activeResult} />
             ) : (
-              data && (
+              activeResult && (
                 <FetchResultView
-                  result={data.result}
-                  from={run.variables?.offset ?? 0}
+                  result={activeResult}
+                  from={inspected ? (typeof inspected.request?.offset === "number" ? inspected.request.offset : 0) : (run.variables?.offset ?? 0)}
                   rendered={format === "rendered"}
                   onNext={(next) => {
-                    // Reads on from the page that was fetched, with what it was fetched with, whatever the form says by now.
-                    const ran = run.variables;
-                    if (!ran) return;
-                    setUrl(ran.url);
-                    setEngine(ran.fetch_engine ?? "auto");
+                    const targetUrl = inspected ? (typeof inspected.request?.url === "string" ? inspected.request.url : url) : (run.variables?.url ?? url);
+                    const targetEngine = inspected
+                      ? (typeof inspected.request?.fetch_engine === "string" ? inspected.request.fetch_engine : undefined)
+                      : run.variables?.fetch_engine;
+                    if (!targetUrl) return;
+                    setUrl(targetUrl);
+                    setEngine(targetEngine ?? "auto");
                     setAnswer(false);
                     setOffset(next);
-                    send({ url: ran.url, prompt: "", raw: true, offset: next, fetch_engine: ran.fetch_engine, no_cache: ran.no_cache, route: ran.route });
+                    send({ url: targetUrl, prompt: "", raw: true, offset: next, fetch_engine: targetEngine, no_cache: noCache || undefined, route: tuning.route });
                   }}
                 />
               )
             )}
           </TabPanel>
           <TabPanel value="trace">
-            <TraceView attempts={run.isPending ? undefined : data?.attempts} total={data?.duration_ms ?? 0} />
+            <TraceView attempts={run.isPending ? undefined : activeAttempts} total={activeDuration} />
           </TabPanel>
         </Output>
       )}
 
-      <Recent tool="fetch" stamp={run.isPending ? undefined : run.submittedAt || undefined} onPick={restore} />
-    </>
+      <Recent<FetchResult>
+        tool="fetch"
+        stamp={run.isPending ? undefined : run.submittedAt || undefined}
+        activeId={inspected?.entry.id}
+        onPick={restore}
+        onInspect={(item) => {
+          setInspected(item);
+          setView("result");
+        }}
+      />
+    </Stage>
   );
 }
 

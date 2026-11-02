@@ -1,56 +1,54 @@
 import { useQuery } from "@tanstack/react-query";
-import { Boxes, Code, CornerDownLeft, Play, RotateCcw } from "lucide-react";
+import { Boxes, Code, CornerDownLeft, History, Play, RotateCcw, Sparkles, X } from "lucide-react";
 import { Collapsible } from "radix-ui";
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode } from "react";
 import { Link } from "wouter";
+import { ProviderNames } from "../../components/ProviderName";
 import { ProviderPicker } from "../../components/ProviderPicker";
 import { OptionFields, type RouteParams } from "../../components/RouteOptions";
 import { Waterfall } from "../../components/Waterfall";
 import { api, type Attempt, type LogEntry, type RoutedTool, type RouteTuning } from "../../lib/api";
 import { useConfig } from "../../lib/config";
-import { ago, duration, toolPage } from "../../lib/format";
+import { ago, compact, dateTime, duration, toolPage } from "../../lib/format";
 import { Dialog, Popover, useToast } from "../../ui/overlays";
-import { Button, CodeBlock, cx, Dot, Empty, Notice, Spinner, TabList, TabPanel, Tabs, Tooltip } from "../../ui/primitives";
+import { Badge, Button, CodeBlock, cx, Dot, Empty, Notice, Panel, Segmented, Spinner, TabList, TabPanel, Tabs, Tooltip } from "../../ui/primitives";
 
 const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
 /* ---------- Stage ---------- */
 
-function Cross({ className }: { className: string }) {
-  return (
-    <span aria-hidden className={cx("absolute size-2.5 -translate-x-1/2 -translate-y-1/2 text-ink-3 max-md:hidden", className)}>
-      <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-current" />
-      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-current" />
-    </span>
-  );
-}
-
 /**
- * The head of a playground page and the stage its composer stands on: a
- * column marked out by hairlines, the way a drawing sheet marks its frame.
+ * The head of a playground page and the workbench stack below it.
+ * All sections share the same full container width for visual alignment.
  */
-export function Stage({ title, description, children }: { title: string; description: ReactNode; children: ReactNode }) {
+export function Stage({
+  tool,
+  title,
+  description,
+  actions,
+  children,
+}: {
+  tool?: string;
+  title: string;
+  description: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <>
-      <header className="mb-5">
-        <div className="tag text-signal-text">调试台</div>
-        <h1 className="mt-0.5 text-xl font-medium tracking-tight">{title}</h1>
-        <p className="mt-1 max-w-2xl text-sm text-ink-3">{description}</p>
-      </header>
-      <div className="relative py-8 max-md:py-0">
-        <span aria-hidden className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-line-strong to-transparent max-md:hidden" />
-        <span aria-hidden className="absolute inset-x-0 bottom-0 h-px bg-linear-to-r from-transparent via-line-strong to-transparent max-md:hidden" />
-        <div className="relative mx-auto max-w-3xl">
-          <span aria-hidden className="absolute -inset-y-14 -left-8 w-px bg-linear-to-b from-transparent via-line-strong to-transparent max-md:hidden" />
-          <span aria-hidden className="absolute -inset-y-14 -right-8 w-px bg-linear-to-b from-transparent via-line-strong to-transparent max-md:hidden" />
-          <Cross className="-top-8 -left-8" />
-          <Cross className="-top-8 left-[calc(100%+2rem)]" />
-          <Cross className="top-[calc(100%+2rem)] -left-8" />
-          <Cross className="top-[calc(100%+2rem)] left-[calc(100%+2rem)]" />
-          {children}
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="tag text-signal-text">调试台</span>
+            {tool && <span className="tag">· {tool}</span>}
+          </div>
+          <h1 className="mt-0.5 text-xl font-medium tracking-tight">{title}</h1>
+          <p className="mt-1 max-w-2xl text-sm text-ink-3">{description}</p>
         </div>
-      </div>
-    </>
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
+      </header>
+      {children}
+    </div>
   );
 }
 
@@ -60,37 +58,64 @@ export function Stage({ title, description, children }: { title: string; descrip
 export const bare = "block w-full bg-transparent px-4 text-base text-ink placeholder:text-ink-3 focus:outline-none disabled:opacity-50";
 
 /**
- * What a call is made from: the main input, a bar of the choices that shape
- * the call, and a panel of the rest of its parameters that folds open.
+ * Structured request workbench:
+ * 1. Top instrument bar (`tools` on the left, `toolbarRight` on the right)
+ * 2. Collapsible parameter panel (`panel`, smartly 1-col or 2-col based on `splitPanel`)
+ * 3. Main structured input area (`children`)
+ * 4. Bottom action bar (`footer` on the left for examples/counters, `actions` on the right for execution)
  */
 export function Composer({
   children,
   tools,
+  toolbarRight,
+  footer,
   actions,
   panel,
   open,
+  splitPanel = false,
 }: {
   children: ReactNode;
-  /** The left of the bar: what the call runs with. */
+  /** Left side of the top instrument bar: primary mode, provider, and quick filters. */
   tools: ReactNode;
-  /** The right of the bar, ending in the run button. */
+  /** Right side of the top instrument bar: summary, parameter toggle, MCP code view. */
+  toolbarRight?: ReactNode;
+  /** Left side of the bottom bar: examples, input counters, status hints. */
+  footer?: ReactNode;
+  /** Right side of the bottom bar, ending in the primary RunButton. */
   actions: ReactNode;
-  panel: ReactNode;
-  open: boolean;
+  panel?: ReactNode;
+  open?: boolean;
+  /** Whether the collapsible parameter panel splits into 2 columns on desktop. */
+  splitPanel?: boolean;
 }) {
   return (
-    <div className="rounded-panel border border-line-strong bg-surface">
-      {children}
-      <div className="flex items-center gap-2 border-t border-line p-2.5 max-lg:flex-wrap">
-        {/* The summary gives way first, so the bar stays one line for as long as its chips fit. */}
-        <div className="flex min-w-0 flex-1 items-center gap-2 max-lg:w-full max-lg:flex-none max-lg:flex-wrap">{tools}</div>
+    <div className="overflow-hidden rounded-panel border border-line-strong bg-surface">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-sunken/45 px-3 py-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{tools}</div>
+        {toolbarRight && <div className="ml-auto flex shrink-0 items-center gap-1.5">{toolbarRight}</div>}
+      </div>
+
+      {panel !== undefined && (
+        <Collapsible.Root open={open}>
+          <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-fold-up data-[state=open]:animate-fold-down">
+            <div
+              className={cx(
+                "border-b border-line bg-sunken/20 [&>*]:border-line",
+                splitPanel ? "grid max-md:divide-y md:grid-cols-2 md:divide-x" : "flex flex-col divide-y",
+              )}
+            >
+              {panel}
+            </div>
+          </Collapsible.Content>
+        </Collapsible.Root>
+      )}
+
+      <div className="bg-surface">{children}</div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-sunken/25 px-3.5 py-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{footer}</div>
         <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>
       </div>
-      <Collapsible.Root open={open}>
-        <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-fold-up data-[state=open]:animate-fold-down">
-          <div className="grid border-t border-line max-md:divide-y md:grid-cols-2 md:divide-x [&>*]:border-line">{panel}</div>
-        </Collapsible.Content>
-      </Collapsible.Root>
     </div>
   );
 }
@@ -103,12 +128,18 @@ export function Chip({
   changed,
   className,
   ...rest
-}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "value"> & { icon?: ReactNode; label?: ReactNode; value?: ReactNode; /** Marks a value that is not the configured one. */ changed?: boolean }) {
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "value"> & {
+  icon?: ReactNode;
+  label?: ReactNode;
+  value?: ReactNode;
+  /** Marks a value that is not the configured one. */
+  changed?: boolean;
+}) {
   return (
     <button
       type="button"
       className={cx(
-        "inline-flex h-8 max-w-64 shrink-0 items-center gap-1.5 rounded-ctl border border-line px-2.5 text-sm text-ink-2 transition-colors",
+        "inline-flex h-7 max-w-64 shrink-0 items-center gap-1.5 rounded-ctl border border-line bg-surface px-2.5 text-xs text-ink-2 transition-colors",
         "hover:border-line-strong hover:text-ink aria-expanded:border-line-strong aria-expanded:bg-raised aria-expanded:text-ink",
         "aria-pressed:border-line-strong aria-pressed:bg-raised aria-pressed:text-ink [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3",
         className,
@@ -117,7 +148,7 @@ export function Chip({
     >
       {icon}
       {label && <span className={value !== undefined ? "text-ink-3" : undefined}>{label}</span>}
-      {value !== undefined && <span className="truncate text-ink">{value}</span>}
+      {value !== undefined && <span className="truncate font-medium text-ink">{value}</span>}
       {changed && <Dot tone="signal" />}
     </button>
   );
@@ -126,7 +157,7 @@ export function Chip({
 /** The values of the parameters panel in a few words; a click opens the panel. */
 export function Summary({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="num min-w-0 truncate px-1 text-xs text-ink-3 transition-colors hover:text-ink">
+    <button type="button" onClick={onClick} className="num min-w-0 truncate px-1.5 text-xs text-ink-3 transition-colors hover:text-ink">
       {children}
     </button>
   );
@@ -151,21 +182,57 @@ export const onModEnter = (run: () => void) => (e: KeyboardEvent) => {
   }
 };
 
-/** Ready-made inputs to start from, under the composer. */
-export function Examples({ items, mono = true, onPick }: { items: string[]; mono?: boolean; onPick: (item: string) => void }) {
+/** Ready-made inputs inside the composer footer bar; stays available so switching examples takes one click. */
+export function Examples({
+  items,
+  current,
+  mono = true,
+  onPick,
+  onClear,
+}: {
+  items: string[];
+  current?: string;
+  mono?: boolean;
+  onPick: (item: string) => void;
+  onClear?: () => void;
+}) {
+  const hasInput = Boolean(current && current.trim() !== "");
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-2">
-      <span className="tag">示例</span>
-      {items.map((item) => (
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+      <span className="tag flex items-center gap-1 text-ink-3">
+        <Sparkles className="size-3" />
+        示例
+      </span>
+      {items.map((item) => {
+        const active = current?.trim() === item.trim();
+        return (
+          <button
+            key={item}
+            type="button"
+            onClick={() => onPick(item)}
+            className={cx(
+              "max-w-64 truncate rounded-ctl border px-2 py-0.5 text-xs transition-colors",
+              active
+                ? "border-line-strong bg-raised text-ink"
+                : "border-line bg-surface text-ink-3 hover:border-line-strong hover:text-ink",
+              mono && "num",
+            )}
+            title={item}
+          >
+            {item.replace(/^https?:\/\//, "")}
+          </button>
+        );
+      })}
+      {hasInput && onClear && (
         <button
-          key={item}
           type="button"
-          onClick={() => onPick(item)}
-          className={cx("max-w-full truncate rounded-ctl border border-line px-2 py-0.5 text-xs text-ink-3 transition-colors hover:border-line-strong hover:text-ink", mono && "num")}
+          onClick={onClear}
+          className="inline-flex items-center gap-1 rounded-ctl px-1.5 py-0.5 text-xs text-ink-3 transition-colors hover:bg-raised hover:text-ink"
         >
-          {item}
+          <X className="size-3" />
+          清空
         </button>
-      ))}
+      )}
     </div>
   );
 }
@@ -181,10 +248,10 @@ export function LocalTag() {
   );
 }
 
-/** One column of the parameters panel. */
+/** One section of the parameters panel. */
 export function OptionGroup({ title, local, action, children }: { title: ReactNode; local?: boolean; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="flex min-w-0 flex-col gap-4 p-4">
+    <section className="flex min-w-0 flex-col gap-3.5 p-4">
       <header className="flex h-5 items-center gap-2">
         <h3 className="tag truncate">{title}</h3>
         {local && <LocalTag />}
@@ -229,7 +296,7 @@ export function ProviderChip({ tool, value, onChange, changed }: { tool: RoutedT
       open={open}
       onOpenChange={setOpen}
       className="w-84 p-2"
-      trigger={<Chip icon={<Boxes />} label="提供商" value={value === "auto" ? "自动" : provider(value).name} changed={changed} />}
+      trigger={<Chip icon={<Boxes />} label="提供商" value={value === "auto" ? "自动" : provider(value).name} changed={changed || value !== "auto"} />}
     >
       <ProviderPicker
         tool={tool}
@@ -291,25 +358,29 @@ export function useTuning(tool: RoutedTool, engine: string): Tuning {
   };
 }
 
-/** The column of the parameters panel that tunes the pinned provider for one call. */
+/**
+ * Tunes the pinned provider for one call. When `engine === "auto"`, renders a
+ * compact footer bar instead of taking up a whole empty column.
+ */
 export function ProviderParams({ tool, engine, tuning, note }: { tool: RoutedTool; engine: string; tuning: Tuning; note?: ReactNode }) {
   const { provider } = useConfig();
   const page = toolPage(tool);
   if (engine === "auto") {
     return (
-      <OptionGroup title="提供商参数" local>
-        <p className="text-xs text-ink-3">
-          当前为「自动」：各提供商使用各自{" "}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-sunken/35 px-4 py-2.5 text-xs text-ink-3">
+        <span>
+          当前提供商为「自动」，各提供商使用{" "}
           <Link href={page} className="text-ink-2 underline underline-offset-2 hover:text-ink">
-            已保存的参数
+            已保存的路由参数
           </Link>
-          。在上方固定一个提供商后，可在此临时调整它的参数再试，无需改动配置。
-        </p>
-      </OptionGroup>
+          。在顶栏固定某一提供商后，可在此临时微调其专有参数。
+        </span>
+        <LocalTag />
+      </div>
     );
   }
   return (
-    <OptionGroup title={`${provider(engine).name} 的参数`} local action={tuning.changed && <ResetButton onClick={tuning.reset} />}>
+    <OptionGroup title={`${provider(engine).name} 专有参数`} local action={tuning.changed && <ResetButton onClick={tuning.reset} />}>
       <OptionFields key={tuning.version} tool={tool} provider={engine} value={tuning.value} onChange={tuning.set} columns="sm:grid-cols-2" />
       <p className="text-xs text-ink-3">
         {tuning.changed ? "已自定义参数，" : "初始值取自配置，"}改动只随调试台的调用发出。{note} 要让 MCP 调用也生效，请到{" "}
@@ -331,6 +402,7 @@ export function Output<T extends string>({
   tabs,
   actions,
   strip,
+  banner,
   stamp,
   children,
 }: {
@@ -339,6 +411,8 @@ export function Output<T extends string>({
   tabs: { value: T; label: ReactNode }[];
   actions?: ReactNode;
   strip?: ReactNode;
+  /** Optional top banner (e.g. when inspecting a historical run). */
+  banner?: ReactNode;
   /** Changes with every call, which brings the pane into view: an open parameter panel pushes it below the fold. */
   stamp?: unknown;
   /** One TabPanel per tab. */
@@ -352,10 +426,11 @@ export function Output<T extends string>({
   }, [stamp]);
   return (
     // No overflow clipping here: it would stop a sticky footer from sticking to the viewport.
-    <section ref={ref} className="mt-6 min-w-0 scroll-mt-6 rounded-panel border border-line bg-surface">
+    <section ref={ref} className="min-w-0 scroll-mt-6 rounded-panel border border-line bg-surface">
+      {banner && <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-raised/60 px-4 py-2 text-xs">{banner}</div>}
       <Tabs value={view} onChange={onView}>
         <TabList tabs={tabs} actions={actions} />
-        {strip && <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-2 text-xs text-ink-3">{strip}</div>}
+        {strip && <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-sunken/25 px-4 py-2 text-xs text-ink-3">{strip}</div>}
         {children}
       </Tabs>
     </section>
@@ -366,7 +441,7 @@ export { TabPanel };
 
 export function Waiting({ label, elapsed }: { label: ReactNode; elapsed: number }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-6 py-20 text-sm text-ink-2">
+    <div className="flex flex-col items-center justify-center gap-2 px-6 py-16 text-sm text-ink-2">
       <Spinner />
       <span className="max-w-md truncate text-center">{label}</span>
       <span className="num text-xs text-ink-3">{duration(elapsed)}</span>
@@ -382,14 +457,85 @@ export function Failure({ error }: { error: Error }) {
   );
 }
 
-export function JSONView({ value }: { value: unknown }) {
+export function JSONView({ value, label = "MCP 工具返回给 Agent 的原始内容" }: { value: unknown; label?: string }) {
   return (
     <div className="flex flex-col gap-3 p-4">
-      <p className="text-xs text-ink-3">MCP 工具返回给 Agent 的原始内容</p>
+      <p className="text-xs text-ink-3">{label}</p>
       <CodeBlock copy wrap>
         {JSON.stringify(value, null, 2)}
       </CodeBlock>
     </div>
+  );
+}
+
+/**
+ * Fallback view when inspecting a historical run whose response body was not
+ * persisted (`logs.capture_body` was off at the time).
+ */
+export function HistoricalFallback({
+  entry,
+  request,
+  onRerun,
+}: {
+  entry: LogEntry;
+  request: Record<string, unknown> | null;
+  onRerun: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4 p-4">
+      {entry.error ? (
+        <Notice tone="err">{entry.error}</Notice>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-ctl border border-line bg-sunken/50 px-3.5 py-2.5 text-xs text-ink-2">
+          <span>
+            该次历史运行未记录返回正文（可在{" "}
+            <Link href="/system" className="text-ink underline underline-offset-2 hover:text-signal-text">
+              系统设置
+            </Link>{" "}
+            中开启「记录返回内容」）。当时参数已载入上方输入框，可一键重新运行，或切换至「调用链」查看上游耗时。
+          </span>
+          <Button size="sm" variant="secondary" icon={<Play />} onClick={onRerun}>
+            以此参数重新运行
+          </Button>
+        </div>
+      )}
+      {request && (
+        <div>
+          <div className="tag mb-1.5">当时的请求参数</div>
+          <CodeBlock copy>{JSON.stringify(request, null, 2)}</CodeBlock>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Banner rendered at the top of Output when viewing a past LogEntry. */
+export function HistoryBanner({
+  entry,
+  onRerun,
+  onClose,
+}: {
+  entry: LogEntry;
+  onRerun: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="flex min-w-0 items-center gap-2">
+        <Badge tone={entry.status === "ok" ? "ok" : "err"} dot>
+          历史记录 #{entry.id}
+        </Badge>
+        <span className="num text-ink-2">{dateTime(entry.ts)}</span>
+        <span className="text-ink-3">({ago(entry.ts)})</span>
+        {entry.source === "mcp" && <Badge>{entry.api_key_name || "MCP"}</Badge>}
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Button size="sm" variant="secondary" icon={<Play />} onClick={onRerun}>
+          重新运行
+        </Button>
+        <Button size="sm" variant="ghost" icon={<X />} aria-label="关闭历史详情" onClick={onClose} />
+      </div>
+    </>
   );
 }
 
@@ -441,8 +587,8 @@ export function CodeButton({ tool, args, notices }: { tool: string; args: object
   const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: args } }, null, 2);
   return (
     <>
-      <Button variant="ghost" icon={<Code />} onClick={() => setOpen(true)}>
-        代码
+      <Button size="sm" variant="ghost" icon={<Code />} onClick={() => setOpen(true)}>
+        MCP 请求
       </Button>
       <Dialog
         open={open}
@@ -473,66 +619,183 @@ export function LocalNotice({ items }: { items: (string | false | undefined)[] }
 
 /* ---------- Recent runs ---------- */
 
+export interface InspectedRun<R = unknown> {
+  entry: LogEntry;
+  request: Record<string, unknown> | null;
+  response: R | null;
+}
+
+export function parseJSON<T>(raw: string | undefined): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * The latest calls of a tool made from the console. A click hands the
- * arguments of that call to `onPick`, to run it again or from there.
+ * The latest calls of a tool. Clicking a row loads the full log entry (request,
+ * upstream attempts waterfall, and response if captured) into the playground
+ * output pane AND populates the composer parameters.
  */
-export function Recent({ tool, stamp, onPick }: { tool: RoutedTool; /** Changes when a call has finished. */ stamp: unknown; onPick: (request: Record<string, unknown>) => void }) {
+export function Recent<R = unknown>({
+  tool,
+  stamp,
+  activeId,
+  onPick,
+  onInspect,
+}: {
+  tool: RoutedTool;
+  /** Changes when a call has finished. */
+  stamp: unknown;
+  /** ID of the currently inspected log entry, if any. */
+  activeId?: number | null;
+  onPick: (request: Record<string, unknown>) => void;
+  onInspect?: (inspected: InspectedRun<R>) => void;
+}) {
   const toast = useToast();
-  const recent = useQuery({ queryKey: ["play-recent", tool], queryFn: () => api.logs({ tool, source: "webui", limit: 6 }) });
+  const [scope, setScope] = useState<"webui" | "all">("all");
+  const recent = useQuery({
+    queryKey: ["play-recent", tool, scope],
+    queryFn: () => api.logs({ tool, source: scope === "webui" ? "webui" : undefined, limit: 8 }),
+  });
   const { refetch } = recent;
   useEffect(() => {
     if (stamp === undefined) return;
     // The request log is written a moment after the call returns.
-    const timer = setTimeout(() => void refetch(), 700);
+    const timer = setTimeout(() => void refetch(), 650);
     return () => clearTimeout(timer);
   }, [stamp, refetch]);
 
-  const pick = async (entry: LogEntry) => {
+  const select = async (entry: LogEntry, loadFormOnly = false) => {
     try {
-      const request: unknown = JSON.parse((await api.log(entry.id)).request ?? "");
-      if (!request || typeof request !== "object") throw new Error();
-      onPick(request as Record<string, unknown>);
+      const full = await api.log(entry.id);
+      const req = parseJSON<Record<string, unknown>>(full.request);
+      const res = parseJSON<R>(full.response);
+      if (req && typeof req === "object") {
+        onPick(req);
+      } else if (loadFormOnly) {
+        throw new Error();
+      }
+      if (!loadFormOnly && onInspect) {
+        onInspect({ entry: full, request: req, response: res });
+      }
     } catch {
-      toast("无法还原这次调用的参数：记录已被清理，或请求过长而被截断。", "err");
+      toast("无法读取这次调用的记录：记录已被清理，或请求参数被截断。", "err");
     }
   };
 
   const entries = recent.data ?? [];
   return (
-    <section className="mt-6">
-      <header className="mb-2 flex items-baseline justify-between px-1">
-        <h2 className="tag">最近运行</h2>
-        <Link href="/logs" className="text-xs text-ink-3 hover:text-ink">
-          全部请求日志
-        </Link>
-      </header>
-      <div className="rounded-panel border border-line bg-surface">
-        {entries.length === 0 ? (
-          <Empty title={recent.isPending ? "正在读取…" : "还没有运行记录"}>{!recent.isPending && "从上方发起一次调用后，记录会出现在这里；点击记录可载入当时的参数。"}</Empty>
-        ) : (
-          <ol>
-            {entries.map((entry) => (
-              <li key={entry.id} className="border-b border-line last:border-b-0">
-                <button
-                  type="button"
-                  title="载入这次调用的参数"
-                  onClick={() => void pick(entry)}
-                  className="group flex h-10 w-full items-center gap-3 px-4 text-left transition-colors hover:bg-raised/60"
+    <Panel
+      flush
+      title={
+        <span className="flex items-center gap-2 self-center">
+          <History className="size-4 text-ink-3" />
+          <span>最近运行</span>
+          {entries.length > 0 && <Badge>{entries.length}</Badge>}
+        </span>
+      }
+      actions={
+        <>
+          <Segmented
+            size="sm"
+            value={scope}
+            onChange={setScope}
+            options={[
+              { value: "all", label: "全部来源" },
+              { value: "webui", label: "仅调试台" },
+            ]}
+          />
+          <Link href={`/logs?tool=${tool}`} className="ml-1 text-xs text-ink-3 transition-colors hover:text-ink">
+            全部日志 →
+          </Link>
+        </>
+      }
+    >
+      {entries.length === 0 ? (
+        <div className="flex items-center justify-between gap-4 px-4 py-5 text-xs text-ink-3">
+          <span>
+            {recent.isPending
+              ? "正在读取最近运行记录…"
+              : scope === "webui"
+                ? "尚无调试台运行记录。从上方发起调用后，可在此回看结果、调用链或复现参数。"
+                : "尚无该工具的运行记录。从上方发起一次调用后，记录将显示在此处。"}
+          </span>
+        </div>
+      ) : (
+        <ol className="divide-y divide-line">
+          {entries.map((entry) => {
+            const active = activeId === entry.id;
+            const tokens = entry.input_tokens + entry.output_tokens;
+            const hasFallback = Boolean(entry.hops && entry.hops.length > 0);
+            return (
+              <li key={entry.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-current={active ? "true" : undefined}
+                  onClick={() => void select(entry, false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      void select(entry, false);
+                    }
+                  }}
+                  className={cx(
+                    "group relative flex min-h-11 w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-raised/60",
+                    active && "bg-raised",
+                  )}
                 >
+                  {active && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-signal-text" />}
                   <Dot tone={entry.status === "ok" ? "ok" : "err"} />
-                  <span className="min-w-0 flex-1 truncate text-sm">{entry.summary}</span>
-                  <RotateCcw className="size-3.5 shrink-0 text-ink-3 opacity-0 transition-opacity group-hover:opacity-100 max-sm:hidden" />
-                  {entry.provider && <span className="num max-w-40 truncate text-xs text-ink-2 max-sm:hidden">{entry.provider}</span>}
+                  <span className="num w-12 shrink-0 text-xs text-ink-3">#{entry.id}</span>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 truncate text-sm font-medium text-ink">{entry.summary || "—"}</span>
+                      {entry.source === "mcp" && <Badge className="max-sm:hidden">{entry.api_key_name || "MCP"}</Badge>}
+                      {hasFallback && (
+                        <Badge tone="warn" className="max-sm:hidden">
+                          回退
+                        </Badge>
+                      )}
+                    </div>
+                    {entry.error && <div className="mt-0.5 truncate text-xs text-err">{entry.error}</div>}
+                  </div>
+
+                  {entry.provider && (
+                    <span className="shrink-0 text-xs text-ink-2 max-md:hidden">
+                      <ProviderNames ids={entry.provider} />
+                    </span>
+                  )}
+
+                  {tokens > 0 && <span className="num shrink-0 text-xs text-ink-3 max-lg:hidden">{compact(tokens)} tok</span>}
+
                   <span className="num w-14 shrink-0 text-right text-xs text-ink-2">{duration(entry.duration_ms)}</span>
-                  <span className="w-16 shrink-0 text-right text-xs text-ink-3">{ago(entry.ts)}</span>
-                </button>
+                  <span className="w-16 shrink-0 text-right text-xs text-ink-3 max-sm:hidden">{ago(entry.ts)}</span>
+
+                  <Tooltip content="仅载入参数到输入框">
+                    <button
+                      type="button"
+                      aria-label="载入这次调用的参数"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void select(entry, true);
+                      }}
+                      className="grid size-7 shrink-0 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-surface hover:text-ink"
+                    >
+                      <RotateCcw className="size-3.5" />
+                    </button>
+                  </Tooltip>
+                </div>
               </li>
-            ))}
-          </ol>
-        )}
-      </div>
-    </section>
+            );
+          })}
+        </ol>
+      )}
+    </Panel>
   );
 }
 
