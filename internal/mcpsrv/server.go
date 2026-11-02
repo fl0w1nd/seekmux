@@ -136,39 +136,6 @@ const fetchDescription = "Fetch a web page and answer `prompt` against it. A hel
 	"- Short pages and source-code files are returned as original text instead of an answer.\n" +
 	"- Set `raw` only when you need the original text itself, e.g. to copy a long passage or to double-check an answer."
 
-// alsoReads words what the routing rules in effect add to fetch, for the
-// places an agent learns of the tool. It is empty when they add nothing.
-func alsoReads(reads []string) string {
-	if len(reads) == 0 {
-		return ""
-	}
-	return "It also reads what a plain page fetch gets nothing from: " + strings.Join(reads, ", ") + ". Pass the ordinary URL of the page."
-}
-
-// instructions introduces the server to a client's model before it has seen
-// a tool. Clients that load tool descriptions only on demand show the model
-// nothing else, so what sets these tools apart has to be said here.
-func instructions(offered func(string) bool, reads []string) string {
-	var b strings.Builder
-	b.WriteString("SeekMux searches and reads the live web through commercial search and crawl providers, with failover between them.")
-	if offered(config.ToolSearch) {
-		b.WriteString("\n- `search`: web search, several queries in one call, with filters for recency and domains.")
-	}
-	if offered(config.ToolDevSearch) {
-		b.WriteString("\n- `dev_search`: search of issues, pull requests, READMEs and docs, for questions about a library, framework or tool.")
-	}
-	if offered(config.ToolFetch) {
-		b.WriteString("\n- `fetch`: reads a page and answers your question about it, so a long page costs little context.")
-		if also := alsoReads(reads); also != "" {
-			b.WriteString(" " + also + " Use it for such a URL whenever one comes up, also after another web tool failed on it or returned a login wall.")
-		}
-	}
-	if offered(config.ToolResearch) {
-		b.WriteString("\n- `research`: hands a whole question to an agent that searches and reads on its own and returns a sourced report.")
-	}
-	return b.String()
-}
-
 const devSearchDescription = "Search an index of public code repositories and documentation sites: issues, merged pull requests, READMEs and docs. " +
 	"Each result comes with the passages that matched, so it can often be used without fetching the page.\n" +
 	"- Use it for questions about a library, framework or tool: how to use or configure it, what an error means, whether a bug is known or fixed.\n" +
@@ -192,21 +159,6 @@ func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *m
 	snap := a.View(caller)
 	// The icons are the console's own, served without a login next to /mcp.
 	base := snap.PublicURL(r)
-	allowed := func(tool string) bool { return slices.Contains(key.Scopes, tool) }
-	offered := func(tool string) bool {
-		switch tool {
-		case config.ToolDevSearch:
-			return allowed(tool) && search.DevAvailable(snap.Config)
-		case config.ToolResearch:
-			return allowed(tool) && app.ResearchAvailable(snap)
-		}
-		return allowed(tool)
-	}
-	// What the rules add to fetch is told wherever a model may meet the tool.
-	var reads []string
-	if offered(config.ToolFetch) {
-		reads = snap.Config.Reads()
-	}
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:       "seekmux",
 		Title:      "SeekMux",
@@ -216,18 +168,15 @@ func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *m
 			{Source: base + "/icon-192.png", MIMEType: "image/png", Sizes: []string{"192x192"}},
 			{Source: base + "/favicon.svg", MIMEType: "image/svg+xml", Sizes: []string{"any"}},
 		},
-	}, &mcp.ServerOptions{Instructions: instructions(offered, reads)})
+	}, nil)
+	allowed := func(tool string) bool { return slices.Contains(key.Scopes, tool) }
 
-	if offered(config.ToolSearch) {
-		description := searchDescription
-		if len(reads) > 0 {
-			description += "\n- To read a result, `fetch` its URL. That works for results on sites a plain page fetch gets nothing from: " + strings.Join(reads, ", ") + "."
-		}
+	if allowed(config.ToolSearch) {
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "search",
 			Title:       "Web search",
 			Annotations: readOnly,
-			Description: description,
+			Description: searchDescription,
 			InputSchema: schema(`{
 				"type": "object",
 				"required": ["queries"],
@@ -257,7 +206,7 @@ func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *m
 		})
 	}
 
-	if offered(config.ToolDevSearch) {
+	if allowed(config.ToolDevSearch) && search.DevAvailable(snap.Config) {
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "dev_search",
 			Title:       "Developer search",
@@ -291,16 +240,12 @@ func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *m
 		})
 	}
 
-	if offered(config.ToolFetch) {
-		description := fetchDescription
-		if also := alsoReads(reads); also != "" {
-			description += "\n- " + also
-		}
+	if allowed(config.ToolFetch) {
 		mcp.AddTool(server, &mcp.Tool{
 			Name:        "fetch",
 			Title:       "Read a web page",
 			Annotations: readOnly,
-			Description: description,
+			Description: fetchDescription,
 			InputSchema: schema(`{
 				"type": "object",
 				"required": ["url", "prompt"],
@@ -327,7 +272,7 @@ func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *m
 		})
 	}
 
-	if offered(config.ToolResearch) {
+	if allowed(config.ToolResearch) && app.ResearchAvailable(snap) {
 		addResearchTools(server, a, key, caller, time.Duration(snap.Config.Research.ResultWaitSeconds)*time.Second,
 			reportPages{days: snap.Config.Logs.RetentionDays, url: func(id string) string { return snap.ReportURL(r, id) }})
 	}

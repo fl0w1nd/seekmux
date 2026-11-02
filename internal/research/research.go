@@ -56,10 +56,6 @@ type Tools struct {
 	// then not offered the tool.
 	DevSearch func(ctx context.Context, args search.DevArgs) (search.DevResult, error)
 	Fetch     func(ctx context.Context, args fetch.Args) (fetch.Result, error)
-	// Reads lists what Fetch reads beyond an ordinary page, as
-	// config.Config.Reads words it; the agent is told, or it would pass
-	// such pages by.
-	Reads []string
 }
 
 // Request is what a caller asks of a run.
@@ -309,16 +305,12 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 				return read(ctx, fetch.Args{URL: in.URL, Raw: true, Offset: in.Offset})
 			})
 	}
-	also := ""
-	if len(tools.Reads) > 0 {
-		also = " It also reads what a plain page fetch gets nothing from: " + strings.Join(tools.Reads, ", ") + "."
-	}
-	readers := []fantasy.AgentTool{page("fetch", "Read the text of a web page."+also)}
+	readers := []fantasy.AgentTool{page("fetch", "Read the text of a web page.")}
 	if cfg.Reading == config.ReadingExtract {
 		// An answer is only as good as the extract model's reading, so the
 		// text stays within reach for the pages where that is not enough.
 		readers = []fantasy.AgentTool{
-			fantasy.NewParallelAgentTool("fetch", "Read a web page and get the answer to your prompt from its content."+also,
+			fantasy.NewParallelAgentTool("fetch", "Read a web page and get the answer to your prompt from its content.",
 				func(ctx context.Context, in fetchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
 					return read(ctx, fetch.Args{URL: in.URL, Prompt: in.Prompt})
 				}),
