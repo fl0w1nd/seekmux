@@ -151,17 +151,20 @@ start prints a new setup token.
 
 ## Development
 
-Requires Go 1.27+ and pnpm.
+Tools come from [mise](https://mise.jdx.dev): `mise install` sets up Go,
+Node.js and pnpm at the versions in `mise.toml` and `mise.lock`.
 
 ```bash
-make dev      # local backend on :8787, console with hot reload on :5173
-make test     # go vet, go test, TypeScript check
-make build    # console + bin/seekmux
+mise run dev      # local backend on :8787, console with hot reload on :5173
+mise run test     # go vet, go test, TypeScript check
+mise run lint     # what CI checks: gofmt, go mod tidy, go vet, types, workflows
+mise run build    # console + bin/seekmux
+mise tasks        # everything else
 ```
 
-`make dev` uses `1234567890` as the admin password and binds the backend to
-`127.0.0.1`. Use `make dev-server` and `make dev-web` to run them in separate
-terminals. The development password replaces the stored admin password on start.
+`mise run dev` uses `1234567890` as the admin password and binds the backend to
+`127.0.0.1`. Use `mise run dev:server` and `mise run dev:web` to run them in
+separate terminals. The development password replaces the stored admin password on start.
 
 The backend is in `internal/`, the console (React, TypeScript, Tailwind) in
 `web/`; its design system is described in [web/DESIGN.md](web/DESIGN.md). The

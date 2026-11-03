@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
-FROM --platform=$BUILDPLATFORM node:lts-alpine AS web-builder
+# Go, Node.js and pnpm follow mise.toml; change them together.
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web-builder
 
 WORKDIR /build/web
 COPY web/package.json web/pnpm-lock.yaml ./

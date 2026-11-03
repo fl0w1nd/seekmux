@@ -1,0 +1,113 @@
+# Toolchain and tasks for development and CI. Run `mise install` once, then
+# `mise run <task>` (`mise tasks` lists them). Exact versions are in mise.lock;
+# the Dockerfile pins the same Go, Node.js and pnpm (`lint:versions` checks).
+
+min_version = "2026.10.0"
+
+[settings]
+lockfile = true
+
+[tools]
+go = "1.27.3"
+node = "26"
+pnpm = "10.34.9"
+actionlint = "1.7.12"
+
+[vars]
+ldflags = "-s -w -X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+
+[tasks."web:install"]
+description = "Install the console's dependencies"
+run = "pnpm --dir web install --frozen-lockfile"
+sources = ["web/package.json", "web/pnpm-lock.yaml"]
+outputs = ["web/node_modules/.modules.yaml"]
+
+[tasks.web]
+description = "Build the console into web/dist"
+depends = ["web:install"]
+run = "pnpm --dir web build"
+
+[tasks.server]
+description = "Build bin/seekmux, embedding whatever is in web/dist"
+run = 'go build -trimpath -ldflags "{{vars.ldflags}}" -o bin/seekmux ./cmd/seekmux'
+
+[tasks.build]
+description = "Build the console, then bin/seekmux with it embedded"
+run = [{ task = "web" }, { task = "server" }]
+
+# Static binaries for a remote server; SQLite is pure Go, so no cgo is needed.
+[tasks.linux]
+description = "Build static linux/amd64 and linux/arm64 binaries"
+depends = ["web"]
+env = { CGO_ENABLED = "0", GOOS = "linux" }
+run = [
+  'GOARCH=amd64 go build -trimpath -ldflags "{{vars.ldflags}}" -o bin/seekmux-linux-amd64 ./cmd/seekmux',
+  'GOARCH=arm64 go build -trimpath -ldflags "{{vars.ldflags}}" -o bin/seekmux-linux-arm64 ./cmd/seekmux',
+]
+
+[tasks.dev]
+description = "Backend on 127.0.0.1:8787, console with hot reload on :5173"
+depends = ["dev:server", "dev:web"]
+
+[tasks."dev:server"]
+description = "Backend on 127.0.0.1:8787 with admin password 1234567890"
+env = { SEEKMUX_ADMIN_PASSWORD = "1234567890" }
+run = "go run ./cmd/seekmux serve --addr 127.0.0.1:8787"
+
+[tasks."dev:web"]
+description = "Console with hot reload on :5173 (proxies /api and /mcp)"
+depends = ["web:install"]
+run = "pnpm --dir web dev"
+
+[tasks.lint]
+description = "gofmt, go mod tidy, go vet, the TypeScript check and the workflows"
+depends = ["web:install"]
+run = [
+  'test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above need formatting" >&2; exit 1; }',
+  "go mod tidy -diff",
+  "go vet ./...",
+  "pnpm --dir web typecheck",
+  { task = "lint:versions" },
+  "actionlint",
+]
+
+[tasks."lint:versions"]
+description = "Check that the Dockerfile builds with the versions in mise.toml"
+run = '''
+grep -q "golang:$(mise current go)-alpine" Dockerfile &&
+grep -q "node:$(mise current node | cut -d. -f1)-alpine" Dockerfile &&
+grep -q "pnpm@$(mise current pnpm) " Dockerfile ||
+{ echo "Dockerfile: Go, Node.js or pnpm differ from mise.toml" >&2; exit 1; }
+'''
+
+[tasks.test]
+description = "go vet, go test and the TypeScript check"
+depends = ["test:go", "test:web"]
+
+[tasks."test:go"]
+description = "go vet and go test"
+run = ["go vet ./...", "go test -shuffle=on ./..."]
+
+[tasks."test:web"]
+description = "TypeScript check of the console"
+depends = ["web:install"]
+run = "pnpm --dir web typecheck"
+
+[tasks."test:race"]
+description = "go test with the race detector"
+run = "go test -race -shuffle=on ./..."
+
+[tasks.cover]
+description = "go test with a coverage profile in coverage.out"
+run = [
+  "go test -shuffle=on -coverprofile=coverage.out ./...",
+  "go tool cover -func=coverage.out | tail -1",
+]
+
+[tasks.container]
+description = "Build the image as seekmux:ci and smoke-test it"
+run = ["docker build -t seekmux:ci .", "scripts/smoke-container.sh seekmux:ci"]
+
+[tasks.clean]
+description = "Remove build output"
+run = "rm -rf bin coverage.out web/dist/assets web/dist/index.html"
