@@ -25,6 +25,7 @@ import (
 	"github.com/fl0w1nd/seekmux/internal/research"
 	"github.com/fl0w1nd/seekmux/internal/search"
 	"github.com/fl0w1nd/seekmux/internal/store"
+	"github.com/fl0w1nd/seekmux/internal/worker"
 )
 
 const configKey = "config"
@@ -67,6 +68,9 @@ type App struct {
 	Store  *store.Store
 	Logs   *store.LogWriter
 	Limits *core.Limits
+	// Workers holds the connection of the worker that serves the worker
+	// providers.
+	Workers *worker.Hub
 
 	domains  *store.DomainWriter
 	usage    *store.UsageWriter
@@ -98,6 +102,7 @@ func New(ctx context.Context, st *store.Store) (*App, error) {
 		})
 	}
 	a.background, a.stop = context.WithCancel(context.Background())
+	a.Workers = &worker.Hub{Token: a.workerToken, Addr: ClientAddr, OnState: a.workerState}
 
 	cfg := config.Default()
 	raw, err := st.Get(ctx, configKey)
@@ -130,8 +135,31 @@ func New(ctx context.Context, st *store.Store) (*App, error) {
 	return a, nil
 }
 
+// workerToken is the token a worker must present to connect.
+func (a *App) workerToken() string {
+	if s := a.Snapshot(); s != nil {
+		return s.Config.Providers[config.ProviderOpenCLI].APIKey
+	}
+	return ""
+}
+
+// workerState re-enables the worker provider the breaker switched off for a
+// Chrome profile OpenCLI did not know, once the worker reports it again.
+func (a *App) workerState(state worker.State) {
+	key := config.ProviderOpenCLI + ":" + config.ToolFetch
+	if trip, off := a.Limits.Breaker.State(key); !off || trip.Reason != core.ClassSetup {
+		return
+	}
+	// The setup problem is gone once the profile resolves, or is merely closed.
+	profile := a.Snapshot().Config.Providers[config.ProviderOpenCLI].Profile
+	if problem := state.Route(profile); problem == nil || problem.Code != worker.CodeProfileMissing {
+		a.Limits.Breaker.Reset(key)
+	}
+}
+
 // Close stops background research and flushes the logs.
 func (a *App) Close() {
+	a.Workers.Close()
 	a.stop()
 	a.tasks.Wait()
 	a.Logs.Close()
@@ -349,6 +377,9 @@ func (a *App) install(cfg *config.Config) {
 		Cooldown: time.Duration(cfg.Breaker.CooldownSeconds) * time.Second,
 	})
 	a.snapshot.Store(&Snapshot{Version: version, Config: cfg, Client: newClient(cfg.Network.Proxy)})
+	if a.Workers != nil {
+		a.Workers.Recheck()
+	}
 }
 
 // SaveConfig validates, persists and activates cfg. Limiter windows carry
@@ -374,14 +405,23 @@ func (a *App) SaveConfig(ctx context.Context, cfg *config.Config) error {
 	}
 	prev := a.Snapshot().Config
 	a.install(cfg)
-	if reflect.DeepEqual(prev.Fetch.Routes, cfg.Fetch.Routes) && reflect.DeepEqual(prev.Routing, cfg.Routing) {
+	if reflect.DeepEqual(prev.Fetch.Routes, cfg.Fetch.Routes) && reflect.DeepEqual(prev.Routing, cfg.Routing) && workerProfile(prev) == workerProfile(cfg) {
 		a.fetcher.ClearAnswers()
 	} else {
-		// A provider's options change what it returns for the same URL, and
-		// a rule changes which provider reads it.
+		// A provider's options change what it returns for the same URL, a
+		// rule changes which provider reads it, and another Chrome profile
+		// may be signed in where the last one was not.
 		a.fetcher.ClearCache()
 	}
 	return nil
+}
+
+// workerProfile is the Chrome profile the worker reads with.
+func workerProfile(cfg *config.Config) string {
+	if p := cfg.Providers[config.ProviderOpenCLI]; p != nil {
+		return p.Profile
+	}
+	return ""
 }
 
 func newClient(proxy string) *http.Client {
@@ -406,7 +446,7 @@ func newClient(proxy string) *http.Client {
 
 func (a *App) fetchRuntime(s *Snapshot, o Override) fetch.Runtime {
 	// A page read with parameters of its own must not answer later calls.
-	return fetch.Runtime{Config: s.Config, Client: s.Client, LLMClient: s.Client, NoCache: o.NoCache || o.Route != nil}
+	return fetch.Runtime{Config: s.Config, Client: s.Client, LLMClient: s.Client, NoCache: o.NoCache || o.Route != nil, Worker: a.Workers}
 }
 
 // logCall writes the request log entry of a finished tool call.

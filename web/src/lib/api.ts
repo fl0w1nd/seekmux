@@ -12,11 +12,15 @@ export interface Provider extends Secret {
   rate_limit: string;
   /** 0 means unlimited. */
   concurrency: number;
+  /** The Chrome profile a worker provider reads with, by OpenCLI context id; empty leaves it to OpenCLI. */
+  profile?: string;
 }
 
 export interface Route {
   provider: string;
   enabled: boolean;
+  /** Keeps it out of the tool's slow-request race (fetch only for now); absent means it races. */
+  no_hedge?: boolean;
   /** The provider's parameters for this tool that differ from the declared defaults. */
   options?: Record<string, unknown>;
   /** Merged into the request last. */
@@ -146,6 +150,11 @@ export interface ProviderInfo {
   default_rate_limit: string;
   /** Keyed by tool. */
   options?: Record<string, ProviderOption[]>;
+  default_concurrency?: number;
+  /** Served by the worker connected to the gateway; its key is the worker token. */
+  worker?: boolean;
+  /** Built-in routing rules whose pages it reads through a site adapter of its own. */
+  adapters?: string[];
 }
 
 /** One parameter of a provider for a tool; a null default leaves it out of the request. */
@@ -375,8 +384,8 @@ export interface DomainStats {
 /** What the circuit breaker says about a provider or model. */
 export interface Health {
   disabled: boolean;
-  /** Repeated failures ("provider"), a rejected key or spent credits. */
-  disabled_reason?: "provider" | "auth" | "quota";
+  /** Repeated failures ("provider"), a rejected key, spent credits, or a setup to fix outside the gateway. */
+  disabled_reason?: "provider" | "auth" | "quota" | "setup";
   /** How much longer it stays off; 0 while disabled means until it is re-enabled. */
   disabled_ms: number;
   /** What the upstream answered, for a rejected key or spent credits. */
@@ -394,6 +403,26 @@ export interface RouteStatus extends Health {
   limit: number;
   active: number;
   concurrency: number;
+}
+
+/** A Chrome profile OpenCLI knows on the worker. */
+export interface WorkerProfile {
+  id: string;
+  alias?: string;
+  default?: boolean;
+  connected: boolean;
+}
+
+/** The worker connected to the gateway, if any. */
+export interface WorkerStatus {
+  connected: boolean;
+  version?: string;
+  slots?: number;
+  active: number;
+  addr?: string;
+  /** When it connected, in Unix milliseconds. */
+  since?: number;
+  state?: { ready: boolean; problem?: string; opencli?: string; profiles: WorkerProfile[] };
 }
 
 export interface ModelStatus extends Health {
@@ -706,7 +735,7 @@ export const api = {
   clearCache: () => post("/api/cache/clear"),
   domains: (days: number) => get<{ days: number; retention_days: number; domains: DomainStats[] }>(`/api/domains?days=${days}`),
   clearDomains: () => request("DELETE", "/api/domains"),
-  status: () => get<{ routes: RouteStatus[]; models: ModelStatus[] }>("/api/status"),
+  status: () => get<{ routes: RouteStatus[]; models: ModelStatus[]; worker: WorkerStatus }>("/api/status"),
   resetBreaker: (key: string) => post("/api/breaker/reset", { key }),
 
   /** `route` replaces a provider's parameters for this call only. */

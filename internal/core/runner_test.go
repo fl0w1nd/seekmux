@@ -247,6 +247,36 @@ func TestRunHedgedAllFail(t *testing.T) {
 	}
 }
 
+// A provider that does not race waits for the one ahead of it however slow
+// it is, and nothing is started beside it while it runs.
+func TestRunHedgedRunsANoHedgeProviderAlone(t *testing.T) {
+	trace := NewTrace()
+	solo := provider("solo", config.RateLimit{}, slow(150*time.Millisecond, "S"))
+	solo.NoHedge = true
+	out, name, err := RunHedged(WithTrace(context.Background(), trace), NewLimits(), []Provider[string, string]{
+		provider("a", config.RateLimit{}, func(ctx context.Context) (string, error) {
+			if err := Sleep(ctx, 100*time.Millisecond); err != nil {
+				return "", err
+			}
+			return "", errors.New("boom")
+		}),
+		solo,
+		provider("c", config.RateLimit{}, ok("C")),
+	}, "", RunOptions{Timeout: time.Second, SlowThreshold: 20 * time.Millisecond})
+	if err != nil || out != "S" || name != "solo" {
+		t.Fatalf("out=%q name=%q err=%v", out, name, err)
+	}
+	var got []string
+	for _, a := range trace.Attempts() {
+		got = append(got, a.Provider+":"+a.Status)
+	}
+	// a is slow, but solo does not race it and c does not jump the queue;
+	// a fails, solo runs, and c is never started against it.
+	if strings.Join(got, " ") != "a:error solo:ok" {
+		t.Fatalf("attempts = %v", got)
+	}
+}
+
 func TestCacheEvictsBySizeAndTTL(t *testing.T) {
 	c := NewCache(10, func(s string) int { return len(s) })
 	c.Set("a", "12345", time.Minute)
@@ -389,6 +419,23 @@ func TestBreakerDisablesAtOnceOnAccountProblems(t *testing.T) {
 	lim.Breaker.Reset("key")
 	if _, off := lim.Breaker.State("key"); off {
 		t.Fatal("a reset must re-enable it")
+	}
+}
+
+func TestBreakerDisablesAProviderThatIsNotSetUp(t *testing.T) {
+	lim := NewLimits()
+	lim.Breaker.Configure(BreakerSettings{Enabled: true, Failures: 3, Window: time.Minute, Cooldown: time.Minute})
+	_, _, err := RunFallback(context.Background(), lim, []Provider[string, string]{
+		provider("worker", config.RateLimit{}, fail(&SetupError{Provider: "worker", Detail: "no such profile"})),
+	}, "", RunOptions{Timeout: time.Second, SingleRetry: true})
+	if trip, off := lim.Breaker.State("worker"); !off || trip.Reason != ClassSetup || !trip.Until.IsZero() || trip.Detail != "no such profile" {
+		t.Fatalf("a provider that is not set up must stay off until fixed: %+v %v (%v)", trip, off, err)
+	}
+	_, _, err = RunFallback(context.Background(), lim, []Provider[string, string]{
+		provider("worker", config.RateLimit{}, ok("x")),
+	}, "", RunOptions{Timeout: time.Second})
+	if err == nil || !strings.Contains(err.Error(), "setup needs fixing (no such profile)") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

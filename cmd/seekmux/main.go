@@ -152,6 +152,8 @@ func serve(ctx context.Context, a *app.App, addr string) error {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpsrv.Handler(a, version))
 	authz.Mount(mux)
+	// A worker dials in here and keeps the connection open; see internal/worker.
+	mux.Handle("GET /worker", a.Workers)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.Handle("/", adminServer.Handler())
 

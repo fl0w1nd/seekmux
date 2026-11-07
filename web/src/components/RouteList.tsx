@@ -21,6 +21,9 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
   const routes = config[tool].routes;
   // A rule keeps using its providers when their fetch route is switched off.
   const rules = tool === "fetch" ? routingRules(config, meta).filter((rule) => rule.enabled) : [];
+  // Only fetch races slow requests; the switch shows on its lanes.
+  const hedged = tool === "fetch";
+  const hedging = hedged && config.fetch.smart_fallback;
   const status = useStatus();
   const [open, setOpen] = useState<string | null>(null);
 
@@ -98,6 +101,27 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
                 </span>
               </Link>
             </Tooltip>
+            {hedged && (
+              <Tooltip
+                content={
+                  !hedging
+                    ? "「行为」中的慢请求对冲已关闭，此开关暂不生效"
+                    : route.no_hedge
+                      ? "不参与对冲：轮到它时独自抓取，不与其他提供商并行，也不被对冲"
+                      : "参与对冲：抓取过慢时与下一个提供商并行，采纳首个成功的结果"
+                }
+              >
+                <span className="flex flex-col items-center gap-1">
+                  <span className="tag">对冲</span>
+                  <Switch
+                    checked={!route.no_hedge}
+                    disabled={!hedging}
+                    onCheckedChange={(on) => edit(index, { no_hedge: on ? undefined : true })}
+                    aria-label={`${info.name} 参与慢请求对冲`}
+                  />
+                </span>
+              </Tooltip>
+            )}
             <Button
               size="sm"
               variant={open === route.provider ? "secondary" : "ghost"}

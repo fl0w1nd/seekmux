@@ -25,7 +25,10 @@ type Provider[In, Out any] struct {
 	Concurrency int
 	// Available is false when the provider is disabled or lacks its API key.
 	Available bool
-	Execute   func(ctx context.Context, in In) (Out, error)
+	// NoHedge keeps it out of RunHedged's race: it starts only once no other
+	// attempt is running, and nothing starts while it runs.
+	NoHedge bool
+	Execute func(ctx context.Context, in In) (Out, error)
 }
 
 func (p Provider[In, Out]) limitKey() string { return cmp.Or(p.LimitKey, p.Key) }
@@ -164,6 +167,8 @@ func disabled[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out]
 		why = "because its API key was rejected"
 	case ClassQuota:
 		why = "because its credits ran out"
+	case ClassSetup:
+		why = "because its setup needs fixing (" + trip.Detail + ")"
 	}
 	back := "until it is re-enabled"
 	if !trip.Until.IsZero() {
@@ -186,6 +191,11 @@ func report[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out], 
 	case ctx.Err() != nil || Tripping(err):
 		lim.Breaker.Failure(p.Key)
 	default:
+		var setup *SetupError
+		if errors.As(err, &setup) {
+			lim.Breaker.Disable(p.Key, ClassSetup, setup.Detail, 0)
+			return
+		}
 		if httpErr, ok := accountProblem(err); ok {
 			lim.Breaker.Disable(p.Key, httpErr.Kind(), httpErr.Error(), httpErr.DisableFor)
 		}
@@ -330,7 +340,8 @@ func runSingle[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out
 
 // RunHedged starts with the first provider that has a free rate-limit slot
 // and adds the next one whenever an attempt fails or stays slower than
-// SlowThreshold. The first success wins and cancels the rest.
+// SlowThreshold. The first success wins and cancels the rest. A provider
+// with NoHedge waits its turn until nothing else runs, and then runs alone.
 func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provider[In, Out], in In, opt RunOptions) (Out, string, error) {
 	var zero Out
 	avail, err := available(providers)
@@ -353,6 +364,8 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 	slow := make(chan struct{}, len(avail))
 	started := map[string]time.Time{}
 	running := map[string]bool{}
+	// solo holds the running providers that do not race.
+	solo := map[string]bool{}
 	limited := map[string]bool{}
 	var errs []providerError
 	var retry *time.Timer
@@ -364,6 +377,11 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 	}()
 
 	launch := func() {
+		for name := range running {
+			if solo[name] {
+				return
+			}
+		}
 		earliest := time.Duration(-1)
 		note := func(wait time.Duration) {
 			if earliest < 0 || wait < earliest {
@@ -379,6 +397,11 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 				started[p.Name] = time.Now()
 				errs = append(errs, providerError{p.Name, err})
 				continue
+			}
+			if p.NoHedge && (launched || len(running) > 0) {
+				// It waits for the attempts under way, and so do the
+				// providers after it.
+				break
 			}
 			if launched {
 				if ok, wait := lim.Rate.Peek(p.limitKey(), p.RateLimit); !ok {
@@ -398,6 +421,7 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 			launched = true
 			started[p.Name] = time.Now()
 			running[p.Name] = true
+			solo[p.Name] = p.NoHedge
 			go func() {
 				timer := time.AfterFunc(opt.SlowThreshold, func() { slow <- struct{}{} })
 				defer timer.Stop()

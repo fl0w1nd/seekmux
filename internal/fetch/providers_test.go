@@ -37,7 +37,7 @@ func capture(t *testing.T, provider, reply string, edit func(*config.Route), in 
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range Providers(cfg, server.Client()) {
+	for _, p := range Providers(cfg, server.Client(), nil) {
 		if p.Name == provider {
 			page, err = p.Execute(context.Background(), in)
 		}

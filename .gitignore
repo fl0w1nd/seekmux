@@ -7,3 +7,5 @@
 *.local
 CLAUDE.md
 coverage.out
+/worker/node_modules/
+/worker/dist/

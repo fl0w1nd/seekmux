@@ -19,16 +19,26 @@ import (
 
 // routedProviders returns the providers of a rule in its order. They serve
 // it with their route's parameters whether or not the route is enabled.
-func routedProviders(cfg *config.Config, providers []core.Provider[Input, Page], rule config.Rule) []core.Provider[Input, Page] {
+func routedProviders(cfg *config.Config, providers []core.Provider[Input, Page], rule config.Rule, w Worker) []core.Provider[Input, Page] {
 	var out []core.Provider[Input, Page]
 	for _, id := range rule.Providers {
 		if i := slices.IndexFunc(providers, func(p core.Provider[Input, Page]) bool { return p.Name == id }); i >= 0 {
 			p := providers[i]
-			p.Available = cfg.HasCredentials(id)
+			p.Available = cfg.HasCredentials(id) && reachable(id, w)
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// unavailable says why none of the providers of a rule can be called.
+func unavailable(cfg *config.Config, rule config.Rule, w Worker) error {
+	for _, id := range rule.Providers {
+		if cfg.HasCredentials(id) && !reachable(id, w) {
+			return errors.New("the worker is offline or cannot reach its browser")
+		}
+	}
+	return errors.New("no API key is configured")
 }
 
 // RoutedError is a failed fetch of a page that a routing rule keeps to its

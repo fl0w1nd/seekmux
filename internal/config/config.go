@@ -65,6 +65,9 @@ type Provider struct {
 	// empty one means unlimited.
 	RateLimit   *string `json:"rate_limit"`
 	Concurrency int     `json:"concurrency"`
+	// Profile is the Chrome profile a worker provider reads with, by its
+	// OpenCLI context id; empty leaves the choice to OpenCLI.
+	Profile string `json:"profile,omitempty"`
 }
 
 // Route binds a provider to a tool. The position in the list is the priority.
@@ -79,6 +82,11 @@ type Route struct {
 	// Options holds the provider's parameters for this tool that differ from
 	// the defaults its catalog entry declares.
 	Options map[string]any `json:"options,omitempty"`
+	// NoHedge keeps the provider out of the tool's race of slow requests
+	// (fetch's smart fallback): it starts only once no other provider is at
+	// work, and no competitor is started against it. It is a negative flag
+	// so that a document from before it has every route racing.
+	NoHedge bool `json:"no_hedge,omitempty"`
 	// ExtraBody is merged into the request last, so it overrides Options and
 	// reaches parameters that have no option. It is the JSON body, or the
 	// query string or headers of a provider that takes its parameters there.
@@ -273,6 +281,14 @@ type ProviderInfo struct {
 	DefaultRateLimit string            `json:"default_rate_limit"`
 	// Options is keyed by tool.
 	Options map[string][]Option `json:"options,omitempty"`
+	// DefaultConcurrency is the concurrency cap of a fresh install.
+	DefaultConcurrency int `json:"default_concurrency,omitempty"`
+	// Worker marks a provider served by the worker connected to the gateway
+	// rather than by an API: its key is the token the worker presents.
+	Worker bool `json:"worker,omitempty"`
+	// Adapters lists the built-in routing rules whose pages the provider
+	// reads through a site adapter of its own when a rule sends them to it.
+	Adapters []string `json:"adapters,omitempty"`
 }
 
 func (p ProviderInfo) Supports(tool string) bool { return slices.Contains(p.Tools, tool) }
@@ -408,7 +424,22 @@ var Catalog = []ProviderInfo{
 			},
 		},
 	},
+	{
+		// A worker's browser reads one page at a time, slowly but logged in:
+		// it belongs at the end of a chain, for what the others cannot read.
+		ID: ProviderOpenCLI, Name: "OpenCLI", Website: "https://github.com/jackwener/opencli", KeyRequired: true,
+		Tools:              []string{ToolFetch},
+		DefaultBase:        map[string]string{},
+		DefaultRateLimit:   "20/m",
+		DefaultConcurrency: 1,
+		Worker:             true,
+		Adapters:           []string{"twitter", "reddit"},
+	},
 }
+
+// ProviderOpenCLI reads pages in a logged-in Chrome on the worker, through
+// OpenCLI.
+const ProviderOpenCLI = "opencli"
 
 func Info(id string) (ProviderInfo, bool) {
 	for _, p := range Catalog {
@@ -465,7 +496,7 @@ func (c *Config) Normalize() {
 	}
 	for _, info := range Catalog {
 		if c.Providers[info.ID] == nil {
-			c.Providers[info.ID] = &Provider{}
+			c.Providers[info.ID] = &Provider{Concurrency: info.DefaultConcurrency}
 		}
 	}
 	for id, p := range c.Providers {
@@ -476,6 +507,12 @@ func (c *Config) Normalize() {
 		p.APIKey = strings.TrimSpace(p.APIKey)
 		p.BaseURL = strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
 		p.Concurrency = max(p.Concurrency, 0)
+		if info, _ := Info(id); info.Worker {
+			p.BaseURL = ""
+			p.Profile = strings.TrimSpace(p.Profile)
+		} else {
+			p.Profile = ""
+		}
 	}
 	c.migrateLimits()
 

@@ -59,14 +59,31 @@ description = "Console with hot reload on :5173 (proxies /api and /mcp)"
 depends = ["web:install"]
 run = "pnpm --dir web dev"
 
+[tasks."worker:install"]
+description = "Install the worker's dependencies"
+run = "pnpm --dir worker install --frozen-lockfile"
+sources = ["worker/package.json", "worker/pnpm-lock.yaml"]
+outputs = ["worker/node_modules/.modules.yaml"]
+
+[tasks.worker]
+description = "Build the worker package (npx seekmux) into worker/dist"
+depends = ["worker:install"]
+run = "pnpm --dir worker build"
+
+[tasks."dev:worker"]
+description = "Worker from source against the dev backend; set SEEKMUX_WORKER_TOKEN"
+depends = ["worker:install"]
+run = "node worker/src/cli.ts --server http://127.0.0.1:8787"
+
 [tasks.lint]
-description = "gofmt, go mod tidy, go vet, the TypeScript check and the workflows"
-depends = ["web:install"]
+description = "gofmt, go mod tidy, go vet, the TypeScript checks and the workflows"
+depends = ["web:install", "worker:install"]
 run = [
   'test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above need formatting" >&2; exit 1; }',
   "go mod tidy -diff",
   "go vet ./...",
   "pnpm --dir web typecheck",
+  "pnpm --dir worker typecheck",
   { task = "lint:versions" },
   "actionlint",
 ]
@@ -81,8 +98,8 @@ grep -q "pnpm@$(mise current pnpm) " Dockerfile ||
 '''
 
 [tasks.test]
-description = "go vet, go test and the TypeScript check"
-depends = ["test:go", "test:web"]
+description = "go vet, go test and the TypeScript checks"
+depends = ["test:go", "test:web", "test:worker"]
 
 [tasks."test:go"]
 description = "go vet and go test"
@@ -92,6 +109,11 @@ run = ["go vet ./...", "go test -shuffle=on ./..."]
 description = "TypeScript check of the console"
 depends = ["web:install"]
 run = "pnpm --dir web typecheck"
+
+[tasks."test:worker"]
+description = "TypeScript check of the worker"
+depends = ["worker:install"]
+run = "pnpm --dir worker typecheck"
 
 [tasks."test:race"]
 description = "go test with the race detector"
@@ -110,4 +132,4 @@ run = ["docker build -t seekmux:ci .", "scripts/smoke-container.sh seekmux:ci"]
 
 [tasks.clean]
 description = "Remove build output"
-run = "rm -rf bin coverage.out web/dist/assets web/dist/index.html"
+run = "rm -rf bin coverage.out web/dist/assets web/dist/index.html worker/dist"

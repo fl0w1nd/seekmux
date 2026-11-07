@@ -33,8 +33,13 @@ func TestDefaultIsValidAndComplete(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if len(c.Search.Routes) != 7 || len(c.DevSearch.Routes) != 1 || len(c.Fetch.Routes) != 6 || len(c.Providers) != len(Catalog) {
+	if len(c.Search.Routes) != 7 || len(c.DevSearch.Routes) != 1 || len(c.Fetch.Routes) != 7 || len(c.Providers) != len(Catalog) {
 		t.Fatalf("routes: %d search, %d dev_search, %d fetch, %d providers", len(c.Search.Routes), len(c.DevSearch.Routes), len(c.Fetch.Routes), len(c.Providers))
+	}
+	// The worker is off until someone connects one, and reads one page at a time.
+	last := c.Fetch.Routes[len(c.Fetch.Routes)-1]
+	if last.Provider != ProviderOpenCLI || last.Enabled || c.Providers[ProviderOpenCLI].Concurrency != 1 {
+		t.Fatalf("opencli: route %+v, concurrency %d", last, c.Providers[ProviderOpenCLI].Concurrency)
 	}
 }
 

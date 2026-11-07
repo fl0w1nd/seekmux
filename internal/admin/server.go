@@ -477,8 +477,9 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 // health is what the circuit breaker says about a provider or model.
 type health struct {
 	Disabled bool `json:"disabled"`
-	// DisabledReason is "provider" for repeated failures, or the account
-	// problem: "auth", "quota".
+	// DisabledReason is "provider" for repeated failures, the account
+	// problem ("auth", "quota"), or "setup" for something to fix outside the
+	// gateway, such as a worker's Chrome profile.
 	DisabledReason string `json:"disabled_reason,omitempty"`
 	// DisabledMs is how much longer it stays off; 0 while Disabled means
 	// until it is re-enabled.
@@ -633,7 +634,7 @@ func (s *Server) handleClearDomains(w http.ResponseWriter, r *http.Request) {
 // for the pages that configure them.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	cfg := s.app.Snapshot().Config
-	writeJSON(w, map[string]any{"routes": s.routeStatuses(cfg), "models": s.modelStatuses(cfg)})
+	writeJSON(w, map[string]any{"routes": s.routeStatuses(cfg), "models": s.modelStatuses(cfg), "worker": s.app.Workers.Status()})
 }
 
 // handleBreakerReset re-enables a provider or model the breaker switched off.

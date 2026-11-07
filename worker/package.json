@@ -1,0 +1,33 @@
+{
+  "name": "seekmux",
+  "version": "0.1.0",
+  "description": "SeekMux worker: reads pages for a SeekMux gateway in your logged-in Chrome, through OpenCLI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fl0w1nd/seekmux.git",
+    "directory": "worker"
+  },
+  "type": "module",
+  "bin": {
+    "seekmux": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.4"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "start": "node src/cli.ts"
+  },
+  "dependencies": {
+    "@jackwener/opencli": "^2.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

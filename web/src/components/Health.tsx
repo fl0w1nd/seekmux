@@ -7,7 +7,7 @@ export function useStatus() {
   return useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 5000 }).data;
 }
 
-const reasonLabel = { provider: "已熔断", auth: "密钥被拒", quota: "额度用尽" } as const;
+const reasonLabel = { provider: "已熔断", auth: "密钥被拒", quota: "额度用尽", setup: "配置失效" } as const;
 
 function remaining(ms: number): string {
   const seconds = Math.ceil(ms / 1000);
@@ -26,7 +26,7 @@ export function healthLabel(health: Health): string {
 
 export function HealthBadge({ health }: { health: Health }) {
   return (
-    <Badge tone={health.disabled_reason === "auth" || health.disabled_reason === "quota" ? "err" : "warn"} dot>
+    <Badge tone={health.disabled_reason === "auth" || health.disabled_reason === "quota" || health.disabled_reason === "setup" ? "err" : "warn"} dot>
       {healthLabel(health)}
     </Badge>
   );

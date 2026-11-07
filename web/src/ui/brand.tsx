@@ -1,4 +1,4 @@
-import type { SVGProps } from "react";
+import { useId, type SVGProps } from "react";
 
 /*
  * Brand marks of the providers and of the pages a built-in routing rule is
@@ -8,7 +8,8 @@ import type { SVGProps } from "react";
  * surface). Paths are the vendors' own logos, cropped to the symbol.
  */
 
-type Mark = { viewBox: string; children: React.ReactNode };
+/** A mark's paths; one that defines a gradient takes an id unique to the icon. */
+type Mark = { viewBox: string; children: React.ReactNode | ((id: string) => React.ReactNode) };
 
 const marks: Record<string, Mark> = {
   brave: {
@@ -38,6 +39,25 @@ const marks: Record<string, Mark> = {
       <>
         <circle fill="#EB6161" cx="15.3" cy="84.5" r="15.3" />
         <path fill="#009191" d="M63.5 36.3c2 0 3.6 1.6 3.6 3.6l-.2 29.3c0 16.7-13.4 30.3-30.1 30.6h-.5V69.3 40c0-2 1.8-3.7 3.8-3.7h23.4z" />
+      </>
+    ),
+  },
+  // opencli.info's own mark: ">_" on its gradient tile, drawn as paths so it
+  // does not depend on a monospace font being installed.
+  opencli: {
+    viewBox: "0 0 64 64",
+    children: (id) => (
+      <>
+        <defs>
+          <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#00E5A0" />
+            <stop offset="0.5" stopColor="#00B4D8" />
+            <stop offset="1" stopColor="#7B61FF" />
+          </linearGradient>
+        </defs>
+        <rect width="64" height="64" rx="16" fill={`url(#${id})`} />
+        <path d="M17 21.5 28 32 17 42.5" fill="none" stroke="#0A0A0F" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
+        <rect x="32" y="39.5" width="15" height="6" rx="3" fill="#0A0A0F" />
       </>
     ),
   },
@@ -102,11 +122,12 @@ const marks: Record<string, Mark> = {
  * later. Decorative: the name always stands beside it.
  */
 export function BrandIcon({ id, className, ...rest }: { id: string } & Omit<SVGProps<SVGSVGElement>, "viewBox" | "children">) {
+  const gradient = useId();
   const mark = marks[id];
   if (!mark) return null;
   return (
     <svg viewBox={mark.viewBox} className={className ?? "size-4"} aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMid meet" {...rest}>
-      {mark.children}
+      {typeof mark.children === "function" ? mark.children(gradient) : mark.children}
     </svg>
   );
 }

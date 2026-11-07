@@ -70,6 +70,8 @@ type Runtime struct {
 	// NoCache reads the page and its answer anew and keeps both out of the
 	// caches, for a call whose configuration is its own.
 	NoCache bool
+	// Worker serves the worker providers; nil leaves them unavailable.
+	Worker Worker
 }
 
 // Service owns the page and answer caches, which outlive configuration changes.
@@ -108,10 +110,12 @@ func (s *Service) CacheStats() (entries, bytes int) { return s.pages.Stats() }
 
 // Engines lists the values fetch_engine accepts under cfg.
 func Engines(cfg *config.Config) []string {
+	// A worker provider is listed whether or not its worker is online, so
+	// that the tool's schema does not change as it comes and goes.
 	engines := []string{EngineAuto}
-	for _, p := range Providers(cfg, nil) {
-		if p.Available {
-			engines = append(engines, p.Name)
+	for _, route := range cfg.Fetch.Routes {
+		if _, ok := executors[route.Provider]; ok && route.Enabled && cfg.HasCredentials(route.Provider) {
+			engines = append(engines, route.Provider)
 		}
 	}
 	return engines
@@ -159,7 +163,9 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		}
 		return engine == EngineAuto || provider == engine
 	}
-	if page, ok := s.pages.Get(target); ok && !rt.NoCache && serves(page.Engine) {
+	// A worker's rendered page does not stand in for a site adapter's read.
+	adapter := routed || engine != EngineAuto
+	if page, ok := s.pages.Get(target); ok && !rt.NoCache && serves(page.Engine) && !(adapter && page.Rendered) {
 		core.TraceFrom(ctx).Note(config.ToolFetch, page.Engine, target, core.AttemptCached)
 		return page, nil
 	}
@@ -172,12 +178,12 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 	}
 
 	cfg := rt.Config.Fetch
-	providers := Providers(rt.Config, rt.Client)
+	providers := Providers(rt.Config, rt.Client, rt.Worker)
 	switch {
 	case routed:
-		providers = routedProviders(rt.Config, providers, rule)
+		providers = routedProviders(rt.Config, providers, rule, rt.Worker)
 		if countAvailable(providers) == 0 {
-			return Page{}, &RoutedError{Rule: rule, Err: errors.New("no API key is configured")}
+			return Page{}, &RoutedError{Rule: rule, Err: unavailable(rt.Config, rule, rt.Worker)}
 		}
 	case engine != EngineAuto:
 		providers = slices.DeleteFunc(providers, func(p core.Provider[Input, Page]) bool { return p.Name != engine })
@@ -193,7 +199,7 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		SlowThreshold: time.Duration(cfg.SlowThresholdSeconds * float64(time.Second)),
 		GoneAfter:     2,
 	}
-	in := Input{URL: target, IsPDF: hasExtension(target, ".pdf")}
+	in := Input{URL: target, IsPDF: hasExtension(target, ".pdf"), Adapter: adapter}
 
 	var page Page
 	var provider string

@@ -21,6 +21,10 @@ import (
 type Input struct {
 	URL   string
 	IsPDF bool
+	// Adapter prefers a site's own reader over the page as it renders, where
+	// a provider has one: the page came through a routing rule or the
+	// provider was asked for by name.
+	Adapter bool
 }
 
 // Page is a fetched page. Engine names the provider that produced it.
@@ -30,6 +34,9 @@ type Page struct {
 	Description string
 	Content     string
 	Engine      string
+	// Rendered marks a page a worker read as rendered where a site adapter
+	// was not asked for. It does not answer a call that asks for one.
+	Rendered bool
 }
 
 // call is what a provider needs besides the URL: where and how to reach it,
@@ -41,6 +48,9 @@ type call struct {
 	opt    config.Values
 	// extra is merged into the request last.
 	extra map[string]any
+	// worker and profile serve a worker provider.
+	worker  Worker
+	profile string
 }
 
 type executor func(ctx context.Context, c call, in Input) (Page, error)
@@ -52,10 +62,13 @@ var executors = map[string]executor{
 	"exa":       exaFetch,
 	"parallel":  parallelFetch,
 	"anysearch": anysearchFetch,
+
+	config.ProviderOpenCLI: openCLIFetch,
 }
 
-// Providers builds the fetch providers of cfg in priority order.
-func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, Page] {
+// Providers builds the fetch providers of cfg in priority order. A worker
+// provider is available only while w has a worker online.
+func Providers(cfg *config.Config, client *http.Client, w Worker) []core.Provider[Input, Page] {
 	var out []core.Provider[Input, Page]
 	for _, route := range cfg.Fetch.Routes {
 		run, ok := executors[route.Provider]
@@ -69,14 +82,18 @@ func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, P
 			base = info.DefaultBase[config.ToolFetch]
 		}
 		limit, concurrency := cfg.Limits(route.Provider)
-		c := call{client: client, base: base, apiKey: creds.APIKey, opt: config.OptionValues(config.ToolFetch, route), extra: route.ExtraBody}
+		c := call{
+			client: client, base: base, apiKey: creds.APIKey, opt: config.OptionValues(config.ToolFetch, route), extra: route.ExtraBody,
+			worker: w, profile: creds.Profile,
+		}
 		out = append(out, core.Provider[Input, Page]{
 			Name:        route.Provider,
 			Key:         route.Provider + ":" + config.ToolFetch,
 			LimitKey:    route.Provider,
 			RateLimit:   limit,
 			Concurrency: concurrency,
-			Available:   route.Enabled && cfg.HasCredentials(route.Provider),
+			Available:   route.Enabled && cfg.HasCredentials(route.Provider) && reachable(route.Provider, w),
+			NoHedge:     route.NoHedge,
 			Execute: func(ctx context.Context, in Input) (Page, error) {
 				page, err := run(ctx, c, in)
 				if err == nil && strings.TrimSpace(page.Content) == "" {
