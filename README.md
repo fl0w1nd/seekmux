@@ -137,7 +137,22 @@ Put a TLS-terminating reverse proxy in front of it. The compose file binds to
 
 - **No response buffering** for `/mcp` and `/api/logs/stream`; both stream.
 - **WebSocket upgrades** on `/worker`, if you run self-hosted fetchers. Their
-  workers connect there.
+  workers connect there. With nginx or OpenResty:
+
+  ```nginx
+  location /worker {
+      proxy_pass http://127.0.0.1:8787;
+      proxy_http_version 1.1;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+      proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+  }
+  ```
+
+  Without it the worker says the request "reached the gateway without its
+  WebSocket upgrade".
 - **A read timeout longer than your research time budget** (5 minutes by
   default), or have agents use `research_start` / `research_result`. One
   `research_result` call waits up to 50 seconds by default; raise it in the

@@ -1,6 +1,6 @@
 {
   "name": "seekmux",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "SeekMux worker: reads pages for a SeekMux gateway in your logged-in Chrome, through OpenCLI",
   "license": "MIT",
   "repository": {

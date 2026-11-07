@@ -1,6 +1,7 @@
 // The connection to the gateway: says hello, reports the browser's state,
 // runs the fetches it is handed and reconnects when the connection drops.
 
+import { diagnose } from "./diagnose.ts";
 import { Canceled, readState } from "./opencli.ts";
 import { CloseCode, FetchError, PROTOCOL_VERSION, type ServerMessage, type State, type WorkerMessage } from "./protocol.ts";
 import { read } from "./sites.ts";
@@ -32,8 +33,10 @@ export async function run(opts: Options): Promise<never> {
   let state = await readState();
   logState(opts, state);
   let delay = 1000;
+  // Why the last connection could not be opened, said again only when it changes.
+  let problem: string | undefined;
   for (;;) {
-    const { code, reason, welcomed } = await session(opts, state, (next) => (state = next));
+    const { code, reason, opened, welcomed } = await session(opts, state, (next) => (state = next));
     if (code === CloseCode.Unauthorized || code === CloseCode.Protocol) {
       throw new Error(`the gateway refused this worker: ${reason || code}`);
     }
@@ -41,7 +44,14 @@ export async function run(opts: Options): Promise<never> {
       throw new Error("another worker connected with the same token; this one stops so the two do not take turns");
     }
     if (welcomed) delay = 1000;
-    opts.log(`disconnected (${reason || code}); reconnecting in ${delay / 1000}s`);
+    if (opened) {
+      problem = undefined;
+      opts.log(`disconnected (${reason || code}); reconnecting in ${delay / 1000}s`);
+    } else {
+      const why = await diagnose(opts.url);
+      opts.log(why && why === problem ? `could not connect, as before; retrying in ${delay / 1000}s` : `could not connect to ${opts.url}${why ? `: ${why}` : ""}; retrying in ${delay / 1000}s`);
+      problem = why;
+    }
     await new Promise((resolve) => setTimeout(resolve, delay));
     delay = Math.min(delay * 2, 30_000);
   }
@@ -55,12 +65,15 @@ function logState(opts: Options, state: State) {
 interface Ended {
   code: number;
   reason: string;
+  /** Whether the WebSocket handshake succeeded. */
+  opened: boolean;
   welcomed: boolean;
 }
 
 function session(opts: Options, initial: State, setState: (s: State) => void): Promise<Ended> {
   return new Promise((resolve) => {
     let state = initial;
+    let opened = false;
     let welcomed = false;
     const running = new Map<string, AbortController>();
     const ws = new WebSocket(opts.url);
@@ -89,6 +102,7 @@ function session(opts: Options, initial: State, setState: (s: State) => void): P
     const timer = setInterval(check, STATE_INTERVAL);
 
     ws.addEventListener("open", () => {
+      opened = true;
       send({ type: "hello", protocol: PROTOCOL_VERSION, token: opts.token, version: opts.version, slots: opts.slots, state });
     });
 
@@ -142,7 +156,7 @@ function session(opts: Options, initial: State, setState: (s: State) => void): P
     ws.addEventListener("close", (event) => {
       clearInterval(timer);
       for (const controller of running.values()) controller.abort();
-      resolve({ code: event.code, reason: event.reason, welcomed });
+      resolve({ code: event.code, reason: event.reason, opened, welcomed });
     });
     // An error is followed by a close event, which ends the session.
     ws.addEventListener("error", () => {});

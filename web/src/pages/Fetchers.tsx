@@ -443,6 +443,7 @@ function WorkerItem({
               </CodeBlock>
               <span className="text-2xs text-ink-3">
                 {token ? "在装有 Chrome 和 OpenCLI 扩展的设备上运行。" : "已保存的令牌不再显示；忘记时可重新生成，旧令牌随之失效。"}
+                网关前有反向代理时，需为 <code className="tag">/worker</code> 转发 WebSocket 升级。
               </span>
             </div>
           </>
