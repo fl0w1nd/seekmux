@@ -12,6 +12,7 @@ interface ConfigContextValue {
   /** Edits are saved by themselves; dirty until the server has them. */
   dirty: boolean;
   saving: boolean;
+  saved: boolean;
   /** Why the last save was refused; the draft stays as edited meanwhile. */
   error: string;
   retry: () => void;
@@ -69,17 +70,25 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   }, [dirty]);
 
   const [failure, setFailure] = useState<{ draft: string; message: string } | null>(null);
+  const [savedAt, setSavedAt] = useState(0);
   const mutation = useMutation({
     mutationFn: api.saveConfig,
     onSuccess: (saved, submitted) => {
       keepDraft.current = JSON.stringify(latest.current) !== JSON.stringify(submitted);
       setFailure(null);
+      setSavedAt(Date.now());
       client.setQueryData(["config"], saved);
       void client.invalidateQueries({ queryKey: ["overview"] });
       void client.invalidateQueries({ queryKey: ["status"] });
     },
     onError: (error, submitted) => setFailure({ draft: JSON.stringify(submitted), message: error.message }),
   });
+
+  useEffect(() => {
+    if (!savedAt) return;
+    const timer = setTimeout(() => setSavedAt(0), 1600);
+    return () => clearTimeout(timer);
+  }, [savedAt]);
 
   // A draft the server refused is not sent again until it changes.
   const refused = failure !== null && failure.draft === JSON.stringify(draft);
@@ -131,6 +140,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     update,
     dirty,
     saving: mutation.isPending,
+    saved: savedAt > 0 && !dirty && !mutation.isPending,
     error: refused ? failure.message : "",
     retry: () => setFailure(null),
     discard: () => {

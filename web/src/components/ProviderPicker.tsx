@@ -60,13 +60,12 @@ export function ProviderPicker({ tool, value, onChange }: { tool: RoutedTool; va
             detail={
               value === route.provider &&
               (changed.length > 0 ? (
-                <>
-                  {changed.join(" · ")}
-                  {" · "}
-                  <Link href={toolPage(tool)} className="underline underline-offset-2 hover:text-ink">
+                <span className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                  <span>{changed.join(" · ")}</span>
+                  <Link href={toolPage(tool)} className="shrink-0 font-sans underline underline-offset-2 hover:text-ink">
                     修改
                   </Link>
-                </>
+                </span>
               ) : (
                 "使用默认参数"
               ))

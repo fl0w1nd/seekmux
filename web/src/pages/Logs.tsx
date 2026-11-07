@@ -57,6 +57,34 @@ export function LogsPage() {
     const until = positive(params.get("until"));
     return since && until ? { since, until } : null;
   });
+
+  useEffect(() => {
+    const next = new URLSearchParams(address);
+    setTool(next.get("tool") ?? "");
+    setStatus(next.get("status") ?? "");
+    setProvider(next.get("provider") ?? "");
+    setCaller(next.get("caller") ?? "");
+    const since = positive(next.get("since"));
+    const until = positive(next.get("until"));
+    setRange((prev) => (since && until ? (prev?.since === since && prev?.until === until ? prev : { since, until }) : null));
+  }, [address]);
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (tool) next.set("tool", tool);
+    if (status) next.set("status", status);
+    if (provider) next.set("provider", provider);
+    if (caller) next.set("caller", caller);
+    if (range) {
+      next.set("since", String(range.since));
+      next.set("until", String(range.until));
+    }
+    const qs = next.toString();
+    const target = qs ? `/logs?${qs}` : "/logs";
+    if (`${window.location.pathname}${window.location.search}` !== target) {
+      window.history.replaceState(null, "", target);
+    }
+  }, [tool, status, provider, caller, range]);
   const keys = useQuery({ queryKey: ["keys"], queryFn: api.keys });
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");

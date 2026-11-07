@@ -102,6 +102,28 @@ export function FetchPlay() {
     setEngine(config.fetch.routes.some((r) => r.enabled && r.provider === pinned) ? pinned : "auto");
   };
 
+  const rerun = () => {
+    if (run.isPending) return;
+    if (inspected?.request) {
+      const req = inspected.request;
+      restore(req);
+      const pinned = typeof req.fetch_engine === "string" ? req.fetch_engine : "auto";
+      const nextEngine = config.fetch.routes.some((r) => r.enabled && r.provider === pinned) ? pinned : "auto";
+      const nextUrl = address(typeof req.url === "string" ? req.url : "");
+      const nextExtract = req.raw !== true && canExtract;
+      const nextPrompt = nextExtract && typeof req.prompt === "string" ? req.prompt.trim() : "";
+      const nextOffset = !nextExtract && typeof req.offset === "number" ? req.offset : 0;
+      if (!nextUrl || (nextExtract && !nextPrompt)) return;
+      const nextArgs: FetchArgs = { url: nextUrl, prompt: nextPrompt };
+      if (!nextExtract) nextArgs.raw = true;
+      if (nextOffset > 0) nextArgs.offset = nextOffset;
+      if (nextEngine !== "auto") nextArgs.fetch_engine = nextEngine;
+      send({ ...nextArgs, model: nextExtract ? model || (chain.length === 0 ? models[0]?.id : undefined) : undefined, no_cache: noCache || undefined });
+      return;
+    }
+    submit();
+  };
+
   const data = run.data;
   const activeResult = inspected ? inspected.response : data?.result;
   const activeAttempts = inspected ? inspected.entry.attempts : data?.attempts;
@@ -116,7 +138,6 @@ export function FetchPlay() {
     <Stage tool="fetch" title="网页抓取" description="调用 fetch 工具：读取页面并由提取模型按问题提炼回答，或直接返回 Markdown 原文。">
       <Composer
         open={open}
-        splitPanel={engine !== "auto"}
         tools={
           <>
             {canExtract && (
@@ -271,7 +292,8 @@ export function FetchPlay() {
             inspected && (
               <HistoryBanner
                 entry={inspected.entry}
-                onRerun={submit}
+                onRestore={inspected.request ? () => restore(inspected.request!) : undefined}
+                onRerun={rerun}
                 onClose={() => setInspected(null)}
               />
             )
@@ -316,7 +338,7 @@ export function FetchPlay() {
             ) : !inspected && run.error ? (
               <Failure error={run.error} />
             ) : inspected && !inspected.response ? (
-              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={submit} />
+              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={rerun} />
             ) : activeResult && format === "json" ? (
               <JSONView value={activeResult} />
             ) : (

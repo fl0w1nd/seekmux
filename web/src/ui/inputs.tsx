@@ -80,7 +80,13 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
     );
   }
   return (
-    <div className="flex items-center gap-2">
+    <div
+      className="flex items-center gap-2"
+      onBlur={(e) => {
+        if (!document.hasFocus()) return;
+        if (!e.currentTarget.contains(e.relatedTarget)) setEditing(false);
+      }}
+    >
       <PasswordInput
         mono
         plain
@@ -88,7 +94,6 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
         value={value.api_key}
         placeholder={placeholder ?? "粘贴 API Key"}
         onChange={(e) => onChange({ ...value, api_key: e.target.value.trim(), clear_api_key: false })}
-        onBlur={() => setEditing(false)}
       />
       {value.api_key_hint && (editing || value.api_key) && (
         <Button

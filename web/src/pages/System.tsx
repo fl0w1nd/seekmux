@@ -33,14 +33,14 @@ export function SystemPage() {
     <>
       <PageHeader title="系统" description="日志保留、自动熔断、网络、配置的备份与迁移，以及管理员密码。" />
       <div className="flex flex-col gap-4">
-        <Panel index="01" title="请求日志" description="日志与配置存储在同一个 SQLite 文件中，每小时按以下规则清理一次。" flush>
+        <Panel index="01" title="请求日志" description="历史请求日志与研究记录的清理策略，每小时自动执行。" flush>
           <Row label="保留天数" hint="早于该天数的日志将被删除；研究任务及其报告链接按同一期限失效">
             <NumberInput className="w-24" min={1} suffix="天" value={config.logs.retention_days} onChange={(v) => update((d) => void (d.logs.retention_days = Math.round(v)))} />
           </Row>
           <Row label="最多保留条数" hint="超出后从最早的记录开始删除，用于限制数据库体积">
             <NumberInput className="w-32" min={100} suffix="条" value={config.logs.max_rows} onChange={(v) => update((d) => void (d.logs.max_rows = Math.round(v)))} />
           </Row>
-          <Row label="记录返回内容" hint="保存每次调用返回给 Agent 的内容（截断到固定长度）。便于排查，但会增大数据库体积">
+          <Row label="记录返回内容" hint="在日志中保存每次调用的响应正文（超长截断）">
             <Switch checked={config.logs.capture_body} onCheckedChange={(v) => update((d) => void (d.logs.capture_body = v))} aria-label="记录返回内容" />
           </Row>
         </Panel>
@@ -48,7 +48,7 @@ export function SystemPage() {
         <Panel
           index="02"
           title="自动熔断"
-          description="搜索、抓取的提供商与提取模型共用同一套规则：连续失败的提供商或模型会被暂时跳过，请求直接转交下一个，无需每次等待其超时。深度研究的模型不参与。"
+          description="对搜索、抓取提供商与提取模型生效：连续失败达阈值后暂时跳过，冷却期满自动试探恢复。"
           flush
         >
           <Row label="启用自动熔断" hint="关闭后会立即恢复所有已熔断的提供商和模型">
@@ -68,7 +68,7 @@ export function SystemPage() {
           <Row label="对外地址" hint="研究报告链接与 OAuth 登录地址以此开头。留空则沿用请求到达时的地址；Agent 经内网地址接入时需要填写">
             <Input mono className="w-72" value={config.network.public_url ?? ""} placeholder="https://seekmux.example.com" onChange={(e) => update((d) => void (d.network.public_url = e.target.value.trim() || undefined))} />
           </Row>
-          <Row label="OAuth 登录" hint="支持 OAuth 的 MCP 客户端只需填写端点地址，首次连接时在浏览器中用管理员密码登录并授权，无需粘贴密钥。关闭后只接受 API Key，已签发的令牌随即失效">
+          <Row label="OAuth 登录" hint="允许支持 OAuth 的 MCP 客户端通过浏览器登录授权接入；关闭后仅接受 API Key，已签发令牌立即失效">
             <Switch checked={!config.oauth.disabled} onCheckedChange={(on) => update((d) => void (d.oauth.disabled = on ? undefined : true))} aria-label="允许 MCP 客户端通过 OAuth 登录" />
           </Row>
           <Row label="出站代理" hint="访问搜索、抓取和模型接口时使用。留空则直连">
@@ -81,7 +81,7 @@ export function SystemPage() {
           </Row>
         </Panel>
 
-        <Panel index="04" title="配置文件" description="配置以数据库为准；YAML 用于备份、迁移和版本管理" flush>
+        <Panel index="04" title="配置文件" description="导入或导出 YAML 格式的网关配置，用于备份与迁移。" flush>
           <Row label="导出为 YAML" hint="导出的文件包含明文 API Key，请妥善保管">
             <a href="/api/config/export" download>
               <Button icon={<Download />} tabIndex={-1}>

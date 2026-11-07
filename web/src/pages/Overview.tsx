@@ -49,8 +49,8 @@ export function OverviewPage() {
             <Routes tool="search" title="搜索路由" index={next()} routes={data.routes} />
             <Routes tool="fetch" title="抓取路由" index={next()} routes={data.routes} />
             {data.routes.some((r) => r.tool === "dev_search") && <Routes tool="dev_search" title="开发搜索路由" index={next()} routes={data.routes} />}
+            {data.models.length > 0 && <Models data={data} index={next()} className={!data.routes.some((r) => r.tool === "dev_search") ? "xl:col-span-2" : undefined} />}
           </div>
-          {data.models.length > 0 && <Models data={data} index={next()} />}
           {data.stats.errors.length > 0 && <Errors data={data} index={next()} />}
           <Providers data={data} index={next()} />
           <Callers data={data} index={next()} />
@@ -82,7 +82,7 @@ function Kpis({ data }: { data: Overview }) {
         value={by("search")?.p50_ms ?? null}
         format={duration}
         unit="搜索"
-        detail={`抓取 ${by("fetch") ? duration(by("fetch")!.p50_ms) : "—"} · P95 ${by("search") ? duration(by("search")!.p95_ms) : "—"} / ${by("fetch") ? duration(by("fetch")!.p95_ms) : "—"}`}
+        detail={`抓取 P50 ${by("fetch") ? duration(by("fetch")!.p50_ms) : "—"} · P95 搜 ${by("search") ? duration(by("search")!.p95_ms) : "—"} / 抓 ${by("fetch") ? duration(by("fetch")!.p95_ms) : "—"}`}
       />
       <Kpi
         label="模型 Token"
@@ -218,7 +218,7 @@ const shortTime = (ts: number) => dateTime(ts).slice(5, 16);
 function Routes({ tool, title, index, routes }: { tool: string; title: string; index: string; routes: RouteStatus[] }) {
   const list = routes.filter((r) => r.tool === tool);
   return (
-    <Panel index={index} title={title} description="按优先级排列；限流属于提供商，同一提供商在各工具中的用量合并计数，实时更新。" flush>
+    <Panel index={index} title={title} description="按优先级排列，实时显示各提供商状态与共用配额用量。" flush>
       <ol>
         {list.map((route, i) => (
           <li key={route.provider} className={cx("flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0", !route.available && "opacity-55")}>
@@ -247,15 +247,15 @@ function Routes({ tool, title, index, routes }: { tool: string; title: string; i
 
 const roleLabel = { extract: "提取", research: "研究" } as const;
 
-function Models({ data, index }: { data: Overview; index: string }) {
+function Models({ data, index, className }: { data: Overview; index: string; className?: string }) {
   return (
-    <Panel index={index} title="模型" description="模型的限流由所有使用它的功能共用。" flush>
+    <Panel index={index} title="模型" description="已关联功能的模型状态与共享配额用量。" className={className} flush>
       <ol>
         {data.models.map((model) => (
           <li key={model.id} className={cx("flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0", model.roles.length === 0 && "opacity-55")}>
             <Dot tone={model.roles.length === 0 ? "neutral" : model.disabled || (model.limit > 0 && model.used >= model.limit) ? "warn" : "ok"} live={model.active > 0} />
             <span className="num min-w-0 truncate text-sm">{model.id}</span>
-            <span className="flex gap-1">
+            <span className="flex shrink-0 gap-1">
               {model.roles.map((role) => (
                 <Badge key={role}>{roleLabel[role]}</Badge>
               ))}
@@ -374,7 +374,7 @@ function Providers({ data, index }: { data: Overview; index: string }) {
 function Callers({ data, index }: { data: Overview; index: string }) {
   const rows = data.stats.callers;
   return (
-    <Panel index={index} title="调用方" description="按 API Key 统计的工具调用；来源 IP 突然变多可能意味着 Key 已外泄；点击名称查看其日志" flush>
+    <Panel index={index} title="调用方" description="按访问密钥与调试台统计的工具调用；点击名称查看对应日志" flush>
       {rows.length === 0 ? (
         <Empty title="暂无数据" />
       ) : (
@@ -428,7 +428,7 @@ function Callers({ data, index }: { data: Overview; index: string }) {
 function Roles({ data }: { data: Overview }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 px-1 text-xs text-ink-3">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-panel border border-line bg-surface px-4 py-2.5 text-xs text-ink-3">
         <span className="flex items-center gap-2">
           <Dot tone={data.roles.extract ? "ok" : "neutral"} />
           提取模型{data.roles.extract ? "已配置" : "未配置"}

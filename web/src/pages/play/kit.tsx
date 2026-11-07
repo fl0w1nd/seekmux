@@ -381,7 +381,7 @@ export function ProviderParams({ tool, engine, tuning, note }: { tool: RoutedToo
   }
   return (
     <OptionGroup title={`${provider(engine).name} 专有参数`} local action={tuning.changed && <ResetButton onClick={tuning.reset} />}>
-      <OptionFields key={tuning.version} tool={tool} provider={engine} value={tuning.value} onChange={tuning.set} columns="sm:grid-cols-2" />
+      <OptionFields key={tuning.version} tool={tool} provider={engine} value={tuning.value} onChange={tuning.set} columns="sm:grid-cols-2 lg:grid-cols-3" />
       <p className="text-xs text-ink-3">
         {tuning.changed ? "已自定义参数，" : "初始值取自配置，"}改动只随调试台的调用发出。{note} 要让 MCP 调用也生效，请到{" "}
         <Link href={page} className="text-ink-2 underline underline-offset-2 hover:text-ink">
@@ -492,7 +492,7 @@ export function HistoricalFallback({
             <Link href="/system" className="text-ink underline underline-offset-2 hover:text-signal-text">
               系统设置
             </Link>{" "}
-            中开启「记录返回内容」）。当时参数已载入上方输入框，可一键重新运行，或切换至「调用链」查看上游耗时。
+            中开启「记录返回内容」）。可载入当时参数重新运行，或切换至「调用链」查看上游耗时。
           </span>
           <Button size="sm" variant="secondary" icon={<Play />} onClick={onRerun}>
             以此参数重新运行
@@ -512,10 +512,12 @@ export function HistoricalFallback({
 /** Banner rendered at the top of Output when viewing a past LogEntry. */
 export function HistoryBanner({
   entry,
+  onRestore,
   onRerun,
   onClose,
 }: {
   entry: LogEntry;
+  onRestore?: () => void;
   onRerun: () => void;
   onClose: () => void;
 }) {
@@ -530,6 +532,11 @@ export function HistoryBanner({
         {entry.source === "mcp" && <Badge>{entry.api_key_name || "MCP"}</Badge>}
       </div>
       <div className="flex items-center gap-1.5">
+        {onRestore && (
+          <Button size="sm" variant="ghost" icon={<RotateCcw />} onClick={onRestore}>
+            载入参数
+          </Button>
+        )}
         <Button size="sm" variant="secondary" icon={<Play />} onClick={onRerun}>
           重新运行
         </Button>
@@ -673,13 +680,15 @@ export function Recent<R = unknown>({
       const full = await api.log(entry.id);
       const req = parseJSON<Record<string, unknown>>(full.request);
       const res = parseJSON<R>(full.response);
-      if (req && typeof req === "object") {
+      if (loadFormOnly) {
+        if (!req || typeof req !== "object") throw new Error();
         onPick(req);
-      } else if (loadFormOnly) {
-        throw new Error();
+        return;
       }
-      if (!loadFormOnly && onInspect) {
+      if (onInspect) {
         onInspect({ entry: full, request: req, response: res });
+      } else if (req && typeof req === "object") {
+        onPick(req);
       }
     } catch {
       toast("无法读取这次调用的记录：记录已被清理，或请求参数被截断。", "err");
@@ -776,7 +785,7 @@ export function Recent<R = unknown>({
                   <span className="num w-14 shrink-0 text-right text-xs text-ink-2">{duration(entry.duration_ms)}</span>
                   <span className="w-16 shrink-0 text-right text-xs text-ink-3 max-sm:hidden">{ago(entry.ts)}</span>
 
-                  <Tooltip content="仅载入参数到输入框">
+                  <Tooltip content="载入参数到输入框">
                     <button
                       type="button"
                       aria-label="载入这次调用的参数"

@@ -107,6 +107,32 @@ export function SearchPlay() {
     setEngine(config.search.routes.some((r) => r.enabled && r.provider === pinned) ? pinned : "auto");
   };
 
+  const rerun = () => {
+    if (run.isPending) return;
+    if (inspected?.request) {
+      const req = inspected.request;
+      restore(req);
+      const pinned = typeof req.search_engine === "string" ? req.search_engine : "auto";
+      const nextEngine = config.search.routes.some((r) => r.enabled && r.provider === pinned) ? pinned : "auto";
+      const nextQueries = words(req.queries).slice(0, maxQueries);
+      if (nextQueries.length === 0) return;
+      const nextArgs: SearchArgs = { queries: nextQueries };
+      const nextMax = typeof req.maxResults === "number" ? req.maxResults : defaultMaxResults;
+      if (nextMax !== defaultMaxResults) nextArgs.maxResults = nextMax;
+      if (ranges.some((r) => r.value === req.time_range) && req.time_range) nextArgs.time_range = req.time_range as string;
+      const inc = words(req.include_domains);
+      const exc = words(req.exclude_domains);
+      if (inc.length > 0) nextArgs.include_domains = inc;
+      if (exc.length > 0) nextArgs.exclude_domains = exc;
+      if (nextEngine !== "auto") nextArgs.search_engine = nextEngine;
+      setInspected(null);
+      setView("result");
+      run.mutate(nextArgs);
+      return;
+    }
+    submit();
+  };
+
   const hasDomainFilter = include.length > 0 || exclude.length > 0;
   const domainSummary = [include.length > 0 && `限定 ${include.length} 域名`, exclude.length > 0 && `排除 ${exclude.length} 域名`].filter(Boolean).join(" · ");
 
@@ -125,7 +151,6 @@ export function SearchPlay() {
     <Stage tool="search" title="网页搜索" description="调用 search 工具。支持最多 3 条查询并行检索，路由、限流与故障转移均与 MCP 调用一致。">
       <Composer
         open={open}
-        splitPanel={engine !== "auto"}
         tools={
           <>
             <ProviderChip tool="search" value={engine} onChange={setEngine} changed={tuning.changed} />
@@ -186,7 +211,7 @@ export function SearchPlay() {
                 )
               }
             >
-              <div className={cx("grid gap-4", engine === "auto" && "sm:grid-cols-2")}>
+              <div className="grid gap-4 sm:grid-cols-2">
                 <Group label="限定域名" hint="仅返回这些域名（含子域名）下的结果，最多 10 个">
                   <ChipInput value={include} onChange={setInclude} max={maxDomains} normalize={domain} placeholder="docs.python.org" aria-label="限定域名" />
                 </Group>
@@ -239,7 +264,8 @@ export function SearchPlay() {
             inspected && (
               <HistoryBanner
                 entry={inspected.entry}
-                onRerun={submit}
+                onRestore={inspected.request ? () => restore(inspected.request!) : undefined}
+                onRerun={rerun}
                 onClose={() => setInspected(null)}
               />
             )
@@ -284,7 +310,7 @@ export function SearchPlay() {
             ) : !inspected && run.error ? (
               <Failure error={run.error} />
             ) : inspected && !inspected.response ? (
-              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={submit} />
+              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={rerun} />
             ) : activeResults && format === "json" ? (
               <JSONView value={activeResults} />
             ) : (

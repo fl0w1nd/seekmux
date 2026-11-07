@@ -53,7 +53,7 @@ export function FetchPage() {
           </Row>
         </Panel>
 
-        <Panel index="03" title="提取模型" description="读取整个页面并按 Prompt 提炼回答的辅助模型，建议选用成本低、速度快、上下文长的模型。可配置多个：首选失败或被限流时，请求转交下一个。">
+        <Panel index="03" title="提取模型" description="读取抓取内容并按 Prompt 提炼回答的模型链，首选失败或限流时自动转交下一个模型。">
           <div className="flex flex-col gap-4">
             {!configured && <Notice tone="warn">未配置提取模型：fetch 将直接返回页面原文，占用调用方更多上下文。</Notice>}
             <ModelChain value={extract.models} onChange={(ids) => update((d) => void (d.fetch.extract.models = ids))} />
@@ -64,14 +64,14 @@ export function FetchPage() {
               </div>
               <Switch checked={extract.raw_on_failure} onCheckedChange={(v) => update((d) => void (d.fetch.extract.raw_on_failure = v))} aria-label="全部故障时降级为原文" />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="单次输入上限" hint="超出的页面分段提取">
                 <NumberInput min={1} suffix="字符" value={extract.max_input_length} onChange={(v) => update((d) => void (d.fetch.extract.max_input_length = Math.round(v)))} />
               </Field>
               <Field label="首字超时" hint="未收到首个 Token 时重试">
                 <NumberInput min={1} suffix="ms" value={extract.first_chunk_timeout_ms} onChange={(v) => update((d) => void (d.fetch.extract.first_chunk_timeout_ms = Math.round(v)))} />
               </Field>
-              <Field label="首字重试次数">
+              <Field label="首字重试次数" hint="首字超时后的最大重试次数">
                 <NumberInput min={1} value={extract.max_retries} onChange={(v) => update((d) => void (d.fetch.extract.max_retries = Math.round(v)))} />
               </Field>
               <Field label="最大输出 Token" hint="0 为沿用模型自身的上限">
@@ -81,7 +81,7 @@ export function FetchPage() {
                 <NumberInput min={1} suffix="ms" value={extract.stream_total_timeout_ms} onChange={(v) => update((d) => void (d.fetch.extract.stream_total_timeout_ms = Math.round(v)))} />
               </Field>
             </div>
-            <Field label="系统提示词" hint="留空使用内置提示词（下方灰色文字即内置内容）">
+            <Field label="系统提示词" hint="留空则使用默认提示词">
               <Textarea rows={8} value={extract.system_prompt ?? ""} placeholder={meta.prompts.extract} onChange={(e) => update((d) => void (d.fetch.extract.system_prompt = e.target.value || undefined))} />
             </Field>
           </div>

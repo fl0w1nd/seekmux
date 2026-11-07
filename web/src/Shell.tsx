@@ -159,7 +159,7 @@ function NavFoot() {
 
 export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { meta, saving, error, retry, discard } = useConfig();
+  const { meta, saving, saved, error, retry, discard } = useConfig();
   const [menu, setMenu] = useState(false);
   const current = nav.flatMap((section) => section.items).find(({ href }) => (href === "/" ? location === "/" : location.startsWith(href)));
 
@@ -173,7 +173,9 @@ export function Shell({ children }: { children: ReactNode }) {
           <Logo className="size-7" />
           <div className="leading-tight">
             <div className="font-medium">SeekMux</div>
-            <div className="tag normal-case">{saving ? "保存中…" : meta.version}</div>
+            <div className={cx("tag normal-case transition-colors", saved && "text-ok")}>
+              {saving ? "保存中…" : saved ? "✓ 已保存" : meta.version}
+            </div>
           </div>
         </div>
         <NavList location={location} />
@@ -184,7 +186,9 @@ export function Shell({ children }: { children: ReactNode }) {
         <Button variant="ghost" className="size-10" icon={<Menu />} aria-label="打开菜单" onClick={() => setMenu(true)} />
         <Logo className="size-6" />
         <div className="min-w-0 flex-1 truncate font-medium">{current?.label ?? "SeekMux"}</div>
-        {saving && <span className="tag normal-case">保存中…</span>}
+        {(saving || saved) && (
+          <span className={cx("tag normal-case transition-colors", saved && "text-ok")}>{saving ? "保存中…" : "✓ 已保存"}</span>
+        )}
       </header>
       <Drawer open={menu} onOpenChange={setMenu} side="left" title="SeekMux" description={meta.version} bodyClassName="flex flex-col p-0">
         <NavList location={location} />

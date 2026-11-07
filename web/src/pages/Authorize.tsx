@@ -71,9 +71,8 @@ export function AuthorizePage() {
             <div className="mt-1 text-sm text-ink-2">请求通过 MCP 调用本网关的工具。</div>
           </div>
           <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-ink-2">授权结果将发往</span>
+            <span className="text-xs font-medium text-ink-2">回调地址</span>
             <div className="num rounded-ctl border border-line bg-sunken px-2.5 py-1.5 text-xs break-all text-ink-2">{prompt.data.redirect_uri}</div>
-            <span className="text-xs text-ink-3">名称由客户端自行填写，不足为凭；请确认这个地址属于你正在连接的客户端。</span>
           </div>
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-ink-2">可用工具</span>
@@ -96,7 +95,7 @@ export function AuthorizePage() {
           <Notice>
             {prompt.data.key
               ? `该客户端此前已获授权，将沿用密钥「${prompt.data.key}」及其用量、限流与策略，可用工具以这次的选择为准。`
-              : "授权后会在「密钥」页生成一把以该客户端命名的密钥，可在那里设置限流与策略，或随时吊销。"}
+              : "授权后将在「访问密钥」页生成一把同名密钥，可在该页设置限流与策略，或随时吊销。"}
           </Notice>
           {decide.error && <Notice tone="err">{decide.error.message}</Notice>}
           {answered ? (

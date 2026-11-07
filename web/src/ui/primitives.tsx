@@ -382,7 +382,7 @@ export function Choice({
         <span className={cx("min-w-0 truncate", checked && "font-medium", mono && "num")}>{title}</span>
         {status && <span className="ml-auto shrink-0">{status}</span>}
       </button>
-      {detail && <div className="num -mt-1 truncate px-3 pb-2 pl-9 text-xs text-ink-3">{detail}</div>}
+      {detail && <div className="num -mt-1 px-3 pb-2 pl-9 text-xs leading-relaxed break-words text-ink-3">{detail}</div>}
     </div>
   );
 }

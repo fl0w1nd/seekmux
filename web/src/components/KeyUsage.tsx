@@ -52,7 +52,7 @@ export function KeyUsageDrawer({ apiKey, onClose }: { apiKey: APIKey | null; onC
           </div>
         ) : usage.total.calls === 0 ? (
           <Empty icon={<BarChart3 />} title="所选时间范围内没有用量">
-            用量自升级到本版本起开始累计，此前的调用只在请求日志中。
+            该密钥在所选时间段内暂无调用记录。
           </Empty>
         ) : (
           <Report usage={usage} />

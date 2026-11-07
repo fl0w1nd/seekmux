@@ -96,6 +96,28 @@ export function DevSearchPlay() {
     setRepos(words(request.repos));
   };
 
+  const rerun = () => {
+    if (run.isPending) return;
+    if (inspected?.request) {
+      const req = inspected.request;
+      restore(req);
+      const q = typeof req.query === "string" ? req.query.trim() : "";
+      if (!q) return;
+      const nextArgs: DevSearchArgs = { query: q };
+      const nextMax = typeof req.maxResults === "number" ? req.maxResults : defaultMaxResults;
+      if (nextMax !== defaultMaxResults) nextArgs.maxResults = nextMax;
+      const nextTypes = words(req.types).filter((t) => t in devTypeLabel);
+      if (nextTypes.length > 0) nextArgs.types = nextTypes;
+      const nextRepos = words(req.repos);
+      if (nextRepos.length > 0) nextArgs.repos = nextRepos;
+      setInspected(null);
+      setView("result");
+      run.mutate({ ...nextArgs, search_engine: engine === "auto" ? undefined : engine, route: tuning.route });
+      return;
+    }
+    submit();
+  };
+
   const data = run.data;
   const activeResult = inspected ? inspected.response : data?.result;
   const activeAttempts = inspected ? inspected.entry.attempts : data?.attempts;
@@ -107,7 +129,6 @@ export function DevSearchPlay() {
     <Stage tool="dev_search" title="开发搜索" description="调用 dev_search 工具。检索范围是公开代码仓库的 Issue、已合并 PR、README 与技术文档站，返回匹配段落。">
       <Composer
         open={open}
-        splitPanel={engine !== "auto"}
         tools={
           <>
             <ProviderChip tool="dev_search" value={engine} onChange={setEngine} changed={tuning.changed} />
@@ -210,7 +231,8 @@ export function DevSearchPlay() {
             inspected && (
               <HistoryBanner
                 entry={inspected.entry}
-                onRerun={submit}
+                onRestore={inspected.request ? () => restore(inspected.request!) : undefined}
+                onRerun={rerun}
                 onClose={() => setInspected(null)}
               />
             )
@@ -252,7 +274,7 @@ export function DevSearchPlay() {
             ) : !inspected && run.error ? (
               <Failure error={run.error} />
             ) : inspected && !inspected.response ? (
-              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={submit} />
+              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={rerun} />
             ) : activeResult?.error ? (
               <Failure error={new Error(activeResult.error)} />
             ) : activeResult && format === "json" ? (

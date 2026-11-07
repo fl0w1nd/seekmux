@@ -10,7 +10,7 @@ import { PageHeader } from "../Shell";
 import { BrandIcon } from "../ui/brand";
 import { ChipInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, cx, Empty, Field, Input, Notice, Panel, Segmented, Spinner, Switch, Table, TabList, TabPanel, Tabs, Td, Th } from "../ui/primitives";
+import { Badge, Button, cx, Empty, Field, Input, Notice, Panel, Segmented, Spinner, Switch, Table, TabList, TabPanel, Tabs, Td, Th, Tooltip } from "../ui/primitives";
 
 const tabs = [
   { value: "rules", label: "规则" },
@@ -38,7 +38,7 @@ export function RoutingPage() {
     <>
       <PageHeader
         title="服务路由"
-        description="按 URL 决定由哪些提供商抓取：有些页面只有个别提供商能读出内容。域名统计显示各提供商在每个域名上的实际表现，可据此新增规则。"
+        description="按 URL 匹配规则指定抓取提供商，并按域名统计各提供商的抓取表现。"
         actions={
           tab === "rules" && (
             <Button variant="primary" icon={<Plus />} onClick={() => setForm({ id: newRuleID(), name: "", enabled: true, match: [], providers: [] })}>
@@ -96,7 +96,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
     <Panel
       index="01"
       title="路由规则"
-      description="URL 命中规则时，只在规则列出的提供商中依次尝试，不再走抓取工具的路由优先级；提供商配置了密钥即可，无需在抓取路由中启用。自上而下匹配，命中第一条即止。内置规则默认停用，需手动开启。调用方通过 fetch_engine 指定提供商时不套用规则。"
+      description="自上而下匹配，命中后仅在规则指定的提供商中依次尝试（优先于默认抓取路由，显式指定 fetch_engine 时除外）。"
       flush
     >
       <ol>
@@ -105,14 +105,16 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
           return (
             <li key={rule.id} className={cx("flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 last:border-b-0", !rule.enabled && "opacity-60")}>
               <span className={cx("num w-6 text-sm", rule.enabled && ready ? "text-signal-text" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
-              <span className={cx("flex w-7 flex-col", rule.builtin && "max-sm:hidden")}>
-                {!rule.builtin && (
-                  <>
-                    <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
-                    <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === own - 1} onClick={() => move(index, 1)} />
-                  </>
-                )}
-              </span>
+              {own > 1 && (
+                <span className={cx("flex w-7 flex-col", rule.builtin && "max-sm:hidden")}>
+                  {!rule.builtin && (
+                    <>
+                      <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
+                      <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === own - 1} onClick={() => move(index, 1)} />
+                    </>
+                  )}
+                </span>
+              )}
               <div className="min-w-48 flex-1 max-sm:basis-[calc(100%-3rem)]">
                 <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                   {rule.builtin && <BrandIcon id={rule.id} className="size-4" />}
@@ -258,14 +260,16 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
               return (
                 <li key={id} className={cx("flex items-center gap-3 border-b border-line px-3 py-2 last:border-b-0", !on && "opacity-60")}>
                   <span className={cx("num w-5 text-xs", on ? "text-signal-text" : "text-ink-3")}>{on ? String(index + 1).padStart(2, "0") : "—"}</span>
-                  <span className="flex w-7 flex-col">
-                    {on && (
-                      <>
-                        <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
-                        <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === chosen.length - 1} onClick={() => move(index, 1)} />
-                      </>
-                    )}
-                  </span>
+                  {chosen.length > 1 && (
+                    <span className="flex w-7 flex-col">
+                      {on && (
+                        <>
+                          <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
+                          <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === chosen.length - 1} onClick={() => move(index, 1)} />
+                        </>
+                      )}
+                    </span>
+                  )}
                   <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                     <BrandIcon id={id} className="size-4" />
                     {provider(id).name}
@@ -362,7 +366,7 @@ function Domains({ onRoute }: { onRoute: (rule: Rule) => void }) {
     <Panel
       index="01"
       title="域名统计"
-      description={`各提供商在每个域名上的抓取结果，保留 ${query.data?.retention_days ?? 90} 天。「成功」只表示提供商返回了正文，不代表内容完整：同一域名下正文明显偏短的提供商，可能只拿到了页面外壳。缓存命中、对冲中被取消的请求和提供商自身的故障不计入。`}
+      description={`按域名统计各提供商的抓取结果与正文长度，数据保留 ${query.data?.retention_days ?? 90} 天（不含缓存命中与取消请求）。`}
       actions={
         <>
           <Segmented
@@ -481,7 +485,15 @@ function ProviderRow({ stats, name, longest }: { stats: DomainProviderStats; nam
       <Counts stats={stats} />
       <Td className="num text-right text-xs">{read ? duration(stats.avg_ms) : "—"}</Td>
       <Td className="num text-right text-xs">{read ? bytes(stats.avg_bytes) : "—"}</Td>
-      <Td className="text-right">{short && <Badge tone="warn">正文偏短</Badge>}</Td>
+      <Td className="text-right">
+        {short && (
+          <Tooltip content="平均正文长度不足同域名最高值的 30%">
+            <span>
+              <Badge tone="warn">正文偏短</Badge>
+            </span>
+          </Tooltip>
+        )}
+      </Td>
     </tr>
   );
 }

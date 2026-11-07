@@ -56,7 +56,7 @@ export function ModelsPage() {
     <>
       <PageHeader
         title="模型接口"
-        description="大模型接口及其下属模型。模型在此独立定义：参数与限流随模型生效，「工具」中的网页抓取和深度研究仅按 ID 引用；引用同一模型的功能共用其限流。"
+        description="配置大模型接口与模型参数。网页抓取与深度研究按模型 ID 引用并共享模型限流。"
         actions={
           <Button variant="primary" icon={<Plus />} onClick={() => setEditing({ kind: "provider", index: -1 })}>
             添加接口
@@ -399,7 +399,7 @@ function ModelDialog({
               }}
             />
           </Field>
-          <Field label="模型 ID" hint={isNew ? "各功能通过该 ID 引用模型，创建后不可修改。同一上游模型需要两套参数时，可分别创建两个 ID" : undefined} error={form.id ? idError : undefined}>
+          <Field label="模型 ID" hint={isNew ? "各功能通过该 ID 引用模型，创建后不可修改" : undefined} error={form.id ? idError : undefined}>
             <Input
               mono
               value={form.id}
@@ -432,7 +432,7 @@ function ModelDialog({
 
         <ReasoningEditor type={provider.type} value={form.reasoning} onChange={(reasoning) => set({ reasoning })} />
 
-        <Field label="最大输出 Token" hint={provider.type === "anthropic" ? "模型的最大输出 Token，研究与抓取均受其约束。0 按 32000 发送（该接口要求指定上限）；抓取可在「工具」的「网页抓取」中单独设置更小的值" : "模型的最大输出 Token，研究与抓取均受其约束。0 为不限制；抓取可在「工具」的「网页抓取」中单独设置更小的值"} className="max-w-md">
+        <Field label="最大输出 Token" hint={provider.type === "anthropic" ? "单次响应的最大输出上限，0 默认按 32000 发送；抓取工具可单独设置更小上限" : "单次响应的最大输出上限，0 为不限制；抓取工具可单独设置更小上限"}>
           <NumberInput value={form.max_output_tokens ?? 0} onChange={(n) => set({ max_output_tokens: Math.round(n) || undefined })} />
         </Field>
         <Field label="附加请求字段" hint="原样并入请求体的 JSON；最后合并，会覆盖上方的同名设置。用于界面未提供的参数">

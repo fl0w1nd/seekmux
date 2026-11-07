@@ -19,7 +19,7 @@ export function ResearchPage() {
           </Row>
         </Panel>
 
-        <Panel index="02" title="研究模型" description="驱动整个研究过程的主模型，须支持工具调用。研究仅使用这一个模型，不做故障转移：一次研究的多轮请求依赖同一模型的提示词缓存。">
+        <Panel index="02" title="研究模型" description="驱动多轮检索与报告撰写的主模型（需支持工具调用，单次研究固定使用同一模型）。">
           <div className="flex flex-col gap-4">
             {research.enabled && !configured && <Notice tone="err">已启用研究但未选择模型，配置无法保存。</Notice>}
             <ModelSelect value={research.model} onChange={(id) => update((d) => void (d.research.model = id))} />

@@ -52,6 +52,7 @@ function stopwatch(ms: number): string {
 }
 
 const budgetText = (b: Pick<ResearchBudget, LimitKey>) => `${b.max_steps} 步 · ${stopwatch(b.max_duration_seconds * 1000)} · ${compact(b.max_tokens)} token · 上下文 ${compact(b.max_context_tokens)}`;
+const budgetChipText = (b: Pick<ResearchBudget, LimitKey>) => `${b.max_steps} 步 · ${stopwatch(b.max_duration_seconds * 1000)} · ${compact(b.max_tokens)}`;
 
 export function ResearchPlay() {
   const { config } = useConfig();
@@ -184,12 +185,11 @@ export function ResearchPlay() {
             <Chip
               icon={<SlidersHorizontal />}
               label="预算"
-              value={<span className="num">{budgetText(budget)}</span>}
+              value={<span className="num">{budgetChipText(budget)}</span>}
               aria-expanded={open}
               aria-pressed={open}
               changed={changed > 0}
               onClick={() => setOpen(!open)}
-              className="max-w-md"
             />
           </>
         }
@@ -322,6 +322,8 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
 
   const [view, setView] = useState<"process" | "report">(live || !(task.result || task.draft) ? "process" : "report");
   const [format, setFormat] = useState<"rendered" | "text">("rendered");
+  const [expanded, setExpanded] = useState(false);
+  const longQuestion = task.question.length > 100 || task.question.includes("\n");
   // The report is what a finished run is opened for.
   const wasLive = useRef(live);
   useEffect(() => {
@@ -361,9 +363,14 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
             </span>
             {phase && <span className="min-w-0 truncate text-ink-3">{phase}</span>}
           </div>
-          <h2 className="mt-1 line-clamp-2 text-base font-medium" title={task.question}>
+          <h2 className={cx("mt-1 text-base font-medium whitespace-pre-line", !expanded && "line-clamp-2")}>
             {task.question}
           </h2>
+          {longQuestion && (
+            <button type="button" onClick={() => setExpanded(!expanded)} className="mt-0.5 text-xs text-ink-3 underline underline-offset-2 hover:text-ink">
+              {expanded ? "收起问题" : "展开全文"}
+            </button>
+          )}
           <div className="num mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3">
             {budget && <span className="text-ink-2">{budget.model}</span>}
             {budget && <span>{budget.reading === "raw" ? "读原文" : "读归纳"}</span>}

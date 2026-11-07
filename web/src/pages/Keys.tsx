@@ -47,7 +47,7 @@ export function KeysPage() {
     <>
       <PageHeader
         title="访问密钥"
-        description="Agent 连接 MCP 端点所用的密钥，与登录控制台的管理员密码相互独立。每个密钥可限定可用工具、调用频率与有效期，可指定自己的模型和研究上限，并可随时吊销。"
+        description="管理 Agent 接入 MCP 端点的访问凭据、工具权限与调用配额。"
         actions={
           <Button variant="primary" icon={<Plus />} onClick={() => setForm("new")}>
             创建密钥
@@ -61,7 +61,8 @@ export function KeysPage() {
               创建密钥后，Agent 才能连接到本网关。
             </Empty>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+              <Table>
               <thead>
                 <tr>
                   <Th>名称</Th>
@@ -135,13 +136,14 @@ export function KeysPage() {
                 })}
               </tbody>
             </Table>
+            </div>
           )}
         </Panel>
 
         <Panel index="MCP" title="连接方式" description="端点使用 Streamable HTTP 传输。客户端可以通过 OAuth 登录，也可以在 Authorization 请求头中携带密钥。">
           <div className="grid gap-4">
             {!config.oauth.disabled && (
-              <Field label="OAuth 登录（Claude Code）" hint="只需填写端点地址：首次连接时浏览器会打开本控制台，登录并授权后自动生成一把以客户端命名的密钥。其它支持 MCP 授权（动态客户端注册）的客户端同理。">
+              <Field label="OAuth 登录（Claude Code）" hint="支持 OAuth 动态客户端注册的 MCP 客户端可直接连接端点，首次连接时在浏览器完成授权。">
                 <CodeBlock copy wrap>{`claude mcp add --transport http seekmux ${endpoint()}`}</CodeBlock>
               </Field>
             )}
@@ -370,7 +372,7 @@ function KeyDialog({
               </Field>
             </div>
             <span className="text-xs text-ink-3">
-              0 表示不限。上限只会压低研究配置的预算（当前 {config.research.max_steps} 步 / {config.research.max_duration_seconds} 秒 / {compact(config.research.max_tokens)} Token），不会抬高。
+              0 表示不限；实际生效值为此上限与全局研究预算中的较小值（当前全局：{config.research.max_steps} 步 / {config.research.max_duration_seconds} 秒 / {compact(config.research.max_tokens)} Token）。
             </span>
           </Section>
         </div>

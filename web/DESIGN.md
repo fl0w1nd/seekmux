@@ -102,7 +102,7 @@ except the dot of something that is live. All of it is disabled under
   folds open, the structured input area, and a bottom bar with examples and
   the primary run action), `Output` (the pane a call answers into, with its
   result and its upstream calls), `Recent` (past runs, a click inspects the
-  run in `Output` and restores its arguments). A chip carries a signal dot
+  run in `Output`, with an action to restore its arguments). A chip carries a signal dot
   when its value is not the configured one, and whatever applies to one call
   only is marked `仅调试台`.
 
