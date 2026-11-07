@@ -248,11 +248,11 @@ func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *m
 			Description: fetchDescription,
 			InputSchema: schema(`{
 				"type": "object",
-				"required": ["url", "prompt"],
+				"required": ["url"],
 				"properties": {
 					"url": {"type": "string", "description": "URL to fetch."},
 					"prompt": {"type": "string",
-						"description": "What you want from the page: a question or an extraction instruction. State the scope and level of detail, e.g. \"List every rate limit with its exact numbers\" or \"Show the full streaming example, code verbatim\"."},
+						"description": "Required unless raw is true. What you want from the page: a question or an extraction instruction. State the scope and level of detail, e.g. \"List every rate limit with its exact numbers\" or \"Show the full streaming example, code verbatim\"."},
 					"raw": {"type": "boolean", "default": false,
 						"description": "Return the page's original markdown instead of an answer (` + "`prompt`" + ` is then ignored). Costs far more context than an answer; use it only when you need the original text."},
 					"offset": {"type": "integer", "minimum": 0, "default": 0,
