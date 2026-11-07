@@ -337,3 +337,38 @@ func TestHubKeepsAConnectionPerWorker(t *testing.T) {
 		t.Fatal("one worker leaving took the other away")
 	}
 }
+
+// A caller that gives up while its fetch is being sent leaves the worker
+// connected: the connection is shared by every fetch of the worker.
+func TestACanceledFetchKeepsTheWorkerConnected(t *testing.T) {
+	hub, server := newHub(t)
+	w, err := dial(t, server.URL, hello("secret", ready("p1")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return hub.Online("w1") })
+	// The worker reads what it is sent, so that nothing waits on it.
+	go func() {
+		for {
+			if _, _, err := w.ws.Read(context.Background()); err != nil {
+				return
+			}
+		}
+	}()
+	for i := range 300 {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		go func() {
+			_, err := hub.Fetch(ctx, "w1", Request{URL: "https://a.b"})
+			done <- err
+		}()
+		time.Sleep(time.Duration(i%7) * 10 * time.Microsecond)
+		cancel()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("fetch %d: %v", i, err)
+		}
+		if !hub.Online("w1") {
+			t.Fatalf("the worker was disconnected by fetch %d", i)
+		}
+	}
+}

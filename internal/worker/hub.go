@@ -163,6 +163,9 @@ func (h *Hub) lookup(token string) (string, bool) {
 // reports is an *Error; one of the connection is ErrOffline or
 // ErrDisconnected.
 func (h *Hub) Fetch(ctx context.Context, id string, req Request) (*Page, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s := h.session(id)
 	if s == nil {
 		return nil, ErrOffline
@@ -198,11 +201,7 @@ func (h *Hub) Fetch(ctx context.Context, id string, req Request) (*Page, error) 
 		// Leave the answer time to come back before the caller gives up.
 		timeout = max(time.Until(deadline)-500*time.Millisecond, time.Second)
 	}
-	err := s.send(ctx, &Message{Type: TypeFetch, ID: rid, URL: req.URL, Adapter: req.Adapter, Profile: req.Profile, TimeoutMs: timeout.Milliseconds()})
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
+	if err := s.send(&Message{Type: TypeFetch, ID: rid, URL: req.URL, Adapter: req.Adapter, Profile: req.Profile, TimeoutMs: timeout.Milliseconds()}); err != nil {
 		return nil, ErrDisconnected
 	}
 	select {
@@ -215,21 +214,23 @@ func (h *Hub) Fetch(ctx context.Context, id string, req Request) (*Page, error) 
 		}
 		return m.Page, nil
 	case <-ctx.Done():
-		cancelCtx, cancel := context.WithTimeout(context.Background(), writeTimeout)
-		defer cancel()
-		_ = s.send(cancelCtx, &Message{Type: TypeCancel, ID: rid})
+		_ = s.send(&Message{Type: TypeCancel, ID: rid})
 		return nil, ctx.Err()
 	case <-s.done:
 		return nil, ErrDisconnected
 	}
 }
 
-func (s *session) send(ctx context.Context, m *Message) error {
+// send writes a message to the worker. It does not take the caller's
+// context: the websocket closes its connection when the context of a write
+// ends before the write does, and the connection is every fetch's of the
+// worker, not the caller's. A write is bounded by writeTimeout alone.
+func (s *session) send(m *Message) error {
 	data, err := json.Marshal(m)
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
 	defer cancel()
 	return s.ws.Write(ctx, websocket.MessageText, data)
 }
@@ -292,7 +293,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if hello.State != nil {
 		s.setState(*hello.State)
 	}
-	if err := s.send(ctx, &Message{Type: TypeWelcome}); err != nil {
+	if err := s.send(&Message{Type: TypeWelcome}); err != nil {
 		ws.CloseNow()
 		return
 	}
