@@ -128,10 +128,10 @@ func checkPattern(p string) error {
 }
 
 // fetchProviders keeps the known fetch providers of a list, each once.
-func fetchProviders(ids []string) []string {
+func (c *Config) fetchProviders(ids []string) []string {
 	var out []string
 	for _, id := range ids {
-		if info, ok := Info(id); ok && info.Supports(ToolFetch) && !slices.Contains(out, id) {
+		if info, ok := c.Info(id); ok && info.Supports(ToolFetch) && !slices.Contains(out, id) {
 			out = append(out, id)
 		}
 	}
@@ -149,7 +149,7 @@ func (c *Config) normalizeRouting() {
 			}
 		}
 		rule.Match = match
-		rule.Providers = append([]string{}, fetchProviders(rule.Providers)...)
+		rule.Providers = append([]string{}, c.fetchProviders(rule.Providers)...)
 		rules = append(rules, rule)
 	}
 	c.Routing.Rules = rules
@@ -161,7 +161,7 @@ func (c *Config) normalizeRouting() {
 			delete(c.Routing.Builtin, id)
 			continue
 		}
-		o.Providers = fetchProviders(o.Providers)
+		o.Providers = c.fetchProviders(o.Providers)
 		if !o.Enabled && len(o.Providers) == 0 {
 			delete(c.Routing.Builtin, id)
 			continue

@@ -12,8 +12,45 @@ export interface Provider extends Secret {
   rate_limit: string;
   /** 0 means unlimited. */
   concurrency: number;
-  /** The Chrome profile a worker provider reads with, by OpenCLI context id; empty leaves it to OpenCLI. */
+}
+
+/**
+ * A self-hosted fetcher: workers on the user's own devices that the fetch
+ * routes and the routing rules see as one provider, whose id is the
+ * fetcher's. A fetch goes to the first worker that can take it.
+ */
+export interface Fetcher {
+  id: string;
+  /** One of Meta.fetcher_types. */
+  type: string;
+  name: string;
+  /** Bounds the fetcher as a whole; empty means unlimited. */
+  rate_limit: string;
+  /** 0 means unlimited. */
+  concurrency: number;
+  workers: FetcherWorker[];
+}
+
+/** One device of a fetcher. */
+export interface FetcherWorker {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** Sent only when set or changed; the server answers with token_hint. */
+  token: string;
+  token_hint?: string;
+  /** The Chrome profile it reads with, by OpenCLI context id; empty leaves it to OpenCLI. */
   profile?: string;
+}
+
+/** The software a fetcher's workers run. */
+export interface FetcherType {
+  id: string;
+  name: string;
+  website: string;
+  default_rate_limit: string;
+  /** Built-in routing rules whose pages it reads through a site adapter of its own. */
+  adapters?: string[];
 }
 
 export interface Route {
@@ -109,6 +146,7 @@ export interface Research {
 
 export interface Config {
   providers: Record<string, Provider>;
+  fetchers: Fetcher[];
   search: { timeout_seconds: number; country?: string; language?: string; routes: Route[] };
   dev_search: { timeout_seconds: number; routes: Route[] };
   fetch: {
@@ -151,8 +189,8 @@ export interface ProviderInfo {
   /** Keyed by tool. */
   options?: Record<string, ProviderOption[]>;
   default_concurrency?: number;
-  /** Served by the worker connected to the gateway; its key is the worker token. */
-  worker?: boolean;
+  /** The type of a self-hosted fetcher; absent for a built-in provider. */
+  fetcher?: string;
   /** Built-in routing rules whose pages it reads through a site adapter of its own. */
   adapters?: string[];
 }
@@ -171,6 +209,7 @@ export interface ProviderOption {
 export interface Meta {
   version: string;
   catalog: ProviderInfo[];
+  fetcher_types: FetcherType[];
   /** The built-in routing rules, before the configuration changes them. */
   rules: Rule[];
   tools: Tool[];
@@ -385,7 +424,7 @@ export interface DomainStats {
 export interface Health {
   disabled: boolean;
   /** Repeated failures ("provider"), a rejected key, spent credits, or a setup to fix outside the gateway. */
-  disabled_reason?: "provider" | "auth" | "quota" | "setup";
+  disabled_reason?: "provider" | "auth" | "quota";
   /** How much longer it stays off; 0 while disabled means until it is re-enabled. */
   disabled_ms: number;
   /** What the upstream answered, for a rejected key or spent credits. */
@@ -413,7 +452,7 @@ export interface WorkerProfile {
   connected: boolean;
 }
 
-/** The worker connected to the gateway, if any. */
+/** A worker connected to the gateway. */
 export interface WorkerStatus {
   connected: boolean;
   version?: string;
@@ -735,7 +774,8 @@ export const api = {
   clearCache: () => post("/api/cache/clear"),
   domains: (days: number) => get<{ days: number; retention_days: number; domains: DomainStats[] }>(`/api/domains?days=${days}`),
   clearDomains: () => request("DELETE", "/api/domains"),
-  status: () => get<{ routes: RouteStatus[]; models: ModelStatus[]; worker: WorkerStatus }>("/api/status"),
+  /** `workers` holds the connected workers, by worker id. */
+  status: () => get<{ routes: RouteStatus[]; models: ModelStatus[]; workers: Record<string, WorkerStatus> }>("/api/status"),
   resetBreaker: (key: string) => post("/api/breaker/reset", { key }),
 
   /** `route` replaces a provider's parameters for this call only. */

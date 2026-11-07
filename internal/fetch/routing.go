@@ -1,6 +1,7 @@
 package fetch
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -19,12 +20,12 @@ import (
 
 // routedProviders returns the providers of a rule in its order. They serve
 // it with their route's parameters whether or not the route is enabled.
-func routedProviders(cfg *config.Config, providers []core.Provider[Input, Page], rule config.Rule, w Worker) []core.Provider[Input, Page] {
+func routedProviders(cfg *config.Config, providers []core.Provider[Input, Page], rule config.Rule, w Workers) []core.Provider[Input, Page] {
 	var out []core.Provider[Input, Page]
 	for _, id := range rule.Providers {
 		if i := slices.IndexFunc(providers, func(p core.Provider[Input, Page]) bool { return p.Name == id }); i >= 0 {
 			p := providers[i]
-			p.Available = cfg.HasCredentials(id) && reachable(id, w)
+			p.Available = cfg.HasCredentials(id) && reachable(cfg, id, w)
 			out = append(out, p)
 		}
 	}
@@ -32,10 +33,15 @@ func routedProviders(cfg *config.Config, providers []core.Provider[Input, Page],
 }
 
 // unavailable says why none of the providers of a rule can be called.
-func unavailable(cfg *config.Config, rule config.Rule, w Worker) error {
+func unavailable(cfg *config.Config, rule config.Rule, w Workers) error {
 	for _, id := range rule.Providers {
-		if cfg.HasCredentials(id) && !reachable(id, w) {
-			return errors.New("the worker is offline or cannot reach its browser")
+		if cfg.HasCredentials(id) && !reachable(cfg, id, w) {
+			return errors.New("no worker of the fetcher is online with its browser")
+		}
+	}
+	for _, id := range rule.Providers {
+		if _, ok := cfg.FetcherByID(id); ok {
+			return errors.New("no API key is configured, and no worker of the fetcher is switched on")
 		}
 	}
 	return errors.New("no API key is configured")
@@ -48,13 +54,15 @@ func unavailable(cfg *config.Config, rule config.Rule, w Worker) error {
 type RoutedError struct {
 	Rule config.Rule
 	Err  error
+	// cfg names the providers of the rule.
+	cfg *config.Config
 }
 
 func (e *RoutedError) Error() string {
 	names := make([]string, len(e.Rule.Providers))
 	for i, id := range e.Rule.Providers {
-		info, _ := config.Info(id)
-		names[i] = info.Name
+		info, _ := e.cfg.Info(id)
+		names[i] = cmp.Or(info.Name, id)
 	}
 	return fmt.Sprintf("%s pages are read through %s only, and that failed: %s. No other provider was tried.",
 		e.Rule.Name, strings.Join(names, ", "), e.Err)

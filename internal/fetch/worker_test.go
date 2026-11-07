@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -13,137 +14,205 @@ import (
 	"github.com/fl0w1nd/seekmux/internal/worker"
 )
 
-// stubWorker answers fetches as the test says and records what it was asked.
-type stubWorker struct {
-	mu       sync.Mutex
-	online   bool
-	requests []worker.Request
-	answer   func(worker.Request) (*worker.Page, error)
+// asked is one fetch a stub worker was handed.
+type asked struct {
+	worker string
+	req    worker.Request
 }
 
-func (w *stubWorker) Online() bool {
+// stubWorkers answer fetches as the test says, by worker id, and record what
+// they were asked.
+type stubWorkers struct {
+	mu       sync.Mutex
+	offline  map[string]bool
+	requests []asked
+	answer   func(id string, req worker.Request) (*worker.Page, error)
+}
+
+func (w *stubWorkers) Online(id string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.online
+	return !w.offline[id]
 }
 
-func (w *stubWorker) Fetch(_ context.Context, req worker.Request) (*worker.Page, error) {
+func (w *stubWorkers) Fetch(_ context.Context, id string, req worker.Request) (*worker.Page, error) {
 	w.mu.Lock()
-	w.requests = append(w.requests, req)
+	w.requests = append(w.requests, asked{id, req})
+	offline := w.offline[id]
 	w.mu.Unlock()
-	return w.answer(req)
+	if offline {
+		return nil, worker.ErrOffline
+	}
+	return w.answer(id, req)
 }
 
-// workerSetup has a failing Jina ahead of OpenCLI on the fetch routes, and
-// the X rule sending its pages to OpenCLI alone.
-func workerSetup(t *testing.T) (*config.Config, *stubWorker) {
+func (w *stubWorkers) asked() []asked {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	out := w.requests
+	w.requests = nil
+	return out
+}
+
+func readBy(id string, req worker.Request) (*worker.Page, error) {
+	return &worker.Page{URL: req.URL, Title: "T", Content: "read by " + id, Source: "page"}, nil
+}
+
+// workerSetup has a failing Jina ahead of the fetcher "home" on the fetch
+// routes, and the X rule sending its pages to the fetcher alone. The fetcher
+// has three workers: w1 and w2 switched on, w0 ahead of them switched off.
+func workerSetup(t *testing.T) (*config.Config, *stubWorkers) {
 	cfg, _ := routedSetup(t, reply(`{}`))
+	cfg.Fetchers = []config.Fetcher{{
+		ID: "home", Type: config.FetcherOpenCLI, Name: "Home",
+		Workers: []config.Worker{
+			{ID: "w0", Name: "Old", Token: "t0"},
+			{ID: "w1", Name: "Laptop", Enabled: true, Token: "t1", Profile: "p1"},
+			{ID: "w2", Name: "Desktop", Enabled: true, Token: "t2", Profile: "p2"},
+		},
+	}}
+	cfg.Routing.Builtin = map[string]config.BuiltinRule{"twitter": {Enabled: true, Providers: []string{"home"}}}
+	cfg.Normalize()
 	for i, route := range cfg.Fetch.Routes {
-		cfg.Fetch.Routes[i].Enabled = route.Provider == "jina" || route.Provider == config.ProviderOpenCLI
+		cfg.Fetch.Routes[i].Enabled = route.Provider == "jina" || route.Provider == "home"
 	}
 	cfg.Providers["jina"].BaseURL = "http://127.0.0.1:1"
-	cfg.Providers[config.ProviderOpenCLI].APIKey = "token"
-	cfg.Providers[config.ProviderOpenCLI].Profile = "p1"
-	cfg.Routing.Builtin = map[string]config.BuiltinRule{"twitter": {Enabled: true, Providers: []string{config.ProviderOpenCLI}}}
-	w := &stubWorker{online: true, answer: func(req worker.Request) (*worker.Page, error) {
-		return &worker.Page{URL: req.URL, Title: "T", Content: "read by the worker", Source: "page"}, nil
-	}}
-	return cfg, w
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return cfg, &stubWorkers{offline: map[string]bool{}, answer: readBy}
+}
+
+func run(t *testing.T, service *Service, rt Runtime, url, engine string) Result {
+	t.Helper()
+	return service.Run(context.Background(), rt, Args{URL: url, Raw: true, Engine: engine})
 }
 
 func TestTheWorkerUsesAdaptersOnlyForRoutedPages(t *testing.T) {
 	cfg, w := workerSetup(t)
 	service := NewService(core.NewLimits())
-	rt := Runtime{Config: cfg, Client: http.DefaultClient, Worker: w}
+	rt := Runtime{Config: cfg, Client: http.DefaultClient, Workers: w}
 
-	routed := service.Run(context.Background(), rt, Args{URL: "https://x.com/a/status/1", Raw: true, Engine: EngineAuto})
-	if routed.Error != "" || routed.Engine != config.ProviderOpenCLI {
-		t.Fatalf("routed = %+v", routed)
+	if got := run(t, service, rt, "https://x.com/a/status/1", EngineAuto); got.Error != "" || got.Engine != "home" {
+		t.Fatalf("routed = %+v", got)
 	}
-	// Jina fails on an ordinary page and OpenCLI takes over, reading it whole.
-	plain := service.Run(context.Background(), rt, Args{URL: "https://example.com/a", Raw: true, Engine: EngineAuto})
-	if plain.Error != "" || plain.Engine != config.ProviderOpenCLI {
-		t.Fatalf("plain = %+v", plain)
+	// Jina fails on an ordinary page and the fetcher takes over, reading it whole.
+	if got := run(t, service, rt, "https://example.com/a", EngineAuto); got.Error != "" || got.Engine != "home" {
+		t.Fatalf("plain = %+v", got)
 	}
-	if len(w.requests) != 2 || !w.requests[0].Adapter || w.requests[1].Adapter || w.requests[0].Profile != "p1" {
-		t.Fatalf("requests = %+v", w.requests)
+	got := w.asked()
+	if len(got) != 2 || got[0].worker != "w1" || !got[0].req.Adapter || got[1].req.Adapter || got[0].req.Profile != "p1" {
+		t.Fatalf("asked = %+v", got)
 	}
 }
 
-func TestAnOfflineWorkerIsSkipped(t *testing.T) {
+func TestAFetcherWithoutAWorkerOnlineIsSkipped(t *testing.T) {
 	cfg, w := workerSetup(t)
-	w.online = false
-	rt := Runtime{Config: cfg, Client: http.DefaultClient, Worker: w}
-	got := NewService(core.NewLimits()).Run(context.Background(), rt, Args{URL: "https://x.com/a/status/1", Raw: true, Engine: EngineAuto})
-	if !strings.Contains(got.Error, "the worker is offline or cannot reach its browser") {
+	w.offline = map[string]bool{"w0": false, "w1": true, "w2": true}
+	rt := Runtime{Config: cfg, Client: http.DefaultClient, Workers: w}
+	got := run(t, NewService(core.NewLimits()), rt, "https://x.com/a/status/1", EngineAuto)
+	if !strings.Contains(got.Error, "no worker of the fetcher is online") {
 		t.Fatalf("got = %+v", got)
 	}
-	if len(w.requests) != 0 {
-		t.Fatal("an offline worker must not be asked")
+	if asked := w.asked(); len(asked) != 0 {
+		t.Fatalf("an offline fetcher was asked: %+v", asked)
 	}
-	// It stays a choice of the tool, so the schema does not change as it
-	// comes and goes.
-	if engines := Engines(cfg); !strings.Contains(strings.Join(engines, " "), config.ProviderOpenCLI) {
+	// It stays a choice of the tool, so the schema does not change as its
+	// workers come and go.
+	if engines := Engines(cfg); !strings.Contains(strings.Join(engines, " "), "home") {
 		t.Fatalf("engines = %v", engines)
 	}
 }
 
-func TestWorkerFailures(t *testing.T) {
+// A worker that cannot take the page hands it to the next one, in their
+// order; a worker switched off is never asked.
+func TestWorkersTakeAPageInTheirOrder(t *testing.T) {
+	for _, fault := range []error{
+		worker.ErrOffline,
+		worker.ErrDisconnected,
+		errors.New("write: broken pipe"),
+		&worker.Error{Code: worker.CodeBusy, Message: "the worker is already running 1 fetches"},
+		&worker.Error{Code: worker.CodeBrowserUnavailable, Message: "Browser Bridge is not connected"},
+		&worker.Error{Code: worker.CodeProfileMissing, Message: `no profile "p1"`},
+		&worker.Error{Code: worker.CodeInternal, Message: "could not start OpenCLI"},
+	} {
+		cfg, w := workerSetup(t)
+		w.answer = func(id string, req worker.Request) (*worker.Page, error) {
+			if id == "w1" {
+				return nil, fault
+			}
+			return readBy(id, req)
+		}
+		rt := Runtime{Config: cfg, Client: http.DefaultClient, Workers: w, NoCache: true}
+		got := run(t, NewService(core.NewLimits()), rt, "https://x.com/a/status/1", EngineAuto)
+		if got.Error != "" || !strings.Contains(got.Content, "read by w2") {
+			t.Fatalf("%v: got = %+v", fault, got)
+		}
+		asked := w.asked()
+		if len(asked) != 2 || asked[0].worker != "w1" || asked[1].worker != "w2" || asked[1].req.Profile != "p2" || !asked[1].req.Adapter {
+			t.Fatalf("%v: asked = %+v", fault, asked)
+		}
+	}
+}
+
+// A page the worker could not read ends the fetcher's attempt: the next
+// worker is not asked, the next provider is, and the breaker is not tripped.
+func TestAPageFailureIsNotHandedToTheNextWorker(t *testing.T) {
 	cfg, w := workerSetup(t)
 	limits := core.NewLimits()
 	limits.Breaker.Configure(core.BreakerSettings{Enabled: true, Failures: 3, Window: time.Minute, Cooldown: time.Minute})
 	service := NewService(limits)
-	rt := Runtime{Config: cfg, Client: http.DefaultClient, Worker: w, NoCache: true}
-	key := config.ProviderOpenCLI + ":" + config.ToolFetch
+	rt := Runtime{Config: cfg, Client: http.DefaultClient, Workers: w, NoCache: true}
 
-	// A page the profile cannot read moves on, and does not count against it.
-	w.answer = func(worker.Request) (*worker.Page, error) {
-		return nil, &worker.Error{Code: worker.CodeLoginRequired, Message: "Not logged in to x.com"}
-	}
-	for range 4 {
-		got := service.Run(context.Background(), rt, Args{URL: "https://x.com/a/status/1", Raw: true, Engine: EngineAuto})
-		if !strings.Contains(got.Error, "not signed in to the site: Not logged in to x.com") {
-			t.Fatalf("got = %+v", got)
+	for _, failure := range []struct {
+		code, says string
+	}{
+		{worker.CodeLoginRequired, "not signed in to the site: Not logged in to x.com"},
+		{worker.CodeNotFound, "Not logged in to x.com"},
+		{worker.CodeBlocked, "Not logged in to x.com"},
+		{worker.CodeTimeout, "Not logged in to x.com"},
+		{worker.CodeEmpty, "Not logged in to x.com"},
+		{worker.CodeFailed, "Not logged in to x.com"},
+	} {
+		w.answer = func(string, worker.Request) (*worker.Page, error) {
+			return nil, &worker.Error{Code: failure.code, Message: "Not logged in to x.com"}
 		}
-	}
-	if _, off := limits.Breaker.State(key); off {
-		t.Fatal("pages that fail must not trip the breaker")
-	}
-
-	// A profile OpenCLI does not know switches it off until fixed.
-	w.answer = func(worker.Request) (*worker.Page, error) {
-		return nil, &worker.Error{Code: worker.CodeProfileMissing, Message: `no profile "p1"`}
-	}
-	service.Run(context.Background(), rt, Args{URL: "https://x.com/a/status/1", Raw: true, Engine: EngineAuto})
-	if trip, off := limits.Breaker.State(key); !off || trip.Reason != core.ClassSetup || !strings.Contains(trip.Detail, "p1") {
-		t.Fatalf("trip = %+v, %v", trip, off)
+		for range 4 {
+			got := run(t, service, rt, "https://x.com/a/status/1", EngineAuto)
+			if !strings.Contains(got.Error, failure.says) {
+				t.Fatalf("%s: got = %+v", failure.code, got)
+			}
+		}
+		for _, a := range w.asked() {
+			if a.worker != "w1" {
+				t.Fatalf("%s: %s was asked", failure.code, a.worker)
+			}
+		}
+		if _, off := limits.Breaker.State("home:" + config.ToolFetch); off {
+			t.Fatalf("%s: pages that fail must not trip the breaker", failure.code)
+		}
 	}
 }
 
-// A worker that drops off during a fetch fails that fetch at once: a page
-// routed to it alone is not retried until the run times out.
-func TestAWorkerThatDisconnectsIsNotRetried(t *testing.T) {
+// When no worker can take the page, the fetcher is unavailable for the run:
+// each worker is asked once, and the run does not wait for its deadline.
+func TestAFetcherWhoseWorkersAllFailIsNotRetried(t *testing.T) {
 	cfg, w := workerSetup(t)
 	service := NewService(core.NewLimits())
-	rt := Runtime{Config: cfg, Client: http.DefaultClient, Worker: w, NoCache: true}
-	for _, err := range []error{
-		worker.ErrDisconnected,
-		worker.ErrOffline,
-		&worker.Error{Code: worker.CodeBrowserUnavailable, Message: "Browser Bridge is not connected"},
-		&worker.Error{Code: worker.CodeBusy, Message: "the worker is already running 1 fetches"},
-	} {
-		w.mu.Lock()
-		w.requests = nil
-		w.mu.Unlock()
-		w.answer = func(worker.Request) (*worker.Page, error) { return nil, err }
-		started := time.Now()
-		got := service.Run(context.Background(), rt, Args{URL: "https://x.com/a/status/1", Raw: true, Engine: EngineAuto})
-		if !strings.Contains(got.Error, "OpenCLI is unavailable") || time.Since(started) > 2*time.Second {
-			t.Fatalf("%v: got = %+v after %v", err, got, time.Since(started))
+	rt := Runtime{Config: cfg, Client: http.DefaultClient, Workers: w, NoCache: true}
+	w.answer = func(id string, _ worker.Request) (*worker.Page, error) {
+		if id == "w1" {
+			return nil, worker.ErrDisconnected
 		}
-		if len(w.requests) != 1 {
-			t.Fatalf("%v: the worker was asked %d times", err, len(w.requests))
-		}
+		return nil, &worker.Error{Code: worker.CodeBusy, Message: "the worker is already running 1 fetches"}
+	}
+	started := time.Now()
+	got := run(t, service, rt, "https://x.com/a/status/1", EngineAuto)
+	if !strings.Contains(got.Error, "Home is unavailable") || !strings.Contains(got.Error, "Laptop: ") || !strings.Contains(got.Error, "Desktop: busy") || time.Since(started) > 2*time.Second {
+		t.Fatalf("got = %+v after %v", got, time.Since(started))
+	}
+	if asked := w.asked(); len(asked) != 2 {
+		t.Fatalf("asked = %+v", asked)
 	}
 }
 
@@ -151,37 +220,39 @@ func TestAWorkerThatDisconnectsIsNotRetried(t *testing.T) {
 func TestARouteCanKeepItsProviderOutOfTheRace(t *testing.T) {
 	cfg, w := workerSetup(t)
 	for i, route := range cfg.Fetch.Routes {
-		cfg.Fetch.Routes[i].NoHedge = route.Provider == config.ProviderOpenCLI
+		cfg.Fetch.Routes[i].NoHedge = route.Provider == "home"
 	}
-	for _, p := range Providers(cfg, http.DefaultClient, w) {
-		if p.NoHedge != (p.Name == config.ProviderOpenCLI) {
+	providers := Providers(cfg, http.DefaultClient, w)
+	if len(providers) != len(cfg.Fetch.Routes) {
+		t.Fatalf("%d providers for %d routes", len(providers), len(cfg.Fetch.Routes))
+	}
+	for _, p := range providers {
+		if p.NoHedge != (p.Name == "home") {
 			t.Fatalf("%s: NoHedge = %v", p.Name, p.NoHedge)
 		}
 	}
 }
 
-// A page the worker read as rendered, as a fallback, does not answer a call
-// that names OpenCLI and so asks for its site adapter.
+// A page a worker read as rendered, as a fallback, does not answer a call
+// that names the fetcher and so asks for its site adapter.
 func TestARenderedPageDoesNotAnswerForTheAdapter(t *testing.T) {
 	cfg, w := workerSetup(t)
 	cfg.Routing.Builtin = nil
 	service := NewService(core.NewLimits())
-	rt := Runtime{Config: cfg, Client: http.DefaultClient, Worker: w}
+	rt := Runtime{Config: cfg, Client: http.DefaultClient, Workers: w}
 	url := "https://x.com/a/status/1"
 
-	if got := service.Run(context.Background(), rt, Args{URL: url, Raw: true, Engine: EngineAuto}); got.Error != "" {
+	if got := run(t, service, rt, url, EngineAuto); got.Error != "" {
 		t.Fatalf("fallback: %+v", got)
 	}
-	if got := service.Run(context.Background(), rt, Args{URL: url, Raw: true, Engine: config.ProviderOpenCLI}); got.Error != "" {
+	if got := run(t, service, rt, url, "home"); got.Error != "" {
 		t.Fatalf("named: %+v", got)
 	}
 	// And the adapter's page answers a fallback after it.
-	if got := service.Run(context.Background(), rt, Args{URL: url, Raw: true, Engine: EngineAuto}); got.Error != "" {
+	if got := run(t, service, rt, url, EngineAuto); got.Error != "" {
 		t.Fatalf("fallback again: %+v", got)
 	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if len(w.requests) != 2 || w.requests[0].Adapter || !w.requests[1].Adapter {
-		t.Fatalf("requests = %+v", w.requests)
+	if asked := w.asked(); len(asked) != 2 || asked[0].req.Adapter || !asked[1].req.Adapter {
+		t.Fatalf("asked = %+v", asked)
 	}
 }

@@ -167,8 +167,6 @@ func disabled[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out]
 		why = "because its API key was rejected"
 	case ClassQuota:
 		why = "because its credits ran out"
-	case ClassSetup:
-		why = "because its setup needs fixing (" + trip.Detail + ")"
 	}
 	back := "until it is re-enabled"
 	if !trip.Until.IsZero() {
@@ -191,11 +189,6 @@ func report[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out], 
 	case ctx.Err() != nil || Tripping(err):
 		lim.Breaker.Failure(p.Key)
 	default:
-		var setup *SetupError
-		if errors.As(err, &setup) {
-			lim.Breaker.Disable(p.Key, ClassSetup, setup.Detail, 0)
-			return
-		}
 		if httpErr, ok := accountProblem(err); ok {
 			lim.Breaker.Disable(p.Key, httpErr.Kind(), httpErr.Error(), httpErr.DisableFor)
 		}

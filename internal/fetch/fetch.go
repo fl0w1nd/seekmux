@@ -70,8 +70,8 @@ type Runtime struct {
 	// NoCache reads the page and its answer anew and keeps both out of the
 	// caches, for a call whose configuration is its own.
 	NoCache bool
-	// Worker serves the worker providers; nil leaves them unavailable.
-	Worker Worker
+	// Workers serve the self-hosted fetchers; nil leaves them unavailable.
+	Workers Workers
 }
 
 // Service owns the page and answer caches, which outlive configuration changes.
@@ -110,11 +110,11 @@ func (s *Service) CacheStats() (entries, bytes int) { return s.pages.Stats() }
 
 // Engines lists the values fetch_engine accepts under cfg.
 func Engines(cfg *config.Config) []string {
-	// A worker provider is listed whether or not its worker is online, so
-	// that the tool's schema does not change as it comes and goes.
+	// A self-hosted fetcher is listed whether or not a worker of it is
+	// online, so that the tool's schema does not change as they come and go.
 	engines := []string{EngineAuto}
 	for _, route := range cfg.Fetch.Routes {
-		if _, ok := executors[route.Provider]; ok && route.Enabled && cfg.HasCredentials(route.Provider) {
+		if _, ok := cfg.Info(route.Provider); ok && route.Enabled && cfg.HasCredentials(route.Provider) {
 			engines = append(engines, route.Provider)
 		}
 	}
@@ -178,12 +178,12 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 	}
 
 	cfg := rt.Config.Fetch
-	providers := Providers(rt.Config, rt.Client, rt.Worker)
+	providers := Providers(rt.Config, rt.Client, rt.Workers)
 	switch {
 	case routed:
-		providers = routedProviders(rt.Config, providers, rule, rt.Worker)
+		providers = routedProviders(rt.Config, providers, rule, rt.Workers)
 		if countAvailable(providers) == 0 {
-			return Page{}, &RoutedError{Rule: rule, Err: unavailable(rt.Config, rule, rt.Worker)}
+			return Page{}, &RoutedError{Rule: rule, Err: unavailable(rt.Config, rule, rt.Workers), cfg: rt.Config}
 		}
 	case engine != EngineAuto:
 		providers = slices.DeleteFunc(providers, func(p core.Provider[Input, Page]) bool { return p.Name != engine })
@@ -217,7 +217,7 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		// A provider that reached the site reports on the page in its own words.
 		var target *core.TargetError
 		if routed && gone == nil && !errors.As(err, &target) {
-			err = &RoutedError{Rule: rule, Err: err}
+			err = &RoutedError{Rule: rule, Err: err, cfg: rt.Config}
 		}
 		return Page{}, err
 	}

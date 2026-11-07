@@ -28,16 +28,18 @@ var Tools = []string{ToolSearch, ToolDevSearch, ToolFetch, ToolResearch}
 
 type Config struct {
 	Providers map[string]*Provider `json:"providers"`
-	Search    Search               `json:"search"`
-	DevSearch DevSearch            `json:"dev_search"`
-	Fetch     Fetch                `json:"fetch"`
-	Routing   Routing              `json:"routing"`
-	LLM       LLM                  `json:"llm"`
-	Research  Research             `json:"research"`
-	Breaker   Breaker              `json:"breaker"`
-	Logs      Logs                 `json:"logs"`
-	Network   Network              `json:"network"`
-	OAuth     OAuth                `json:"oauth"`
+	// Fetchers are the self-hosted fetchers, each a fetch provider of its own.
+	Fetchers  []Fetcher `json:"fetchers"`
+	Search    Search    `json:"search"`
+	DevSearch DevSearch `json:"dev_search"`
+	Fetch     Fetch     `json:"fetch"`
+	Routing   Routing   `json:"routing"`
+	LLM       LLM       `json:"llm"`
+	Research  Research  `json:"research"`
+	Breaker   Breaker   `json:"breaker"`
+	Logs      Logs      `json:"logs"`
+	Network   Network   `json:"network"`
+	OAuth     OAuth     `json:"oauth"`
 }
 
 // OAuth governs how MCP clients may sign in instead of presenting an API
@@ -65,9 +67,6 @@ type Provider struct {
 	// empty one means unlimited.
 	RateLimit   *string `json:"rate_limit"`
 	Concurrency int     `json:"concurrency"`
-	// Profile is the Chrome profile a worker provider reads with, by its
-	// OpenCLI context id; empty leaves the choice to OpenCLI.
-	Profile string `json:"profile,omitempty"`
 }
 
 // Route binds a provider to a tool. The position in the list is the priority.
@@ -281,11 +280,9 @@ type ProviderInfo struct {
 	DefaultRateLimit string            `json:"default_rate_limit"`
 	// Options is keyed by tool.
 	Options map[string][]Option `json:"options,omitempty"`
-	// DefaultConcurrency is the concurrency cap of a fresh install.
-	DefaultConcurrency int `json:"default_concurrency,omitempty"`
-	// Worker marks a provider served by the worker connected to the gateway
-	// rather than by an API: its key is the token the worker presents.
-	Worker bool `json:"worker,omitempty"`
+	// Fetcher is the type of a self-hosted fetcher (see Fetcher); empty for
+	// a built-in provider.
+	Fetcher string `json:"fetcher,omitempty"`
 	// Adapters lists the built-in routing rules whose pages the provider
 	// reads through a site adapter of its own when a rule sends them to it.
 	Adapters []string `json:"adapters,omitempty"`
@@ -424,22 +421,7 @@ var Catalog = []ProviderInfo{
 			},
 		},
 	},
-	{
-		// A worker's browser reads one page at a time, slowly but logged in:
-		// it belongs at the end of a chain, for what the others cannot read.
-		ID: ProviderOpenCLI, Name: "OpenCLI", Website: "https://github.com/jackwener/opencli", KeyRequired: true,
-		Tools:              []string{ToolFetch},
-		DefaultBase:        map[string]string{},
-		DefaultRateLimit:   "20/m",
-		DefaultConcurrency: 1,
-		Worker:             true,
-		Adapters:           []string{"twitter", "reddit"},
-	},
 }
-
-// ProviderOpenCLI reads pages in a logged-in Chrome on the worker, through
-// OpenCLI.
-const ProviderOpenCLI = "opencli"
 
 func Info(id string) (ProviderInfo, bool) {
 	for _, p := range Catalog {
@@ -496,7 +478,7 @@ func (c *Config) Normalize() {
 	}
 	for _, info := range Catalog {
 		if c.Providers[info.ID] == nil {
-			c.Providers[info.ID] = &Provider{Concurrency: info.DefaultConcurrency}
+			c.Providers[info.ID] = &Provider{}
 		}
 	}
 	for id, p := range c.Providers {
@@ -507,20 +489,15 @@ func (c *Config) Normalize() {
 		p.APIKey = strings.TrimSpace(p.APIKey)
 		p.BaseURL = strings.TrimRight(strings.TrimSpace(p.BaseURL), "/")
 		p.Concurrency = max(p.Concurrency, 0)
-		if info, _ := Info(id); info.Worker {
-			p.BaseURL = ""
-			p.Profile = strings.TrimSpace(p.Profile)
-		} else {
-			p.Profile = ""
-		}
 	}
 	c.migrateLimits()
+	c.normalizeFetchers()
 
 	c.Search.Country = cleanFormat(FormatCountry, c.Search.Country)
 	c.Search.Language = cleanFormat(FormatLanguage, c.Search.Language)
-	c.Search.Routes = normalizeRoutes(ToolSearch, c.Search.Routes)
-	c.DevSearch.Routes = normalizeRoutes(ToolDevSearch, c.DevSearch.Routes)
-	c.Fetch.Routes = normalizeRoutes(ToolFetch, c.Fetch.Routes)
+	c.Search.Routes = c.normalizeRoutes(ToolSearch, c.Search.Routes)
+	c.DevSearch.Routes = c.normalizeRoutes(ToolDevSearch, c.DevSearch.Routes)
+	c.Fetch.Routes = c.normalizeRoutes(ToolFetch, c.Fetch.Routes)
 	c.normalizeRouting()
 
 	d := struct{ s, dev, f, slow float64 }{10, 15, 30, 15}
@@ -640,8 +617,11 @@ func (c *Config) migrateLimits() {
 }
 
 // HasCredentials reports whether a provider can be called: it has an API key
-// or needs none.
+// or needs none. A self-hosted fetcher needs a worker that is switched on.
 func (c *Config) HasCredentials(provider string) bool {
+	if f, ok := c.FetcherByID(provider); ok {
+		return slices.ContainsFunc(f.Workers, func(w Worker) bool { return w.Enabled })
+	}
 	info, ok := Info(provider)
 	p := c.Providers[provider]
 	return ok && p != nil && (p.APIKey != "" || !info.KeyRequired)
@@ -649,6 +629,10 @@ func (c *Config) HasCredentials(provider string) bool {
 
 // Limits returns the rate limit and the concurrency limit of a provider.
 func (c *Config) Limits(provider string) (RateLimit, int) {
+	if f, ok := c.FetcherByID(provider); ok {
+		limit, _ := ParseRateLimit(f.RateLimit)
+		return limit, f.Concurrency
+	}
 	p := c.Providers[provider]
 	if p == nil || p.RateLimit == nil {
 		return RateLimit{}, 0
@@ -657,13 +641,26 @@ func (c *Config) Limits(provider string) (RateLimit, int) {
 	return limit, p.Concurrency
 }
 
+// RateLimitText returns the rate limit of a provider as the document states
+// it; empty means none.
+func (c *Config) RateLimitText(provider string) string {
+	if f, ok := c.FetcherByID(provider); ok {
+		return f.RateLimit
+	}
+	if p := c.Providers[provider]; p != nil && p.RateLimit != nil {
+		return *p.RateLimit
+	}
+	return ""
+}
+
 // normalizeRoutes drops unknown or duplicate routes and appends, disabled, any
-// provider that supports the tool but has no route yet.
-func normalizeRoutes(tool string, routes []Route) []Route {
-	out := make([]Route, 0, len(Catalog))
+// provider that supports the tool but has no route yet: the built-in ones in
+// catalog order, then the self-hosted fetchers.
+func (c *Config) normalizeRoutes(tool string, routes []Route) []Route {
+	out := make([]Route, 0, len(Catalog)+len(c.Fetchers))
 	seen := map[string]bool{}
 	for _, r := range routes {
-		info, ok := Info(r.Provider)
+		info, ok := c.Info(r.Provider)
 		if !ok || !info.Supports(tool) || seen[r.Provider] {
 			continue
 		}
@@ -675,6 +672,13 @@ func normalizeRoutes(tool string, routes []Route) []Route {
 	for _, info := range Catalog {
 		if info.Supports(tool) && !seen[info.ID] {
 			out = append(out, Route{Provider: info.ID})
+		}
+	}
+	if tool == ToolFetch {
+		for _, f := range c.Fetchers {
+			if !seen[f.ID] {
+				out = append(out, Route{Provider: f.ID})
+			}
 		}
 	}
 	return out
@@ -698,6 +702,9 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("%s route %q: %w", tool.name, r.Provider, err)
 			}
 		}
+	}
+	if err := c.validateFetchers(); err != nil {
+		return err
 	}
 	if err := c.validateRouting(); err != nil {
 		return err
@@ -843,6 +850,12 @@ func (c *Config) Redacted() *Config {
 	for _, p := range out.Providers {
 		p.APIKeyHint, p.APIKey = hint(p.APIKey), ""
 	}
+	for i := range out.Fetchers {
+		for j := range out.Fetchers[i].Workers {
+			w := &out.Fetchers[i].Workers[j]
+			w.TokenHint, w.Token = hint(w.Token), ""
+		}
+	}
 	for i := range out.LLM.Providers {
 		p := &out.LLM.Providers[i]
 		p.APIKeyHint, p.APIKey = hint(p.APIKey), ""
@@ -877,5 +890,22 @@ func (c *Config) MergeSecrets(current *Config) {
 		p := &c.LLM.Providers[i]
 		cur, _ := current.LLMProviderByID(p.ID)
 		p.merge(cur.APIKey)
+	}
+	// A worker's token is kept by the worker's id, which stays the same when
+	// it moves to another place in the list.
+	stored := map[string]string{}
+	for _, f := range current.Fetchers {
+		for _, w := range f.Workers {
+			stored[w.ID] = w.Token
+		}
+	}
+	for i := range c.Fetchers {
+		for j := range c.Fetchers[i].Workers {
+			w := &c.Fetchers[i].Workers[j]
+			if strings.TrimSpace(w.Token) == "" {
+				w.Token = stored[w.ID]
+			}
+			w.TokenHint = ""
+		}
 	}
 }

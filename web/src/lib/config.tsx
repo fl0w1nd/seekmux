@@ -17,7 +17,10 @@ interface ConfigContextValue {
   error: string;
   retry: () => void;
   discard: () => void;
+  /** A provider of the draft by id: a built-in one or a self-hosted fetcher. */
   provider: (id: string) => ProviderInfo;
+  /** Whether a provider can be called: it has its API key or needs none; a fetcher has a worker switched on. */
+  credentialed: (id: string) => boolean;
 }
 
 /** Whether the caret is in a field whose value is still being entered. */
@@ -133,7 +136,6 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  const catalog = meta.data.catalog;
   const value: ConfigContextValue = {
     config: draft,
     meta: meta.data,
@@ -147,7 +149,35 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
       setFailure(null);
       setDraft(structuredClone(server.data));
     },
-    provider: (id) => catalog.find((p) => p.id === id) ?? { id, name: id, website: "", key_required: true, tools: [], default_base_url: {}, default_rate_limit: "" },
+    provider: (id) => providerInfo(meta.data, draft, id),
+    credentialed: (id) => {
+      const fetcher = draft.fetchers.find((f) => f.id === id);
+      if (fetcher) return fetcher.workers.some((w) => w.enabled);
+      const creds = draft.providers[id];
+      return !providerInfo(meta.data, draft, id).key_required || Boolean(creds?.api_key || (creds?.api_key_hint && !creds.clear_api_key));
+    },
   };
   return <ConfigContext.Provider value={value}>{children}</ConfigContext.Provider>;
+}
+
+/** Describes a provider of the configuration as the catalog describes a built-in one. */
+function providerInfo(meta: Meta, config: Config, id: string): ProviderInfo {
+  const known = meta.catalog.find((p) => p.id === id);
+  if (known) return known;
+  const fetcher = config.fetchers.find((f) => f.id === id);
+  if (fetcher) {
+    const type = meta.fetcher_types.find((t) => t.id === fetcher.type);
+    return {
+      id,
+      name: fetcher.name || id,
+      website: type?.website ?? "",
+      key_required: false,
+      tools: ["fetch"],
+      default_base_url: {},
+      default_rate_limit: type?.default_rate_limit ?? "",
+      fetcher: fetcher.type,
+      adapters: type?.adapters,
+    };
+  }
+  return { id, name: id, website: "", key_required: true, tools: [], default_base_url: {}, default_rate_limit: "" };
 }

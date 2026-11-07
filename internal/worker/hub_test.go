@@ -71,8 +71,22 @@ func hello(token string, state *State) Message {
 	return Message{Type: TypeHello, Protocol: ProtocolVersion, Token: token, Version: "test", Slots: 1, State: state}
 }
 
+// tokens maps each token the hub accepts to its worker's id.
+type tokens struct{ m atomic.Value }
+
+func newTokens(pairs map[string]string) *tokens {
+	t := &tokens{}
+	t.m.Store(pairs)
+	return t
+}
+
+func (t *tokens) lookup(token string) (string, bool) {
+	id, ok := t.m.Load().(map[string]string)[token]
+	return id, ok
+}
+
 func newHub(t *testing.T) (*Hub, *httptest.Server) {
-	hub := &Hub{Token: func() string { return "secret" }}
+	hub := &Hub{Lookup: newTokens(map[string]string{"secret": "w1"}).lookup}
 	server := httptest.NewServer(hub)
 	t.Cleanup(server.Close)
 	return hub, server
@@ -97,12 +111,11 @@ func TestHubRefusesAWrongToken(t *testing.T) {
 	if websocket.CloseStatus(err) != CloseUnauthorized {
 		t.Fatalf("err = %v", err)
 	}
-	hub.Token = func() string { return "" }
 	_, err = dial(t, server.URL, hello("", ready()))
 	if websocket.CloseStatus(err) != CloseUnauthorized {
-		t.Fatalf("no configured token must refuse every worker: %v", err)
+		t.Fatalf("an empty token must be refused: %v", err)
 	}
-	if hub.Status().Connected {
+	if len(hub.Status()) != 0 {
 		t.Fatal("a refused worker must not count as connected")
 	}
 }
@@ -118,14 +131,14 @@ func TestHubRefusesAnotherProtocol(t *testing.T) {
 
 func TestHubFetchesThroughTheWorker(t *testing.T) {
 	hub, server := newHub(t)
-	if _, err := hub.Fetch(context.Background(), Request{URL: "https://x.com/a/status/1"}); !errors.Is(err, ErrOffline) {
+	if _, err := hub.Fetch(context.Background(), "w1", Request{URL: "https://x.com/a/status/1"}); !errors.Is(err, ErrOffline) {
 		t.Fatalf("without a worker: %v", err)
 	}
 	w, err := dial(t, server.URL, hello("secret", ready("p1")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, hub.Online)
+	waitFor(t, func() bool { return hub.Online("w1") })
 
 	go func() {
 		m, err := w.read()
@@ -137,7 +150,7 @@ func TestHubFetchesThroughTheWorker(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	page, err := hub.Fetch(ctx, Request{URL: "https://x.com/a/status/1", Adapter: true, Profile: "p1"})
+	page, err := hub.Fetch(ctx, "w1", Request{URL: "https://x.com/a/status/1", Adapter: true, Profile: "p1"})
 	if err != nil || page.Content != "body" || page.Source != "twitter" {
 		t.Fatalf("page = %+v, %v", page, err)
 	}
@@ -146,7 +159,7 @@ func TestHubFetchesThroughTheWorker(t *testing.T) {
 		m, _ := w.read()
 		w.send(Message{Type: TypeResult, ID: m.ID, Error: &Error{Code: CodeLoginRequired, Message: "Not logged in to x.com"}})
 	}()
-	_, err = hub.Fetch(ctx, Request{URL: "https://x.com/a/status/2"})
+	_, err = hub.Fetch(ctx, "w1", Request{URL: "https://x.com/a/status/2"})
 	var werr *Error
 	if !errors.As(err, &werr) || werr.Code != CodeLoginRequired {
 		t.Fatalf("err = %v", err)
@@ -159,9 +172,9 @@ func TestHubChecksTheWorkerBeforeSending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, hub.Online)
+	waitFor(t, func() bool { return hub.Online("w1") })
 	var werr *Error
-	if _, err := hub.Fetch(context.Background(), Request{URL: "https://a.b", Profile: "gone"}); !errors.As(err, &werr) || werr.Code != CodeProfileMissing {
+	if _, err := hub.Fetch(context.Background(), "w1", Request{URL: "https://a.b", Profile: "gone"}); !errors.As(err, &werr) || werr.Code != CodeProfileMissing {
 		t.Fatalf("an unknown profile: %v", err)
 	}
 
@@ -169,14 +182,14 @@ func TestHubChecksTheWorkerBeforeSending(t *testing.T) {
 	first := make(chan error, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		_, err := hub.Fetch(ctx, Request{URL: "https://a.b/1"})
+		_, err := hub.Fetch(ctx, "w1", Request{URL: "https://a.b/1"})
 		first <- err
 	}()
 	m, err := w.read()
 	if err != nil || m.Type != TypeFetch {
 		t.Fatalf("fetch = %+v, %v", m, err)
 	}
-	if _, err := hub.Fetch(context.Background(), Request{URL: "https://a.b/2"}); !errors.As(err, &werr) || werr.Code != CodeBusy {
+	if _, err := hub.Fetch(context.Background(), "w1", Request{URL: "https://a.b/2"}); !errors.As(err, &werr) || werr.Code != CodeBusy {
 		t.Fatalf("a full worker: %v", err)
 	}
 	// The caller leaving tells the worker to stop.
@@ -189,8 +202,8 @@ func TestHubChecksTheWorkerBeforeSending(t *testing.T) {
 	}
 
 	w.send(Message{Type: TypeState, State: &State{Ready: false, Problem: "Browser Bridge extension not connected", Profiles: []Profile{}}})
-	waitFor(t, func() bool { return !hub.Online() })
-	if _, err := hub.Fetch(context.Background(), Request{URL: "https://a.b"}); !errors.As(err, &werr) || werr.Code != CodeBrowserUnavailable || !strings.Contains(werr.Message, "extension") {
+	waitFor(t, func() bool { return !hub.Online("w1") })
+	if _, err := hub.Fetch(context.Background(), "w1", Request{URL: "https://a.b"}); !errors.As(err, &werr) || werr.Code != CodeBrowserUnavailable || !strings.Contains(werr.Message, "extension") {
 		t.Fatalf("a worker without its browser: %v", err)
 	}
 }
@@ -201,10 +214,10 @@ func TestHubFailsTheFetchesOfAWorkerThatLeaves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, hub.Online)
+	waitFor(t, func() bool { return hub.Online("w1") })
 	done := make(chan error, 1)
 	go func() {
-		_, err := hub.Fetch(context.Background(), Request{URL: "https://a.b"})
+		_, err := hub.Fetch(context.Background(), "w1", Request{URL: "https://a.b"})
 		done <- err
 	}()
 	if _, err := w.read(); err != nil {
@@ -219,7 +232,7 @@ func TestHubFailsTheFetchesOfAWorkerThatLeaves(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the fetch must end when the worker leaves")
 	}
-	waitFor(t, func() bool { return !hub.Status().Connected })
+	waitFor(t, func() bool { return len(hub.Status()) == 0 })
 }
 
 func TestANewWorkerReplacesTheOldOne(t *testing.T) {
@@ -228,7 +241,7 @@ func TestANewWorkerReplacesTheOldOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, hub.Online)
+	waitFor(t, func() bool { return hub.Online("w1") })
 	m := hello("secret", ready())
 	m.Version = "new"
 	if _, err := dial(t, server.URL, m); err != nil {
@@ -237,32 +250,31 @@ func TestANewWorkerReplacesTheOldOne(t *testing.T) {
 	if _, err := old.read(); websocket.CloseStatus(err) != CloseReplaced {
 		t.Fatalf("the old worker must be told it was replaced: %v", err)
 	}
-	waitFor(t, func() bool { return hub.Status().Version == "new" })
+	waitFor(t, func() bool { return hub.Status()["w1"].Version == "new" })
 }
 
 // Changing the token takes the connected worker's access away at once.
 func TestAChangedTokenDropsTheWorker(t *testing.T) {
-	var token atomic.Value
-	token.Store("secret")
-	hub := &Hub{Token: func() string { return token.Load().(string) }}
+	keys := newTokens(map[string]string{"secret": "w1"})
+	hub := &Hub{Lookup: keys.lookup}
 	server := httptest.NewServer(hub)
 	t.Cleanup(server.Close)
 	w, err := dial(t, server.URL, hello("secret", ready("p1")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, hub.Online)
+	waitFor(t, func() bool { return hub.Online("w1") })
 
 	hub.Recheck() // unchanged: it stays
-	if !hub.Online() {
+	if !hub.Online("w1") {
 		t.Fatal("a worker with the current token must stay")
 	}
-	token.Store("rotated")
+	keys.m.Store(map[string]string{"rotated": "w1"})
 	hub.Recheck()
 	if _, err := w.read(); websocket.CloseStatus(err) != CloseUnauthorized {
 		t.Fatalf("the worker must be told its token is gone: %v", err)
 	}
-	waitFor(t, func() bool { return !hub.Online() })
+	waitFor(t, func() bool { return !hub.Online("w1") })
 }
 
 // Before the token is checked, a frame larger than a hello is not read.
@@ -273,7 +285,55 @@ func TestHubReadsLittleBeforeTheToken(t *testing.T) {
 	if _, err := dial(t, server.URL, m); websocket.CloseStatus(err) != websocket.StatusMessageTooBig {
 		t.Fatalf("an oversized hello: %v", err)
 	}
-	if hub.Online() {
+	if hub.Online("w1") {
 		t.Fatal("no worker must be connected")
+	}
+}
+
+// Each worker has a connection of its own: a fetch goes to the one it names,
+// and a worker connecting does not replace another.
+func TestHubKeepsAConnectionPerWorker(t *testing.T) {
+	hub := &Hub{Lookup: newTokens(map[string]string{"one": "w1", "two": "w2"}).lookup}
+	server := httptest.NewServer(hub)
+	t.Cleanup(server.Close)
+	w1, err := dial(t, server.URL, hello("one", ready("p1")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w2, err := dial(t, server.URL, hello("two", ready("p2")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return hub.Online("w1") && hub.Online("w2") })
+	if hub.Online("w3") {
+		t.Fatal("an unknown worker is online")
+	}
+	if _, err := hub.Fetch(context.Background(), "w3", Request{URL: "https://a.b"}); !errors.Is(err, ErrOffline) {
+		t.Fatalf("an unknown worker: %v", err)
+	}
+
+	go func() {
+		m, err := w2.read()
+		if err != nil || m.Profile != "p2" {
+			t.Errorf("w2 fetch = %+v, %v", m, err)
+			return
+		}
+		w2.send(Message{Type: TypeResult, ID: m.ID, Page: &Page{URL: m.URL, Content: "from two", Source: "page"}})
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	page, err := hub.Fetch(ctx, "w2", Request{URL: "https://a.b", Profile: "p2"})
+	if err != nil || page.Content != "from two" {
+		t.Fatalf("page = %+v, %v", page, err)
+	}
+	status := hub.Status()
+	if len(status) != 2 || status["w1"].State.Profiles[0].ID != "p1" || status["w2"].State.Profiles[0].ID != "p2" {
+		t.Fatalf("status = %+v", status)
+	}
+
+	w1.ws.CloseNow()
+	waitFor(t, func() bool { return !hub.Online("w1") })
+	if !hub.Online("w2") {
+		t.Fatal("one worker leaving took the other away")
 	}
 }

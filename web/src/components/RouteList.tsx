@@ -6,6 +6,7 @@ import { useConfig } from "../lib/config";
 import { toolLabel } from "../lib/format";
 import { routingRules } from "../lib/routing";
 import { Tripped, useStatus } from "./Health";
+import { missing } from "./ProviderName";
 import { customized, RouteOptions } from "./RouteOptions";
 import { BrandIcon } from "../ui/brand";
 import { Badge, Button, cx, Switch, Tooltip } from "../ui/primitives";
@@ -17,7 +18,7 @@ import { Badge, Button, cx, Switch, Tooltip } from "../ui/primitives";
  * parameters for this tool.
  */
 export function RouteList({ tool }: { tool: RoutedTool }) {
-  const { config, meta, update, provider } = useConfig();
+  const { config, meta, update, provider, credentialed } = useConfig();
   const routes = config[tool].routes;
   // A rule keeps using its providers when their fetch route is switched off.
   const rules = tool === "fetch" ? routingRules(config, meta).filter((rule) => rule.enabled) : [];
@@ -41,9 +42,11 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
     <ol>
       {routes.map((route, index) => {
         const info = provider(route.provider);
-        const creds = config.providers[route.provider];
-        const hasKey = Boolean(creds?.api_key || (creds?.api_key_hint && !creds.clear_api_key));
-        const missingKey = info.key_required && !hasKey;
+        const missingKey = !credentialed(route.provider);
+        const fetcher = config.fetchers.find((f) => f.id === route.provider);
+        // A fetcher's limits are its own, set on its page.
+        const limits = fetcher ?? config.providers[route.provider];
+        const home = fetcher ? "/fetchers" : "/providers";
         const live = route.enabled && !missingKey;
         const health = status?.routes.find((r) => r.key === `${route.provider}:${tool}`);
         const changed = customized(route);
@@ -60,12 +63,12 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
             </span>
             <div className="min-w-40 flex-1">
               <div className="flex items-center gap-2 text-sm font-medium">
-                <BrandIcon id={info.id} className="size-4" />
+                <BrandIcon id={info.fetcher ?? info.id} className="size-4" />
                 {info.name}
                 {missingKey ? (
-                  <Link href="/providers">
+                  <Link href={missing(info).href}>
                     <Badge tone="warn" dot>
-                      缺少密钥
+                      {missing(info).label}
                     </Badge>
                   </Link>
                 ) : live && health?.disabled ? (
@@ -90,14 +93,26 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
                     </Tooltip>
                   ))}
               </div>
-              <div className="tag mt-0.5 normal-case">{creds?.base_url || info.default_base_url[tool]}</div>
+              <div className="tag mt-0.5 normal-case">
+                {fetcher
+                  ? `自托管 · ${fetcher.workers.filter((w) => w.enabled).length} 个 Worker`
+                  : config.providers[route.provider]?.base_url || info.default_base_url[tool]}
+              </div>
             </div>
-            <Tooltip content={shared.length > 0 ? `提供商级限流，与${shared.map((t) => toolLabel[t]).join("、")}合并计数。在「提供商」页设置` : "提供商级限流，在「提供商」页设置"}>
-              <Link href="/providers" className="flex flex-col gap-1 text-right hover:text-ink">
+            <Tooltip
+              content={
+                fetcher
+                  ? "抓取器级限流，所有 Worker 共用。在「自托管抓取器」页设置"
+                  : shared.length > 0
+                    ? `提供商级限流，与${shared.map((t) => toolLabel[t]).join("、")}合并计数。在「提供商」页设置`
+                    : "提供商级限流，在「提供商」页设置"
+              }
+            >
+              <Link href={home} className="flex flex-col gap-1 text-right hover:text-ink">
                 <span className="tag">限流{shared.length > 0 && " · 共用"}</span>
                 <span className="num text-xs text-ink-2">
-                  {creds?.rate_limit || "不限"}
-                  {creds?.concurrency ? ` · 并发 ${creds.concurrency}` : ""}
+                  {limits?.rate_limit || "不限"}
+                  {limits?.concurrency ? ` · 并发 ${limits.concurrency}` : ""}
                 </span>
               </Link>
             </Tooltip>
@@ -122,10 +137,14 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
                 </span>
               </Tooltip>
             )}
+            {/* A fetcher takes no parameters; the space is kept so the columns line up. */}
             <Button
               size="sm"
               variant={open === route.provider ? "secondary" : "ghost"}
               icon={<SlidersHorizontal />}
+              className={cx(fetcher && "invisible")}
+              disabled={Boolean(fetcher)}
+              aria-hidden={fetcher ? true : undefined}
               aria-expanded={open === route.provider}
               onClick={() => setOpen(open === route.provider ? null : route.provider)}
             >

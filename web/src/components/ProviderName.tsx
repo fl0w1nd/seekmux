@@ -1,3 +1,4 @@
+import type { ProviderInfo } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { BrandIcon } from "../ui/brand";
 import { cx } from "../ui/primitives";
@@ -11,7 +12,7 @@ export function ProviderName({ id, kind, className, icon = "size-3.5" }: { id: s
   if (kind === "llm") return <span className={cx("num min-w-0 truncate", className)}>{id}</span>;
   return (
     <span className={cx("inline-flex min-w-0 items-center gap-1.5", className)}>
-      <BrandIcon id={id} className={cx("shrink-0", icon)} />
+      <ProviderIcon id={id} className={cx("shrink-0", icon)} />
       <span className="truncate">{provider(id).name}</span>
     </span>
   );
@@ -26,4 +27,15 @@ export function ProviderNames({ ids, kind }: { ids: string; kind?: string }) {
       ))}
     </span>
   );
+}
+
+/** A provider's logo; a self-hosted fetcher shows the one of its type. */
+export function ProviderIcon({ id, className }: { id: string; className?: string }) {
+  const { provider } = useConfig();
+  return <BrandIcon id={provider(id).fetcher ?? id} className={className} />;
+}
+
+/** What a provider that cannot be called lacks, and where to set it up. */
+export function missing(info: ProviderInfo): { label: string; href: string } {
+  return info.fetcher ? { label: "未启用 Worker", href: "/fetchers" } : { label: "缺少密钥", href: "/providers" };
 }

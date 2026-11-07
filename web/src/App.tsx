@@ -10,6 +10,7 @@ import { LogsPage } from "./pages/Logs";
 import { ModelsPage } from "./pages/Models";
 import { OverviewPage } from "./pages/Overview";
 import { Playground, playPage } from "./pages/play";
+import { FetchersPage } from "./pages/Fetchers";
 import { ProvidersPage } from "./pages/Providers";
 import { ReportPage } from "./pages/Report";
 import { RoutingPage } from "./pages/Routing";
@@ -76,6 +77,7 @@ function Pages() {
         </Route>
         {play && <Route path="/play/:page">{null}</Route>}
         <Route path="/providers" component={ProvidersPage} />
+        <Route path="/fetchers" component={FetchersPage} />
         <Route path="/models" component={ModelsPage} />
         <Route path="/tools">
           <Redirect to="/tools/search" replace />

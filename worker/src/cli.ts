@@ -15,8 +15,8 @@ Usage:
 Options:
   --server   The gateway's address, e.g. https://seekmux.example.com
              (env SEEKMUX_SERVER)
-  --token    The worker token from the OpenCLI card on the gateway's
-             Providers page (env SEEKMUX_WORKER_TOKEN)
+  --token    This worker's token, from its fetcher on the gateway's
+             Self-hosted fetchers page (env SEEKMUX_WORKER_TOKEN)
   --slots    Pages read at once, 1 or 2 (default 1)
   --help     Show this help
   --version  Show the version

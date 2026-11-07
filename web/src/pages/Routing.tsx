@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Pencil, Plus, Radar } fr
 import { Fragment, useState } from "react";
 import { Link, Redirect, useLocation, useParams } from "wouter";
 import { api, type Config, type DomainProviderStats, type DomainStats, type FetchOutcome, type Rule } from "../lib/api";
+import { missing, ProviderIcon } from "../components/ProviderName";
 import { useConfig } from "../lib/config";
 import { bytes, duration, percent } from "../lib/format";
 import { cleanPattern, newRuleID, routingRules, ruleForDomain, validPattern } from "../lib/routing";
@@ -17,13 +18,9 @@ const tabs = [
   { value: "domains", label: "域名统计" },
 ];
 
-/** Whether a provider can be called: it has an API key or needs none. */
+/** Whether a provider can be called: it has an API key or needs none; a fetcher has a worker switched on. */
 function useCredentials() {
-  const { config, provider } = useConfig();
-  return (id: string) => {
-    const creds = config.providers[id];
-    return !provider(id).key_required || Boolean(creds?.api_key || (creds?.api_key_hint && !creds.clear_api_key));
-  };
+  return useConfig().credentialed;
 }
 
 /** Which providers read which pages, and how each provider fares on every domain. */
@@ -132,9 +129,9 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                       生效
                     </Badge>
                   ) : (
-                    <Link href="/providers">
+                    <Link href={missing(provider(rule.providers[0] ?? "")).href}>
                       <Badge tone="warn" dot>
-                        缺少密钥
+                        {rule.providers.length > 0 && rule.providers.every((id) => provider(id).fetcher) ? "未启用 Worker" : "缺少密钥"}
                       </Badge>
                     </Link>
                   )}
@@ -148,7 +145,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                   {rule.providers.map((id, i) => (
                     <Fragment key={id}>
                       {i > 0 && <span className="text-ink-3">→</span>}
-                      <BrandIcon id={id} className="size-3.5" />
+                      <ProviderIcon id={id} className="size-3.5" />
                       {provider(id).name}
                     </Fragment>
                   ))}
@@ -178,7 +175,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
 
   const builtin = meta.rules.find((r) => r.id === rule.id);
   const stored = config.routing.rules.findIndex((r) => r.id === rule.id);
-  const fetchers = meta.catalog.filter((info) => info.tools.includes("fetch")).map((info) => info.id);
+  const fetchers = [...meta.catalog.filter((info) => info.tools.includes("fetch")).map((info) => info.id), ...config.fetchers.map((f) => f.id)];
   const lanes = [...chosen, ...fetchers.filter((id) => !chosen.includes(id))];
   const invalid = match.filter((pattern) => !validPattern(pattern));
   const ready = (builtin || name.trim()) && match.length > 0 && invalid.length === 0 && chosen.length > 0;
@@ -268,11 +265,11 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
                     </span>
                   )}
                   <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                    <BrandIcon id={id} className="size-4" />
+                    <ProviderIcon id={id} className="size-4" />
                     {provider(id).name}
                     {!usable(id) && (
                       <Badge tone="warn" dot>
-                        缺少密钥
+                        {missing(provider(id)).label}
                       </Badge>
                     )}
                   </span>
@@ -466,7 +463,7 @@ function ProviderRow({ stats, name, longest }: { stats: DomainProviderStats; nam
     <tr className="bg-sunken/60">
       <Td className="pl-9! text-xs text-ink-2">
         <span className="flex items-center gap-1.5">
-          <BrandIcon id={stats.provider} className="size-3.5" />
+          <ProviderIcon id={stats.provider} className="size-3.5" />
           {name}
         </span>
       </Td>

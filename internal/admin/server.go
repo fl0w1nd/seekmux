@@ -179,6 +179,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"version":           s.version,
 		"catalog":           config.Catalog,
+		"fetcher_types":     config.FetcherTypes,
 		"rules":             config.BuiltinRules(),
 		"tools":             config.Tools,
 		"defaults":          config.Default(),
@@ -477,9 +478,8 @@ func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
 // health is what the circuit breaker says about a provider or model.
 type health struct {
 	Disabled bool `json:"disabled"`
-	// DisabledReason is "provider" for repeated failures, the account
-	// problem ("auth", "quota"), or "setup" for something to fix outside the
-	// gateway, such as a worker's Chrome profile.
+	// DisabledReason is "provider" for repeated failures, or the account
+	// problem: "auth", "quota".
 	DisabledReason string `json:"disabled_reason,omitempty"`
 	// DisabledMs is how much longer it stays off; 0 while Disabled means
 	// until it is re-enabled.
@@ -526,7 +526,7 @@ func (s *Server) routeStatuses(cfg *config.Config) []routeStatus {
 				Key: key, health: s.health(key),
 				Tool: tool, Provider: route.Provider, Enabled: route.Enabled,
 				Available:   route.Enabled && cfg.HasCredentials(route.Provider),
-				RateLimit:   *cfg.Providers[route.Provider].RateLimit,
+				RateLimit:   cfg.RateLimitText(route.Provider),
 				Used:        s.app.Limits.Rate.Used(route.Provider, limit),
 				Limit:       limit.Requests,
 				Active:      s.app.Limits.Concurrency.Active(route.Provider),
@@ -634,7 +634,7 @@ func (s *Server) handleClearDomains(w http.ResponseWriter, r *http.Request) {
 // for the pages that configure them.
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	cfg := s.app.Snapshot().Config
-	writeJSON(w, map[string]any{"routes": s.routeStatuses(cfg), "models": s.modelStatuses(cfg), "worker": s.app.Workers.Status()})
+	writeJSON(w, map[string]any{"routes": s.routeStatuses(cfg), "models": s.modelStatuses(cfg), "workers": s.app.Workers.Status()})
 }
 
 // handleBreakerReset re-enables a provider or model the breaker switched off.

@@ -4,6 +4,7 @@
 package fetch
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"maps"
@@ -48,9 +49,9 @@ type call struct {
 	opt    config.Values
 	// extra is merged into the request last.
 	extra map[string]any
-	// worker and profile serve a worker provider.
-	worker  Worker
-	profile string
+	// workers and fetcher serve a self-hosted fetcher.
+	workers Workers
+	fetcher *config.Fetcher
 }
 
 type executor func(ctx context.Context, c call, in Input) (Page, error)
@@ -62,37 +63,35 @@ var executors = map[string]executor{
 	"exa":       exaFetch,
 	"parallel":  parallelFetch,
 	"anysearch": anysearchFetch,
-
-	config.ProviderOpenCLI: openCLIFetch,
 }
 
-// Providers builds the fetch providers of cfg in priority order. A worker
-// provider is available only while w has a worker online.
-func Providers(cfg *config.Config, client *http.Client, w Worker) []core.Provider[Input, Page] {
+// Providers builds the fetch providers of cfg in priority order. A
+// self-hosted fetcher is available only while w has one of its workers
+// online.
+func Providers(cfg *config.Config, client *http.Client, w Workers) []core.Provider[Input, Page] {
 	var out []core.Provider[Input, Page]
 	for _, route := range cfg.Fetch.Routes {
+		info, _ := cfg.Info(route.Provider)
+		var c call
 		run, ok := executors[route.Provider]
+		if ok {
+			creds := cfg.Providers[route.Provider]
+			c = call{client: client, base: cmp.Or(creds.BaseURL, info.DefaultBase[config.ToolFetch]), apiKey: creds.APIKey, opt: config.OptionValues(config.ToolFetch, route), extra: route.ExtraBody}
+		} else if f, found := cfg.FetcherByID(route.Provider); found {
+			run, ok = fetcherExecutors[f.Type]
+			c = call{workers: w, fetcher: f}
+		}
 		if !ok {
 			continue
 		}
-		info, _ := config.Info(route.Provider)
-		creds := cfg.Providers[route.Provider]
-		base := creds.BaseURL
-		if base == "" {
-			base = info.DefaultBase[config.ToolFetch]
-		}
 		limit, concurrency := cfg.Limits(route.Provider)
-		c := call{
-			client: client, base: base, apiKey: creds.APIKey, opt: config.OptionValues(config.ToolFetch, route), extra: route.ExtraBody,
-			worker: w, profile: creds.Profile,
-		}
 		out = append(out, core.Provider[Input, Page]{
 			Name:        route.Provider,
 			Key:         route.Provider + ":" + config.ToolFetch,
 			LimitKey:    route.Provider,
 			RateLimit:   limit,
 			Concurrency: concurrency,
-			Available:   route.Enabled && cfg.HasCredentials(route.Provider) && reachable(route.Provider, w),
+			Available:   route.Enabled && cfg.HasCredentials(route.Provider) && reachable(cfg, route.Provider, w),
 			NoHedge:     route.NoHedge,
 			Execute: func(ctx context.Context, in Input) (Page, error) {
 				page, err := run(ctx, c, in)

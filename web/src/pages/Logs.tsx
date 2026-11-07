@@ -40,7 +40,7 @@ const positive = (value: string | null) => {
 const callerName = (entry: LogEntry) => (entry.source === "webui" ? "调试台" : entry.api_key_name || "—");
 
 export function LogsPage() {
-  const { meta } = useConfig();
+  const { config, meta } = useConfig();
   const client = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
@@ -213,12 +213,12 @@ export function LogsPage() {
         />
         <Select className="w-36" value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="按提供商筛选">
           <option value="">全部提供商</option>
-          {meta.catalog.map((p) => (
+          {[...meta.catalog, ...config.fetchers].map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
             </option>
           ))}
-          {provider && !meta.catalog.some((p) => p.id === provider) && <option value={provider}>{provider}</option>}
+          {provider && ![...meta.catalog, ...config.fetchers].some((p) => p.id === provider) && <option value={provider}>{provider}</option>}
         </Select>
         <Select className="w-36" value={caller} onChange={(e) => setCaller(e.target.value)} aria-label="按调用方筛选">
           <option value="">全部调用方</option>

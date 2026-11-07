@@ -3,9 +3,9 @@ import type { Route, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { toolPage } from "../lib/format";
 import { optionText } from "../lib/options";
-import { BrandIcon } from "../ui/brand";
 import { Choice, ChoiceList, ChoiceStatus, type Tone } from "../ui/primitives";
 import { healthLabel, useStatus } from "./Health";
+import { missing, ProviderIcon } from "./ProviderName";
 
 /** The parameters of a route that differ from the provider's defaults, in words. */
 function changes(tool: RoutedTool, route: Route): string[] {
@@ -20,18 +20,16 @@ function changes(tool: RoutedTool, route: Route): string[] {
  * and `fetch_engine` arguments of the MCP tools make.
  */
 export function ProviderPicker({ tool, value, onChange }: { tool: RoutedTool; value: string; onChange: (value: string) => void }) {
-  const { config, provider } = useConfig();
+  const { config, provider, credentialed } = useConfig();
   const status = useStatus();
   const routes = config[tool].routes.filter((r) => r.enabled);
 
   const rows = routes.map((route) => {
     const info = provider(route.provider);
-    const creds = config.providers[route.provider];
-    const hasKey = Boolean(creds?.api_key || (creds?.api_key_hint && !creds.clear_api_key));
     const health = status?.routes.find((r) => r.key === `${route.provider}:${tool}`);
     const state: { tone: Tone; label: string; usable: boolean } =
-      info.key_required && !hasKey
-        ? { tone: "warn", label: "缺少密钥", usable: false }
+      !credentialed(route.provider)
+        ? { tone: "warn", label: missing(info).label, usable: false }
         : health?.disabled
           ? { tone: health.disabled_reason === "provider" ? "warn" : "err", label: healthLabel(health), usable: true }
           : { tone: "ok", label: "可用", usable: true };
@@ -52,7 +50,7 @@ export function ProviderPicker({ tool, value, onChange }: { tool: RoutedTool; va
             onSelect={() => onChange(route.provider)}
             title={
               <span className="flex items-center gap-2">
-                <BrandIcon id={route.provider} className="size-4" />
+                <ProviderIcon id={route.provider} className="size-4" />
                 {name}
               </span>
             }

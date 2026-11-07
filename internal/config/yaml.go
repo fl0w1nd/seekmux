@@ -190,7 +190,7 @@ func legacyRoutes(env map[string]string, tool, orderKey string, defaults []Route
 		for _, id := range strings.Split(order, ",") {
 			routes = append(routes, Route{Provider: strings.TrimSpace(id), Enabled: true})
 		}
-		routes = normalizeRoutes(tool, routes)
+		routes = (&Config{}).normalizeRoutes(tool, routes)
 	}
 	for i := range routes {
 		r := &routes[i]

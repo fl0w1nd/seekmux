@@ -3,7 +3,6 @@ package worker
 import (
 	"cmp"
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,28 +30,29 @@ const (
 )
 
 var (
-	// ErrOffline reports that no worker is connected.
-	ErrOffline = errors.New("no worker is connected")
+	// ErrOffline reports that the worker is not connected.
+	ErrOffline = errors.New("the worker is not connected")
 	// ErrDisconnected reports a worker that went away during a fetch.
 	ErrDisconnected = errors.New("the worker disconnected before it answered")
 )
 
-// Hub holds the one worker connection and hands it fetches.
+// Hub holds the connections of the workers, one per worker, and hands them
+// fetches.
 type Hub struct {
-	// Token returns the token a worker must present; empty refuses every
-	// worker.
-	Token func() string
+	// Lookup returns the id of the worker a token belongs to; false refuses
+	// the token.
+	Lookup func(token string) (id string, ok bool)
 	// Addr returns where a request came from.
 	Addr func(*http.Request) string
-	// OnState, when set, is told every state a worker reports.
-	OnState func(State)
 
-	mu   sync.Mutex
-	conn *session
-	seq  atomic.Uint64
+	mu    sync.Mutex
+	conns map[string]*session
+	seq   atomic.Uint64
 }
 
 type session struct {
+	// id is the worker's, as Lookup found it by the token.
+	id string
 	ws *websocket.Conn
 	// token is the one the worker signed in with, to drop it when the
 	// configured token changes.
@@ -87,15 +87,26 @@ type Status struct {
 	State *State `json:"state,omitempty"`
 }
 
-func (h *Hub) current() *session {
+func (h *Hub) session(id string) *session {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.conn
+	return h.conns[id]
 }
 
-// Online reports whether a worker is connected and its browser is reachable.
-func (h *Hub) Online() bool {
-	s := h.current()
+func (h *Hub) sessions() []*session {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]*session, 0, len(h.conns))
+	for _, s := range h.conns {
+		out = append(out, s)
+	}
+	return out
+}
+
+// Online reports whether the worker is connected and its browser is
+// reachable.
+func (h *Hub) Online(id string) bool {
+	s := h.session(id)
 	if s == nil {
 		return false
 	}
@@ -104,60 +115,59 @@ func (h *Hub) Online() bool {
 	return s.state.Ready
 }
 
-// Status describes the connected worker.
-func (h *Hub) Status() Status {
-	s := h.current()
-	if s == nil {
-		return Status{}
+// Status describes the connected workers, by id.
+func (h *Hub) Status() map[string]Status {
+	out := map[string]Status{}
+	for _, s := range h.sessions() {
+		s.mu.Lock()
+		state := s.state
+		state.Profiles = append([]Profile{}, s.state.Profiles...)
+		out[s.id] = Status{
+			Connected: true, Version: s.version, Slots: s.slots, Active: len(s.pending),
+			Addr: s.addr, Since: s.since.UnixMilli(), State: &state,
+		}
+		s.mu.Unlock()
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	state := s.state
-	state.Profiles = append([]Profile{}, s.state.Profiles...)
-	return Status{
-		Connected: true, Version: s.version, Slots: s.slots, Active: len(s.pending),
-		Addr: s.addr, Since: s.since.UnixMilli(), State: &state,
-	}
+	return out
 }
 
-// Close ends the connection of the current worker, for a server shutting down.
+// Close ends every worker's connection, for a server shutting down.
 func (h *Hub) Close() {
-	if s := h.current(); s != nil {
+	for _, s := range h.sessions() {
 		_ = s.ws.Close(websocket.StatusGoingAway, "the server is shutting down")
 	}
 }
 
-// Recheck drops the connected worker when the configured token no longer
-// matches the one it signed in with: a changed or cleared token takes the
-// old worker's access away at once, not at its next reconnect.
+// Recheck drops each connected worker whose token no longer belongs to it:
+// a changed token, or a removed worker, loses its access at once, not at its
+// next reconnect.
 func (h *Hub) Recheck() {
-	s := h.current()
-	if s == nil || h.accepts(s.token) {
-		return
+	for _, s := range h.sessions() {
+		if id, ok := h.lookup(s.token); ok && id == s.id {
+			continue
+		}
+		slog.Info("worker dropped: its token was changed or it was removed", "worker", s.id, "addr", s.addr)
+		// Close waits for the worker's answer; saving the configuration does not.
+		go s.ws.Close(CloseUnauthorized, "the worker token was changed, or the worker was removed")
 	}
-	slog.Info("worker dropped: the worker token was changed", "addr", s.addr)
-	// Close waits for the worker's answer; saving the configuration does not.
-	go s.ws.Close(CloseUnauthorized, "the worker token was changed or removed")
 }
 
-// accepts reports whether token is the configured worker token. No
-// configured token accepts nothing.
-func (h *Hub) accepts(token string) bool {
-	want := ""
-	if h.Token != nil {
-		want = h.Token()
+func (h *Hub) lookup(token string) (string, bool) {
+	if h.Lookup == nil || token == "" {
+		return "", false
 	}
-	return want != "" && subtle.ConstantTimeCompare([]byte(want), []byte(token)) == 1
+	return h.Lookup(token)
 }
 
-// Fetch has the worker read a page. A failure the worker reports is an
-// *Error; one of the connection is ErrOffline or ErrDisconnected.
-func (h *Hub) Fetch(ctx context.Context, req Request) (*Page, error) {
-	s := h.current()
+// Fetch has the worker with the given id read a page. A failure the worker
+// reports is an *Error; one of the connection is ErrOffline or
+// ErrDisconnected.
+func (h *Hub) Fetch(ctx context.Context, id string, req Request) (*Page, error) {
+	s := h.session(id)
 	if s == nil {
 		return nil, ErrOffline
 	}
-	id := strconv.FormatUint(h.seq.Add(1), 36)
+	rid := strconv.FormatUint(h.seq.Add(1), 36)
 	reply := make(chan *Message, 1)
 	s.mu.Lock()
 	var refused *Error
@@ -175,11 +185,11 @@ func (h *Hub) Fetch(ctx context.Context, req Request) (*Page, error) {
 		s.mu.Unlock()
 		return nil, refused
 	}
-	s.pending[id] = reply
+	s.pending[rid] = reply
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
-		delete(s.pending, id)
+		delete(s.pending, rid)
 		s.mu.Unlock()
 	}()
 
@@ -188,7 +198,7 @@ func (h *Hub) Fetch(ctx context.Context, req Request) (*Page, error) {
 		// Leave the answer time to come back before the caller gives up.
 		timeout = max(time.Until(deadline)-500*time.Millisecond, time.Second)
 	}
-	err := s.send(ctx, &Message{Type: TypeFetch, ID: id, URL: req.URL, Adapter: req.Adapter, Profile: req.Profile, TimeoutMs: timeout.Milliseconds()})
+	err := s.send(ctx, &Message{Type: TypeFetch, ID: rid, URL: req.URL, Adapter: req.Adapter, Profile: req.Profile, TimeoutMs: timeout.Milliseconds()})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -207,7 +217,7 @@ func (h *Hub) Fetch(ctx context.Context, req Request) (*Page, error) {
 	case <-ctx.Done():
 		cancelCtx, cancel := context.WithTimeout(context.Background(), writeTimeout)
 		defer cancel()
-		_ = s.send(cancelCtx, &Message{Type: TypeCancel, ID: id})
+		_ = s.send(cancelCtx, &Message{Type: TypeCancel, ID: rid})
 		return nil, ctx.Err()
 	case <-s.done:
 		return nil, ErrDisconnected
@@ -234,7 +244,8 @@ func (s *session) setState(st State) {
 }
 
 // ServeHTTP accepts a worker: the first frame must be a hello with the
-// token. A worker that connects replaces the one before it.
+// token. A worker that connects replaces the one before it with the same
+// id.
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
@@ -265,16 +276,17 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = ws.Close(CloseProtocol, fmt.Sprintf("this server speaks protocol %d, the worker %d: update the one that is older", ProtocolVersion, hello.Protocol))
 		return
 	}
-	if !h.accepts(hello.Token) {
+	id, ok := h.lookup(hello.Token)
+	if !ok {
 		slog.Warn("worker refused: wrong token", "addr", addr)
-		_ = ws.Close(CloseUnauthorized, "the token is wrong, or no worker token is configured")
+		_ = ws.Close(CloseUnauthorized, "no worker on the gateway has this token")
 		return
 	}
 
 	ws.SetReadLimit(readLimit)
 
 	s := &session{
-		ws: ws, token: hello.Token, version: hello.Version, slots: min(max(hello.Slots, 1), MaxSlots), addr: addr,
+		id: id, ws: ws, token: hello.Token, version: hello.Version, slots: min(max(hello.Slots, 1), MaxSlots), addr: addr,
 		since: time.Now(), done: make(chan struct{}), pending: map[string]chan *Message{},
 	}
 	if hello.State != nil {
@@ -285,8 +297,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.mu.Lock()
-	old := h.conn
-	h.conn = s
+	if h.conns == nil {
+		h.conns = map[string]*session{}
+	}
+	old := h.conns[id]
+	h.conns[id] = s
 	h.mu.Unlock()
 	if old != nil {
 		go old.ws.Close(CloseReplaced, "another worker connected with the same token")
@@ -294,10 +309,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// A token changed after the hello was checked may have been rechecked
 	// before this session was registered; check again now that it is.
 	h.Recheck()
-	slog.Info("worker connected", "addr", addr, "version", hello.Version, "slots", s.slots, "ready", s.state.Ready)
-	if hello.State != nil && h.OnState != nil {
-		h.OnState(*hello.State)
-	}
+	slog.Info("worker connected", "worker", id, "addr", addr, "version", hello.Version, "slots", s.slots, "ready", s.state.Ready)
 
 	go func() {
 		ticker := time.NewTicker(pingInterval)
@@ -320,12 +332,12 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	err = h.read(ctx, s)
 	h.mu.Lock()
-	if h.conn == s {
-		h.conn = nil
+	if h.conns[id] == s {
+		delete(h.conns, id)
 	}
 	h.mu.Unlock()
 	close(s.done)
-	slog.Info("worker disconnected", "addr", addr, "reason", err)
+	slog.Info("worker disconnected", "worker", id, "addr", addr, "reason", err)
 	ws.CloseNow()
 }
 
@@ -344,9 +356,6 @@ func (h *Hub) read(ctx context.Context, s *session) error {
 		case TypeState:
 			if m.State != nil {
 				s.setState(*m.State)
-				if h.OnState != nil {
-					h.OnState(*m.State)
-				}
 			}
 		case TypeResult:
 			s.mu.Lock()

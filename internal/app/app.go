@@ -68,8 +68,8 @@ type App struct {
 	Store  *store.Store
 	Logs   *store.LogWriter
 	Limits *core.Limits
-	// Workers holds the connection of the worker that serves the worker
-	// providers.
+	// Workers holds the connections of the workers of the self-hosted
+	// fetchers.
 	Workers *worker.Hub
 
 	domains  *store.DomainWriter
@@ -102,7 +102,7 @@ func New(ctx context.Context, st *store.Store) (*App, error) {
 		})
 	}
 	a.background, a.stop = context.WithCancel(context.Background())
-	a.Workers = &worker.Hub{Token: a.workerToken, Addr: ClientAddr, OnState: a.workerState}
+	a.Workers = &worker.Hub{Lookup: a.workerByToken, Addr: ClientAddr}
 
 	cfg := config.Default()
 	raw, err := st.Get(ctx, configKey)
@@ -135,26 +135,19 @@ func New(ctx context.Context, st *store.Store) (*App, error) {
 	return a, nil
 }
 
-// workerToken is the token a worker must present to connect.
-func (a *App) workerToken() string {
-	if s := a.Snapshot(); s != nil {
-		return s.Config.Providers[config.ProviderOpenCLI].APIKey
+// workerByToken returns the id of the worker a token belongs to. A worker
+// that is switched off may connect, so that the console shows it, but is
+// handed no fetch.
+func (a *App) workerByToken(token string) (string, bool) {
+	s := a.Snapshot()
+	if s == nil {
+		return "", false
 	}
-	return ""
-}
-
-// workerState re-enables the worker provider the breaker switched off for a
-// Chrome profile OpenCLI did not know, once the worker reports it again.
-func (a *App) workerState(state worker.State) {
-	key := config.ProviderOpenCLI + ":" + config.ToolFetch
-	if trip, off := a.Limits.Breaker.State(key); !off || trip.Reason != core.ClassSetup {
-		return
+	_, w, ok := s.Config.WorkerByToken(token)
+	if !ok {
+		return "", false
 	}
-	// The setup problem is gone once the profile resolves, or is merely closed.
-	profile := a.Snapshot().Config.Providers[config.ProviderOpenCLI].Profile
-	if problem := state.Route(profile); problem == nil || problem.Code != worker.CodeProfileMissing {
-		a.Limits.Breaker.Reset(key)
-	}
+	return w.ID, true
 }
 
 // Close stops background research and flushes the logs.
@@ -405,7 +398,7 @@ func (a *App) SaveConfig(ctx context.Context, cfg *config.Config) error {
 	}
 	prev := a.Snapshot().Config
 	a.install(cfg)
-	if reflect.DeepEqual(prev.Fetch.Routes, cfg.Fetch.Routes) && reflect.DeepEqual(prev.Routing, cfg.Routing) && workerProfile(prev) == workerProfile(cfg) {
+	if reflect.DeepEqual(prev.Fetch.Routes, cfg.Fetch.Routes) && reflect.DeepEqual(prev.Routing, cfg.Routing) && reflect.DeepEqual(workerProfiles(prev), workerProfiles(cfg)) {
 		a.fetcher.ClearAnswers()
 	} else {
 		// A provider's options change what it returns for the same URL, a
@@ -416,12 +409,19 @@ func (a *App) SaveConfig(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-// workerProfile is the Chrome profile the worker reads with.
-func workerProfile(cfg *config.Config) string {
-	if p := cfg.Providers[config.ProviderOpenCLI]; p != nil {
-		return p.Profile
+// workerProfiles lists, in the order they are tried, the workers switched on
+// and the Chrome profile each reads with: which profile reads a page
+// changes with any of it.
+func workerProfiles(cfg *config.Config) []string {
+	var out []string
+	for _, f := range cfg.Fetchers {
+		for _, w := range f.Workers {
+			if w.Enabled {
+				out = append(out, f.ID+"/"+w.ID+"/"+w.Profile)
+			}
+		}
 	}
-	return ""
+	return out
 }
 
 func newClient(proxy string) *http.Client {
@@ -446,7 +446,7 @@ func newClient(proxy string) *http.Client {
 
 func (a *App) fetchRuntime(s *Snapshot, o Override) fetch.Runtime {
 	// A page read with parameters of its own must not answer later calls.
-	return fetch.Runtime{Config: s.Config, Client: s.Client, LLMClient: s.Client, NoCache: o.NoCache || o.Route != nil, Worker: a.Workers}
+	return fetch.Runtime{Config: s.Config, Client: s.Client, LLMClient: s.Client, NoCache: o.NoCache || o.Route != nil, Workers: a.Workers}
 }
 
 // logCall writes the request log entry of a finished tool call.

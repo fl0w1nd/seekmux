@@ -36,9 +36,6 @@ const (
 	ClassTarget Class = "target"
 	// ClassProvider is the provider itself failing.
 	ClassProvider Class = "provider"
-	// ClassSetup is something outside the gateway that someone has to set
-	// right, such as the browser profile a worker was told to read with.
-	ClassSetup Class = "setup"
 )
 
 type HTTPError struct {
@@ -91,12 +88,6 @@ type TargetError struct {
 
 func (e *TargetError) Error() string { return e.Provider + " could not get the page: " + e.Reason }
 
-// SetupError reports a provider that cannot work until someone fixes its
-// setup outside the gateway. The breaker switches it off until then.
-type SetupError struct{ Provider, Detail string }
-
-func (e *SetupError) Error() string { return e.Provider + " is not set up: " + e.Detail }
-
 // UnavailableError reports a provider that cannot take calls at the moment,
 // such as a worker that went offline. Calling it again in the same run does
 // not help, and it says nothing about the provider's health or the site.
@@ -132,9 +123,8 @@ func Retryable(err error) bool {
 	}
 	var timeout *TimeoutError
 	var target *TargetError
-	var setup *SetupError
 	var unavailable *UnavailableError
-	if errors.As(err, &timeout) || errors.As(err, &target) || errors.As(err, &setup) || errors.As(err, &unavailable) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.As(err, &timeout) || errors.As(err, &target) || errors.As(err, &unavailable) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
 	return err != nil
