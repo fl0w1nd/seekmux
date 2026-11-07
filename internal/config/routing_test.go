@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestYouTubeIsRoutedToTheProvidersThatReadItOnceSwitchedOn(t *testing.T) {
+func TestYouTubeURLsMatchTheConfiguredRule(t *testing.T) {
 	// A document stored before routing existed gets the built-in rules,
 	// switched off: an upgrade changes nothing by itself.
 	c, err := FromStored([]byte(`{}`))
@@ -26,13 +26,10 @@ func TestYouTubeIsRoutedToTheProvidersThatReadItOnceSwitchedOn(t *testing.T) {
 			t.Fatalf("%s is on before anyone switched it on", rule.ID)
 		}
 	}
-	if !slices.Equal(rules[1].Providers, []string{"tavily", "parallel"}) || !slices.Equal(rules[3].Providers, []string{"parallel"}) {
-		t.Fatalf("providers = %v, %v", rules[1].Providers, rules[3].Providers)
-	}
 	if _, ok := c.RuleFor("https://youtu.be/aircAruvnKk"); ok {
 		t.Fatal("a built-in rule must not match until it is switched on")
 	}
-	c.Routing.Builtin = map[string]BuiltinRule{"youtube": {Enabled: true}}
+	c.Routing.Builtin = map[string]BuiltinRule{"youtube": {Enabled: true, Providers: []string{"tavily"}}}
 	for url, want := range map[string]bool{
 		"https://www.youtube.com/watch?v=aircAruvnKk": true,
 		"https://m.youtube.com/shorts/aircAruvnKk":    true,
@@ -56,7 +53,10 @@ func TestYouTubeIsRoutedToTheProvidersThatReadItOnceSwitchedOn(t *testing.T) {
 
 func TestTwitterAndRedditAreRoutedOnceSwitchedOn(t *testing.T) {
 	c := Default()
-	c.Routing.Builtin = map[string]BuiltinRule{"twitter": {Enabled: true}, "reddit": {Enabled: true}}
+	c.Routing.Builtin = map[string]BuiltinRule{
+		"twitter": {Enabled: true, Providers: []string{"jina"}},
+		"reddit":  {Enabled: true, Providers: []string{"jina"}},
+	}
 	for url, want := range map[string]string{
 		"https://x.com/jack/status/20":                   "twitter",
 		"https://mobile.twitter.com/jack/status/20":      "twitter",
@@ -78,7 +78,7 @@ func TestSocialSitesAreRoutedOnceSwitchedOn(t *testing.T) {
 	c := Default()
 	c.Routing.Builtin = map[string]BuiltinRule{}
 	for _, id := range []string{"instagram", "threads", "facebook", "tiktok", "linkedin"} {
-		c.Routing.Builtin[id] = BuiltinRule{Enabled: true}
+		c.Routing.Builtin[id] = BuiltinRule{Enabled: true, Providers: []string{"jina"}}
 	}
 	for url, want := range map[string]string{
 		"https://www.instagram.com/nasa/p/abc":        "instagram",
@@ -102,55 +102,45 @@ func TestSocialSitesAreRoutedOnceSwitchedOn(t *testing.T) {
 		}
 	}
 	rule, _ := c.RuleFor("https://www.linkedin.com/in/someone")
-	if !slices.Equal(rule.Providers, []string{"tavily", "parallel"}) {
+	if !slices.Equal(rule.Providers, []string{"jina"}) {
 		t.Errorf("linkedin providers = %v", rule.Providers)
 	}
 	rule, _ = c.RuleFor("https://www.tiktok.com/@nasa")
-	if !slices.Equal(rule.Providers, []string{"parallel"}) {
+	if !slices.Equal(rule.Providers, []string{"jina"}) {
 		t.Errorf("tiktok providers = %v", rule.Providers)
 	}
 }
 
-func TestArxivIsABuiltinRuleNoCapabilityStandsBehind(t *testing.T) {
-	for _, info := range Catalog {
-		for _, capability := range info.Capabilities {
-			if capability.ID == "arxiv" {
-				t.Fatalf("%s declares arxiv as a capability", info.ID)
-			}
-		}
-	}
+func TestArxivUsesTheConfiguredProviders(t *testing.T) {
 	c := Default()
 	if _, ok := c.RuleFor("https://arxiv.org/abs/1706.03762"); ok {
 		t.Fatal("a built-in rule must not match until it is switched on")
 	}
-	c.Routing.Builtin = map[string]BuiltinRule{"arxiv": {Enabled: true}}
+	c.Routing.Builtin = map[string]BuiltinRule{"arxiv": {Enabled: true, Providers: []string{"exa", "firecrawl", "parallel"}}}
 	c.Normalize()
 	rule, ok := c.RuleFor("https://arxiv.org/html/2501.12948v1")
 	if !ok || !rule.Builtin || !slices.Equal(rule.Providers, []string{"exa", "firecrawl", "parallel"}) {
 		t.Fatalf("rule = %+v, matched = %v", rule, ok)
 	}
 
-	// The order is the document's to change, and the catalog's list stays as it was.
+	// The document can change the provider order.
 	c.Routing.Builtin = map[string]BuiltinRule{"arxiv": {Enabled: true, Providers: []string{"parallel", "exa"}}}
 	c.Normalize()
 	rule, _ = c.RuleFor("https://export.arxiv.org/pdf/1706.03762")
 	if !slices.Equal(rule.Providers, []string{"parallel", "exa"}) {
 		t.Errorf("providers = %v", rule.Providers)
 	}
-	if !slices.Equal(siteRules[0].Providers, []string{"exa", "firecrawl", "parallel"}) {
-		t.Errorf("the catalog's rule changed: %v", siteRules[0].Providers)
-	}
 }
 
 func TestADocumentChangesABuiltinRuleWithoutCopyingIt(t *testing.T) {
 	c := Default()
 	c.Routing.Builtin = map[string]BuiltinRule{
-		"youtube": {Providers: []string{"tavily"}},
+		"youtube": {},
 		"gone":    {Enabled: true},
 	}
 	c.Normalize()
 	if c.Routing.Builtin != nil {
-		t.Errorf("what repeats the rule or names none must be dropped: %+v", c.Routing.Builtin)
+		t.Errorf("unused and unknown rules must be dropped: %+v", c.Routing.Builtin)
 	}
 
 	c.Routing.Builtin = map[string]BuiltinRule{"youtube": {Enabled: true, Providers: []string{"tavily", "brave", "firecrawl", "tavily"}}}
@@ -188,7 +178,7 @@ func TestOwnRulesComeFirstAndAreCleaned(t *testing.T) {
 	if got, _ := c.RuleFor("https://www.youtube.com/watch?v=2"); got.ID != "video" {
 		t.Errorf("the document's own rule must win over the built-in one: %+v", got)
 	}
-	c.Routing.Builtin = map[string]BuiltinRule{"youtube": {Enabled: true}}
+	c.Routing.Builtin = map[string]BuiltinRule{"youtube": {Enabled: true, Providers: []string{"tavily"}}}
 	if got, _ := c.RuleFor("https://youtu.be/2"); got.ID != "youtube" {
 		t.Errorf("rule = %+v", got)
 	}

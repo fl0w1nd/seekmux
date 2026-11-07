@@ -8,70 +8,10 @@ import (
 	"strings"
 )
 
-// Capability is a kind of page a provider reads where an ordinary page fetch
-// does not, such as a video with its transcript. Every capability becomes a
-// built-in routing rule that sends the pages it matches to the providers
-// declaring it, once the rule is switched on.
-type Capability struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	// Match lists the pages, as the patterns of a Rule.
-	Match []string `json:"match"`
-}
-
-var capYouTube = Capability{
-	ID: "youtube", Name: "YouTube",
-	Match: []string{"youtube.com/watch", "youtube.com/shorts/", "youtube.com/live/", "youtu.be"},
-}
-
-var capTwitter = Capability{
-	ID: "twitter", Name: "X (Twitter)",
-	Match: []string{"x.com", "twitter.com"},
-}
-
-var capReddit = Capability{
-	ID: "reddit", Name: "Reddit",
-	Match: []string{"reddit.com", "redd.it"},
-}
-
-var capInstagram = Capability{
-	ID: "instagram", Name: "Instagram",
-	Match: []string{"instagram.com", "instagr.am"},
-}
-
-var capThreads = Capability{
-	ID: "threads", Name: "Threads",
-	Match: []string{"threads.com", "threads.net"},
-}
-
-var capFacebook = Capability{
-	ID: "facebook", Name: "Facebook",
-	Match: []string{"facebook.com", "fb.watch"},
-}
-
-var capTikTok = Capability{
-	ID: "tiktok", Name: "TikTok",
-	Match: []string{"tiktok.com"},
-}
-
-var capLinkedIn = Capability{
-	ID: "linkedin", Name: "LinkedIn",
-	Match: []string{"linkedin.com", "lnkd.in"},
-}
-
-// siteRules are the built-in rules that no capability stands behind: every
-// provider reads the site as an ordinary page, and the rule only keeps it to
-// the ones that return it whole.
-var siteRules = []Rule{
-	// Jina returns a figure caption for a paper's HTML version, Tavily drops
-	// the abstract and cuts the listings short, AnySearch reads no PDF.
-	{ID: "arxiv", Name: "arXiv", Match: []string{"arxiv.org"}, Providers: []string{"exa", "firecrawl", "parallel"}},
-}
-
 // Rule sends the pages it matches to its own providers in place of the fetch
 // routes: only those are tried, in this order. A provider serves a rule
 // whenever it has its credentials, whether or not its fetch route is enabled,
-// so a provider can be kept for the pages only it reads.
+// independently of the default fetch routes.
 type Rule struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
@@ -80,22 +20,21 @@ type Rule struct {
 	// its subdomains as well.
 	Match     []string `json:"match"`
 	Providers []string `json:"providers"`
-	// Builtin marks a rule that comes from the catalog. It is never set on a
+	// Builtin marks a rule with a built-in URL pattern. It is never set on a
 	// stored rule.
 	Builtin bool `json:"builtin,omitempty"`
 }
 
-// BuiltinRule is what a document changes of a built-in rule, which is off
-// until the document switches it on.
+// BuiltinRule holds the user's providers and switch for a built-in rule.
 type BuiltinRule struct {
 	Enabled bool `json:"enabled,omitempty"`
-	// Providers replaces the rule's own list; empty keeps it.
+	// Providers are tried in order when the rule is enabled.
 	Providers []string `json:"providers,omitempty"`
 }
 
 // Routing holds the rules that pick the providers of a fetch by its URL. The
-// built-in rules live in the catalog, so a document only states how it
-// departs from them and an upgrade brings new ones by itself.
+// built-in URL patterns are independent of the document's provider choices,
+// so an upgrade brings new patterns by itself.
 type Routing struct {
 	// Rules are tried in order, ahead of the built-in ones.
 	Rules []Rule `json:"rules"`
@@ -103,23 +42,21 @@ type Routing struct {
 	Builtin map[string]BuiltinRule `json:"builtin,omitempty"`
 }
 
-// BuiltinRules derives a rule from every capability in the catalog, with the
-// providers that declare it in catalog order, and adds the site rules.
+// BuiltinRules lists URL patterns without choosing their providers.
 func BuiltinRules() []Rule {
-	var rules []Rule
-	for _, info := range Catalog {
-		for _, capability := range info.Capabilities {
-			i := slices.IndexFunc(rules, func(r Rule) bool { return r.ID == capability.ID })
-			if i < 0 {
-				rules = append(rules, Rule{ID: capability.ID, Name: capability.Name, Match: capability.Match, Builtin: true})
-				i = len(rules) - 1
-			}
-			rules[i].Providers = append(rules[i].Providers, info.ID)
-		}
+	rules := []Rule{
+		{ID: "youtube", Name: "YouTube", Match: []string{"youtube.com/watch", "youtube.com/shorts/", "youtube.com/live/", "youtu.be"}},
+		{ID: "twitter", Name: "X (Twitter)", Match: []string{"x.com", "twitter.com"}},
+		{ID: "linkedin", Name: "LinkedIn", Match: []string{"linkedin.com", "lnkd.in"}},
+		{ID: "reddit", Name: "Reddit", Match: []string{"reddit.com", "redd.it"}},
+		{ID: "instagram", Name: "Instagram", Match: []string{"instagram.com", "instagr.am"}},
+		{ID: "threads", Name: "Threads", Match: []string{"threads.com", "threads.net"}},
+		{ID: "facebook", Name: "Facebook", Match: []string{"facebook.com", "fb.watch"}},
+		{ID: "tiktok", Name: "TikTok", Match: []string{"tiktok.com"}},
+		{ID: "arxiv", Name: "arXiv", Match: []string{"arxiv.org"}},
 	}
-	for _, rule := range siteRules {
-		rule.Builtin, rule.Providers = true, slices.Clone(rule.Providers)
-		rules = append(rules, rule)
+	for i := range rules {
+		rules[i].Builtin, rules[i].Providers = true, []string{}
 	}
 	return rules
 }
@@ -131,9 +68,7 @@ func (c *Config) RoutingRules() []Rule {
 	for _, rule := range BuiltinRules() {
 		if o, ok := c.Routing.Builtin[rule.ID]; ok {
 			rule.Enabled = o.Enabled
-			if len(o.Providers) > 0 {
-				rule.Providers = o.Providers
-			}
+			rule.Providers = o.Providers
 		}
 		rules = append(rules, rule)
 	}
@@ -226,12 +161,7 @@ func (c *Config) normalizeRouting() {
 			delete(c.Routing.Builtin, id)
 			continue
 		}
-		// What merely repeats the rule is dropped, so a provider that gains
-		// the capability later reaches every document that never chose.
 		o.Providers = fetchProviders(o.Providers)
-		if slices.Equal(o.Providers, builtin[i].Providers) {
-			o.Providers = nil
-		}
 		if !o.Enabled && len(o.Providers) == 0 {
 			delete(c.Routing.Builtin, id)
 			continue
@@ -247,6 +177,9 @@ func (c *Config) validateRouting() error {
 	seen := map[string]bool{}
 	for _, rule := range BuiltinRules() {
 		seen[rule.ID] = true
+		if o := c.Routing.Builtin[rule.ID]; o.Enabled && len(o.Providers) == 0 {
+			return fmt.Errorf("routing rule %q: choose at least one provider", rule.Name)
+		}
 	}
 	for _, rule := range c.Routing.Rules {
 		if !idPattern.MatchString(rule.ID) {

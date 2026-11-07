@@ -273,9 +273,6 @@ type ProviderInfo struct {
 	DefaultRateLimit string            `json:"default_rate_limit"`
 	// Options is keyed by tool.
 	Options map[string][]Option `json:"options,omitempty"`
-	// Capabilities lists the kinds of page the provider's fetch reads where
-	// an ordinary fetch does not.
-	Capabilities []Capability `json:"capabilities,omitempty"`
 }
 
 func (p ProviderInfo) Supports(tool string) bool { return slices.Contains(p.Tools, tool) }
@@ -342,7 +339,6 @@ var Catalog = []ProviderInfo{
 				{Key: "extract_depth", Type: OptionEnum, Default: "basic", Values: []string{"basic", "advanced"}},
 			},
 		},
-		Capabilities: []Capability{capYouTube, capTwitter, capLinkedIn},
 	},
 	{
 		ID: "jina", Name: "Jina Reader", Website: "https://jina.ai/reader", KeyRequired: false,
@@ -397,7 +393,6 @@ var Catalog = []ProviderInfo{
 				{Key: "max_age_hours", Type: OptionInt, Min: 1, Max: 720},
 			},
 		},
-		Capabilities: []Capability{capTwitter, capReddit, capInstagram, capThreads, capFacebook, capTikTok, capLinkedIn},
 	},
 	{
 		// AnySearch also answers without a key, but then hands out generated

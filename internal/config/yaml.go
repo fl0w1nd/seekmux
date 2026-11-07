@@ -39,6 +39,7 @@ func FromJSON(data []byte) (*Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+	c.migrateBuiltinProviders()
 	c.Normalize()
 	if err := c.Validate(); err != nil {
 		return nil, err
@@ -53,11 +54,33 @@ func FromStored(data []byte) (*Config, error) {
 	if err := json.Unmarshal(data, c); err != nil {
 		return nil, err
 	}
+	c.migrateBuiltinProviders()
 	c.Normalize()
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// Enabled built-in rules once omitted providers to use catalog defaults.
+// Keep those choices explicit when reading an older stored or exported document.
+func (c *Config) migrateBuiltinProviders() {
+	for id, rule := range c.Routing.Builtin {
+		if !rule.Enabled || rule.Providers != nil {
+			continue
+		}
+		switch id {
+		case "youtube":
+			rule.Providers = []string{"tavily"}
+		case "twitter", "linkedin":
+			rule.Providers = []string{"tavily", "parallel"}
+		case "reddit", "instagram", "threads", "facebook", "tiktok":
+			rule.Providers = []string{"parallel"}
+		case "arxiv":
+			rule.Providers = []string{"exa", "firecrawl", "parallel"}
+		}
+		c.Routing.Builtin[id] = rule
+	}
 }
 
 // FromLegacyEnv builds a document from the .env file of the stdio-based

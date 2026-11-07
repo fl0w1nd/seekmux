@@ -216,9 +216,6 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		return Page{}, err
 	}
 	page.Engine = provider
-	if matched {
-		page.Warning = pageNote(rule, page)
-	}
 	if !rt.NoCache {
 		s.pages.Set(target, page, time.Duration(cfg.CacheTTLSeconds)*time.Second)
 	}
@@ -273,16 +270,12 @@ func rawPage(page Page, offset, budget int, warning string) Result {
 		Content:       content[offset:end],
 		Engine:        page.Engine,
 		ContentLength: len(content),
-		Warning:       joinWarnings(page.Warning, warning),
+		Warning:       warning,
 	}
 	if end < len(content) {
 		result.NextOffset = end
 	}
 	return result
-}
-
-func joinWarnings(warnings ...string) string {
-	return strings.Join(slices.DeleteFunc(warnings, func(w string) bool { return w == "" }), " ")
 }
 
 func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, offset int) (Result, error) {
@@ -350,7 +343,7 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 		ContentLength:   len(content),
 		Answer:          answer,
 		AnswerTruncated: chat.Truncated,
-		Warning:         joinWarnings(page.Warning, warning),
+		Warning:         warning,
 	}
 	if excerpt {
 		result.Covered = []int{offset, end}

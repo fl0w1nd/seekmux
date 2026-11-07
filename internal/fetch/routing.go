@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -52,30 +51,6 @@ func (e *RoutedError) Error() string {
 }
 
 func (e *RoutedError) Unwrap() error { return e.Err }
-
-// pageNote returns what a caller must be told about a page of a built-in
-// rule that came back without the content the rule exists for.
-func pageNote(rule config.Rule, page Page) string {
-	if rule.Builtin && rule.ID == "youtube" {
-		return youtubeNote(page)
-	}
-	return ""
-}
-
-// Tavily renders a video as its title, description and chapters followed by
-// the transcript under this heading, which it leaves out when it got none.
-var transcriptHeading = regexp.MustCompile(`(?m)^#{1,6} Transcript\s*$`)
-
-func youtubeNote(page Page) string {
-	info, _ := config.Info(page.Engine)
-	switch {
-	case page.Engine != "tavily":
-		return info.Name + " does not return the transcript of a video: this is the video's page without what is said in it."
-	case !transcriptHeading.MatchString(page.Content):
-		return "Tavily read this video but returned no transcript, so the video probably has no captions: this is its title and description only."
-	}
-	return ""
-}
 
 // The ways a provider's attempt at a page can end, for the statistics kept
 // per domain.

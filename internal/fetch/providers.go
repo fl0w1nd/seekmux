@@ -30,8 +30,6 @@ type Page struct {
 	Description string
 	Content     string
 	Engine      string
-	// Warning is what the caller must know about the page besides its text.
-	Warning string
 }
 
 // call is what a provider needs besides the URL: where and how to reach it,

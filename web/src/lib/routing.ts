@@ -4,7 +4,7 @@ import type { Config, Meta, Rule } from "./api";
 export function routingRules(config: Config, meta: Meta): Rule[] {
   const builtin = meta.rules.map((rule) => {
     const change = config.routing.builtin?.[rule.id];
-    return { ...rule, enabled: Boolean(change?.enabled), providers: change?.providers?.length ? change.providers : rule.providers };
+    return { ...rule, enabled: Boolean(change?.enabled), providers: change?.providers ?? [] };
   });
   return [...config.routing.rules, ...builtin];
 }

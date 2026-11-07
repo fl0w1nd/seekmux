@@ -40,8 +40,8 @@ func routedSetup(t *testing.T, tavily http.HandlerFunc) (*config.Config, func() 
 		cfg.Providers[name].APIKey = "key"
 		cfg.Providers[name].BaseURL = server.URL
 	}
-	cfg.Routing.Builtin = map[string]config.BuiltinRule{"youtube": {Enabled: true}}
-	// Tavily is kept for the pages only it reads.
+	cfg.Routing.Builtin = map[string]config.BuiltinRule{"youtube": {Enabled: true, Providers: []string{"tavily"}}}
+	// The rule can use Tavily even with its default fetch route off.
 	for i := range cfg.Fetch.Routes {
 		cfg.Fetch.Routes[i].Enabled = cfg.Fetch.Routes[i].Provider != "tavily"
 	}
@@ -74,7 +74,7 @@ func TestAVideoIsReadThroughTheProviderOfItsRuleAlone(t *testing.T) {
 	rt := Runtime{Config: cfg, Client: http.DefaultClient}
 
 	result := service.Run(context.Background(), rt, Args{URL: video, Raw: true, Engine: EngineAuto})
-	if result.Error != "" || result.Engine != "tavily" || result.Warning != "" || !strings.Contains(result.Content, "[0:04] This is a 3.") {
+	if result.Error != "" || result.Engine != "tavily" || !strings.Contains(result.Content, "[0:04] This is a 3.") {
 		t.Fatalf("result = %+v", result)
 	}
 	if got := calls(); len(got) != 1 || got["tavily"] != 1 {
@@ -84,15 +84,14 @@ func TestAVideoIsReadThroughTheProviderOfItsRuleAlone(t *testing.T) {
 		t.Fatalf("observations = %+v", seen)
 	}
 
-	// A provider asked for by name reads the page all the same, and the
-	// caller learns what it cannot give.
+	// A provider asked for by name overrides the rule.
 	named := service.Run(context.Background(), rt, Args{URL: video, Raw: true, Engine: "firecrawl"})
-	if named.Engine != "firecrawl" || !strings.Contains(named.Warning, "Firecrawl does not return the transcript") {
+	if named.Error != "" || named.Engine != "firecrawl" {
 		t.Fatalf("named = %+v", named)
 	}
 	// Its copy must not answer the next call that leaves the choice open.
 	again := service.Run(context.Background(), rt, Args{URL: video, Raw: true, Engine: EngineAuto})
-	if again.Engine != "tavily" || again.Warning != "" {
+	if again.Error != "" || again.Engine != "tavily" {
 		t.Fatalf("again = %+v", again)
 	}
 
@@ -103,20 +102,13 @@ func TestAVideoIsReadThroughTheProviderOfItsRuleAlone(t *testing.T) {
 	}
 }
 
-func TestAVideoWithoutCaptionsIsToldApartFromAProviderThatFailed(t *testing.T) {
+func TestARoutedPageFailureIsToldApartFromAProviderFailure(t *testing.T) {
 	const url = "https://youtu.be/jfKfPfyJRdk"
 
-	cfg, _ := routedSetup(t, reply(`{"results":[{"raw_content":"# lofi radio\n### Description\nbeats"}]}`))
+	// Tavily reached the site and says what it found.
+	cfg, _ := routedSetup(t, reply(`{"results":[],"failed_results":[{"error":"Failed to fetch url"}]}`))
 	rt := Runtime{Config: cfg, Client: http.DefaultClient}
 	got := NewService(core.NewLimits()).Run(context.Background(), rt, Args{URL: url, Raw: true, Engine: EngineAuto})
-	if got.Error != "" || !strings.Contains(got.Warning, "returned no transcript") || !strings.Contains(got.Content, "lofi radio") {
-		t.Errorf("no captions: %+v", got)
-	}
-
-	// Tavily reached the site and says what it found.
-	cfg, _ = routedSetup(t, reply(`{"results":[],"failed_results":[{"error":"Failed to fetch url"}]}`))
-	rt.Config = cfg
-	got = NewService(core.NewLimits()).Run(context.Background(), rt, Args{URL: url, Raw: true, Engine: EngineAuto})
 	if got.Error != "Tavily could not get the page: Failed to fetch url" {
 		t.Errorf("unreachable video: %+v", got)
 	}

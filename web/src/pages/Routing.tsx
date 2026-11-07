@@ -10,7 +10,7 @@ import { PageHeader } from "../Shell";
 import { BrandIcon } from "../ui/brand";
 import { ChipInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, cx, Empty, Field, Input, Notice, Panel, Segmented, Spinner, Switch, Table, TabList, TabPanel, Tabs, Td, Th, Tooltip } from "../ui/primitives";
+import { Badge, Button, cx, Empty, Field, Input, Panel, Segmented, Spinner, Switch, Table, TabList, TabPanel, Tabs, Td, Th, Tooltip } from "../ui/primitives";
 
 const tabs = [
   { value: "rules", label: "规则" },
@@ -67,7 +67,7 @@ export function RoutingPage() {
   );
 }
 
-/** Sets a built-in rule's change, dropping what merely repeats the rule. */
+/** Stores a built-in rule's settings, dropping an unused entry. */
 function changeBuiltin(draft: Config, id: string, change: { enabled?: boolean; providers?: string[] }) {
   const next = { ...draft.routing.builtin?.[id], ...change };
   const builtin = { ...draft.routing.builtin, [id]: next };
@@ -86,11 +86,16 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
       const list = draft.routing.rules;
       [list[index], list[index + by]] = [list[index + by], list[index]];
     });
-  const enable = (rule: Rule, index: number, enabled: boolean) =>
+  const enable = (rule: Rule, index: number, enabled: boolean) => {
+    if (enabled && rule.providers.length === 0) {
+      onEdit({ ...rule, enabled: true });
+      return;
+    }
     update((draft) => {
       if (rule.builtin) changeBuiltin(draft, rule.id, { enabled });
       else draft.routing.rules[index].enabled = enabled;
     });
+  };
 
   return (
     <Panel
@@ -139,6 +144,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
               <div className="flex flex-col gap-1 text-right max-sm:order-1 max-sm:mr-auto max-sm:ml-10 max-sm:text-left">
                 <span className="tag">提供商</span>
                 <span className="flex flex-wrap items-center justify-end gap-1.5 text-xs text-ink-2 max-sm:justify-start">
+                  {rule.providers.length === 0 && <span className="text-ink-3">未配置</span>}
                   {rule.providers.map((id, i) => (
                     <Fragment key={id}>
                       {i > 0 && <span className="text-ink-3">→</span>}
@@ -171,9 +177,6 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
   const [chosen, setChosen] = useState(rule.providers);
 
   const builtin = meta.rules.find((r) => r.id === rule.id);
-  // The providers that declare the rule as a capability; none for a rule that
-  // is only a choice among providers that all read the site.
-  const capable = builtin ? meta.catalog.filter((info) => info.capabilities?.some((c) => c.id === builtin.id)).map((info) => info.id) : [];
   const stored = config.routing.rules.findIndex((r) => r.id === rule.id);
   const fetchers = meta.catalog.filter((info) => info.tools.includes("fetch")).map((info) => info.id);
   const lanes = [...chosen, ...fetchers.filter((id) => !chosen.includes(id))];
@@ -188,8 +191,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
   const save = () => {
     update((draft) => {
       if (builtin) {
-        const same = chosen.length === builtin.providers.length && chosen.every((id, i) => id === builtin.providers[i]);
-        changeBuiltin(draft, builtin.id, { providers: same ? undefined : chosen });
+        changeBuiltin(draft, builtin.id, { enabled: rule.enabled, providers: chosen });
         return;
       }
       const next: Rule = { id: rule.id, name: name.trim(), enabled: rule.enabled, match, providers: chosen };
@@ -207,11 +209,6 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
       description={builtin ? "匹配范围随版本更新，这里只调整由哪些提供商抓取。" : undefined}
       footer={
         <>
-          {builtin && (
-            <Button className="mr-auto" variant="ghost" onClick={() => setChosen(builtin.providers)}>
-              恢复默认
-            </Button>
-          )}
           {!builtin && stored >= 0 && (
             <Button
               className="mr-auto"
@@ -273,12 +270,6 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
                   <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                     <BrandIcon id={id} className="size-4" />
                     {provider(id).name}
-                    {builtin && capable.includes(id) && (
-                      <Badge tone="info">
-                        <BrandIcon id={builtin.id} className="size-3" />
-                        {builtin.name}
-                      </Badge>
-                    )}
                     {!usable(id) && (
                       <Badge tone="warn" dot>
                         缺少密钥
@@ -296,9 +287,6 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
           </ol>
           <span className="text-xs text-ink-3">只在选中的提供商中按顺序尝试，全部失败即报错，不会退回其它提供商。</span>
         </div>
-        {builtin && capable.length > 0 && chosen.some((id) => !capable.includes(id)) && (
-          <Notice tone="warn">未标注「{builtin.name}」的提供商读不出这类页面的专有内容（例如视频字幕），由它们返回的结果会附带一条提示。</Notice>
-        )}
       </div>
     </Dialog>
   );

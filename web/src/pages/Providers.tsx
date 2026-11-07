@@ -1,5 +1,4 @@
 import { ExternalLink } from "lucide-react";
-import { Link } from "wouter";
 import { healthLabel, Reenable, useStatus } from "../components/Health";
 import { useConfig } from "../lib/config";
 import { toolLabel } from "../lib/format";
@@ -172,27 +171,6 @@ export function ProvidersPage() {
                   )}
                 </div>
               </div>
-
-              {info.capabilities && info.capabilities.length > 0 && (
-                <div className="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 rounded-b-panel bg-sunken/45 px-4 py-2.5 sm:grid-cols-[4.5rem_1fr]">
-                  <div className="text-xs text-ink-3">专有抓取</div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {info.capabilities.map((capability) => (
-                      <Tooltip
-                        key={capability.id}
-                        content={`该提供商能读出 ${capability.name} 页面的专有内容。在服务路由中开启对应规则后，这类页面只交给它抓取`}
-                      >
-                        <Link href="/routing/rules">
-                          <Badge tone="info">
-                            <BrandIcon id={capability.id} className="size-3" />
-                            {capability.name}
-                          </Badge>
-                        </Link>
-                      </Tooltip>
-                    ))}
-                  </div>
-                </div>
-              )}
             </Panel>
           );
         })}
