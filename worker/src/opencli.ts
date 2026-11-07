@@ -114,6 +114,12 @@ function envelope(out: Output): Envelope | undefined {
 function failure(out: Output): FetchError {
   const env = envelope(out);
   const code = env?.error?.code ?? "";
+  // OpenCLI also reports a bare HTTP 403 from the site as AUTH_REQUIRED,
+  // guessing that a login is missing; a site's own blocking answers 403 to
+  // a signed-in profile just as well.
+  if (code === "AUTH_REQUIRED" && /\bHTTP 403\b/.test(env?.error?.message ?? "")) {
+    return new FetchError("blocked", `the site refused the request with HTTP 403, which does not show that the browser profile is signed out: ${env?.error?.message}`, 403);
+  }
   const message = [env?.error?.message, env?.error?.help].filter(Boolean).join(" — ") || lastLine(out.stderr) || `OpenCLI exited with ${out.code}`;
   const map: Record<string, ErrorCode> = {
     AUTH_REQUIRED: "login_required",

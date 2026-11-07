@@ -139,7 +139,10 @@ interface RedditRow {
 }
 
 async function readReddit(url: string, target: string, opts: ReadOptions): Promise<Page> {
-  const args = ["reddit", "read", target, "--limit", "50", "--depth", "4", "--replies", "10", "--expand-more", "true"];
+  // No --expand-more: Reddit's network security answers /api/morechildren on
+  // www.reddit.com with 403 even to a signed-in profile, and OpenCLI then
+  // fails the whole read. Comments Reddit folds stay counted as "more".
+  const args = ["reddit", "read", target, "--limit", "50", "--depth", "4", "--replies", "10"];
   const rows = (await json(args, opts)) as RedditRow[];
   const post = Array.isArray(rows) ? rows.find((r) => r.type === "POST") : undefined;
   if (!post) throw new FetchError("empty", "the post came back empty");
