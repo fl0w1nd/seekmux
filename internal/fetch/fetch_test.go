@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,7 +62,26 @@ func TestAMissingPageIsSettledByTwoProvidersAndRemembered(t *testing.T) {
 
 	// A provider asked for by name gets to try all the same.
 	args.Engine = "tavily"
-	if named := service.Run(context.Background(), rt, args); named.Error != "" || named.Content != "an old copy" {
+	if named := service.Run(context.Background(), rt, args); named.Error != "" || named.Text != "an old copy" {
 		t.Fatalf("named = %+v", named)
+	}
+}
+
+// ChatGPT turns a tool result into {} when its JSON has a key named
+// "content" (openai/tunnel-client#91).
+func TestResultHasNoContentKey(t *testing.T) {
+	data, err := json.Marshal(Result{
+		Title: "t", Description: "d", Text: "x", Engine: "e", Error: "err", TextLength: 1,
+		NextOffset: 1, Answer: "a", AnswerTruncated: true, Covered: []int{0, 1}, Warning: "w",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys map[string]any
+	if err := json.Unmarshal(data, &keys); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := keys["content"]; ok || keys["text"] != "x" {
+		t.Errorf("result = %s", data)
 	}
 }

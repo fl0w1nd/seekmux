@@ -558,9 +558,12 @@ export interface SearchResult {
 export interface FetchResult {
   title?: string;
   description?: string;
-  content?: string;
+  text?: string;
   fetch_engine?: string;
   error?: string;
+  text_length?: number;
+  /** Logged before the keys were renamed: text and text_length. */
+  content?: string;
   content_length?: number;
   next_offset?: number;
   answer?: string;

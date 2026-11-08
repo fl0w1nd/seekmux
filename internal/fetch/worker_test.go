@@ -145,7 +145,7 @@ func TestWorkersTakeAPageInTheirOrder(t *testing.T) {
 		}
 		rt := Runtime{Config: cfg, Client: http.DefaultClient, Workers: w, NoCache: true}
 		got := run(t, NewService(core.NewLimits()), rt, "https://x.com/a/status/1", EngineAuto)
-		if got.Error != "" || !strings.Contains(got.Content, "read by w2") {
+		if got.Error != "" || !strings.Contains(got.Text, "read by w2") {
 			t.Fatalf("%v: got = %+v", fault, got)
 		}
 		asked := w.asked()

@@ -327,7 +327,7 @@ export function FetchPlay() {
                 {!inspected && run.variables?.model && <Badge>{run.variables.model}</Badge>}
                 {!inspected && run.variables?.route && <Badge>临时参数</Badge>}
                 {activeResult && <span>{activeResult.answer !== undefined ? "提取回答" : "原文"}</span>}
-                {activeResult?.content_length !== undefined && <span className="num">全文 {compact(activeResult.content_length)} 字节</span>}
+                {activeResult && textLength(activeResult) !== undefined && <span className="num">全文 {compact(textLength(activeResult)!)} 字节</span>}
               </>
             )
           }
@@ -383,9 +383,14 @@ export function FetchPlay() {
   );
 }
 
+// A request log from before the rename still says content_length.
+function textLength(result: FetchResult) {
+  return result.text_length ?? result.content_length;
+}
+
 function FetchResultView({ result, from, rendered, onNext }: { result: FetchResult; from: number; rendered: boolean; onNext: (offset: number) => void }) {
-  const body = result.answer ?? result.content ?? "";
-  const total = result.content_length ?? 0;
+  const body = result.answer ?? result.text ?? result.content ?? "";
+  const total = textLength(result) ?? 0;
   const [start, end] = result.covered ?? [from, result.next_offset || total];
   const more = result.next_offset !== undefined && result.next_offset > 0;
   return (

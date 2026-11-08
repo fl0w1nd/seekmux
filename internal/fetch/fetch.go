@@ -40,16 +40,19 @@ type Args struct {
 	Engine string `json:"fetch_engine"`
 }
 
-// Result is the tool answer: either the page text (Content) or the extract
+// Result is the tool answer: either the page text (Text) or the extract
 // model's answer to the prompt (Answer).
+//
+// No key is named "content": ChatGPT turns a tool result whose JSON text has
+// one into an empty object (openai/tunnel-client#91).
 type Result struct {
 	Title       string `json:"title,omitempty"`
 	Description string `json:"description,omitempty"`
-	Content     string `json:"content,omitempty"`
+	Text        string `json:"text,omitempty"`
 	Engine      string `json:"fetch_engine,omitempty"`
 	Error       string `json:"error,omitempty"`
-	// ContentLength is the size of the page's original text, in the unit of Offset.
-	ContentLength int `json:"content_length,omitempty"`
+	// TextLength is the size of the page's original text, in the unit of Offset.
+	TextLength int `json:"text_length,omitempty"`
 	// NextOffset continues past what this result covers, or from the first
 	// passage an answer had no room to copy.
 	NextOffset      int    `json:"next_offset,omitempty"`
@@ -243,7 +246,7 @@ func (s *Service) build(ctx context.Context, rt Runtime, page Page, args Args) R
 	content := page.Content
 	offset := alignOffset(content, args.Offset)
 	if offset > 0 && offset >= len(content) {
-		return Result{Error: fmt.Sprintf("offset %d is past the end of the page", args.Offset), ContentLength: len(content)}
+		return Result{Error: fmt.Sprintf("offset %d is past the end of the page", args.Offset), TextLength: len(content)}
 	}
 
 	if args.Raw || isSourceCode(args.URL) || weightedLen(content[offset:]) <= cfg.PassthroughLength {
@@ -259,9 +262,9 @@ func (s *Service) build(ctx context.Context, rt Runtime, page Page, args Args) R
 	}
 	if err != nil {
 		return Result{
-			Error:         fmt.Sprintf("Helper model failed (%s). Retry, narrow the prompt, or set raw to read the original text.", err),
-			Title:         page.Title,
-			ContentLength: len(content),
+			Error:      fmt.Sprintf("Helper model failed (%s). Retry, narrow the prompt, or set raw to read the original text.", err),
+			Title:      page.Title,
+			TextLength: len(content),
 		}
 	}
 	return result
@@ -271,12 +274,12 @@ func rawPage(page Page, offset, budget int, warning string) Result {
 	content := page.Content
 	end := weightedSliceEnd(content, offset, budget)
 	result := Result{
-		Title:         page.Title,
-		Description:   page.Description,
-		Content:       content[offset:end],
-		Engine:        page.Engine,
-		ContentLength: len(content),
-		Warning:       warning,
+		Title:       page.Title,
+		Description: page.Description,
+		Text:        content[offset:end],
+		Engine:      page.Engine,
+		TextLength:  len(content),
+		Warning:     warning,
 	}
 	if end < len(content) {
 		result.NextOffset = end
@@ -346,7 +349,7 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 	result := Result{
 		Title:           page.Title,
 		Engine:          page.Engine,
-		ContentLength:   len(content),
+		TextLength:      len(content),
 		Answer:          answer,
 		AnswerTruncated: chat.Truncated,
 		Warning:         warning,

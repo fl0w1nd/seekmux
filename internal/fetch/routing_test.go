@@ -74,7 +74,7 @@ func TestAVideoIsReadThroughTheProviderOfItsRuleAlone(t *testing.T) {
 	rt := Runtime{Config: cfg, Client: http.DefaultClient}
 
 	result := service.Run(context.Background(), rt, Args{URL: video, Raw: true, Engine: EngineAuto})
-	if result.Error != "" || result.Engine != "tavily" || !strings.Contains(result.Content, "[0:04] This is a 3.") {
+	if result.Error != "" || result.Engine != "tavily" || !strings.Contains(result.Text, "[0:04] This is a 3.") {
 		t.Fatalf("result = %+v", result)
 	}
 	if got := calls(); len(got) != 1 || got["tavily"] != 1 {
