@@ -10,7 +10,6 @@ import { LogsPage } from "./pages/Logs";
 import { ModelsPage } from "./pages/Models";
 import { OverviewPage } from "./pages/Overview";
 import { Playground, playPage } from "./pages/play";
-import { FetchersPage } from "./pages/Fetchers";
 import { ProvidersPage } from "./pages/Providers";
 import { ReportPage } from "./pages/Report";
 import { RoutingPage } from "./pages/Routing";
@@ -76,8 +75,11 @@ function Pages() {
           <Redirect to="/play/search" replace />
         </Route>
         {play && <Route path="/play/:page">{null}</Route>}
-        <Route path="/providers" component={ProvidersPage} />
-        <Route path="/fetchers" component={FetchersPage} />
+        <Route path="/providers/:id?" component={ProvidersPage} />
+        {/* Self-hosted fetchers had a page of their own before they joined the providers. */}
+        <Route path="/fetchers">
+          <Redirect to="/providers" replace />
+        </Route>
         <Route path="/models" component={ModelsPage} />
         <Route path="/tools">
           <Redirect to="/tools/search" replace />

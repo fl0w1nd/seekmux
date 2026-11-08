@@ -46,7 +46,7 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
         const fetcher = config.fetchers.find((f) => f.id === route.provider);
         // A fetcher's limits are its own, set on its page.
         const limits = fetcher ?? config.providers[route.provider];
-        const home = fetcher ? "/fetchers" : "/providers";
+        const home = `/providers/${route.provider}`;
         const live = route.enabled && !missingKey;
         const health = status?.routes.find((r) => r.key === `${route.provider}:${tool}`);
         const changed = customized(route);

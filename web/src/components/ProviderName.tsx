@@ -37,5 +37,5 @@ export function ProviderIcon({ id, className }: { id: string; className?: string
 
 /** What a provider that cannot be called lacks, and where to set it up. */
 export function missing(info: ProviderInfo): { label: string; href: string } {
-  return info.fetcher ? { label: "未启用 Worker", href: "/fetchers" } : { label: "缺少密钥", href: "/providers" };
+  return { label: info.fetcher ? "未启用 Worker" : "缺少密钥", href: `/providers/${info.id}` };
 }

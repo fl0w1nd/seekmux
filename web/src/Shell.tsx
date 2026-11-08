@@ -10,7 +10,6 @@ import {
   Menu,
   Microscope,
   Monitor,
-  Server,
   Moon,
   Route,
   ScanText,
@@ -63,7 +62,6 @@ const nav = [
     group: "网关",
     items: [
       { href: "/providers", label: "提供商", icon: Boxes },
-      { href: "/fetchers", label: "自托管抓取器", icon: Server },
       { href: "/models", label: "模型接口", icon: Bot },
       { href: "/tools", label: "工具", icon: Wrench },
       { href: "/routing", label: "服务路由", icon: Route },

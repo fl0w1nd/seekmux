@@ -1,16 +1,15 @@
-import { ArrowDown, ArrowUp, ExternalLink, Plus, Puzzle, RefreshCw, Server, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { ArrowDown, ArrowUp, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
+import { CardRow } from "../components/CardRow";
 import { Tripped, useStatus } from "../components/Health";
-import type { Config, Fetcher, FetcherWorker, Meta, WorkerProfile, WorkerStatus } from "../lib/api";
+import { type api, type Config, type Fetcher, type FetcherWorker, type Meta, type RouteStatus, type WorkerProfile, type WorkerStatus } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { routingRules } from "../lib/routing";
-import { PageHeader } from "../Shell";
 import { BrandIcon } from "../ui/brand";
 import { RateLimitInput } from "../ui/inputs";
-import { Dialog, Popover, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, Choice, ChoiceList, CodeBlock, Empty, Field, Input, Notice, NumberInput, Panel, Select, Switch, type Tone } from "../ui/primitives";
-import { CardRow } from "./Providers";
+import { Dialog, useConfirm, useToast } from "../ui/overlays";
+import { Badge, Button, Choice, ChoiceList, CodeBlock, Field, Input, Notice, NumberInput, Select, Switch, TabList, TabPanel, Tabs, type Tone } from "../ui/primitives";
 
 /** A token a worker can present: 32 random bytes, URL-safe. */
 function newToken(): string {
@@ -72,56 +71,33 @@ function workerState(worker: FetcherWorker, status?: WorkerStatus): { tone: Tone
   return { tone: "ok", label: "在线", usable: true };
 }
 
-/** Self-hosted fetchers: workers on the user's own devices, each fetcher one provider to the routes. */
-export function FetchersPage() {
-  const { config, update, meta } = useConfig();
-  const [creating, setCreating] = useState(false);
-  // A token generated here is shown in its worker's command until the page
-  // is left; the saved one comes back only as a hint.
-  const [fresh, setFresh] = useState<Record<string, string>>({});
-  const remember = (worker: FetcherWorker) => setFresh((f) => ({ ...f, [worker.id]: worker.token }));
+type Status = Awaited<ReturnType<typeof api.status>>;
 
-  return (
-    <>
-      <PageHeader
-        title="自托管抓取器"
-        description="在自己的设备上运行 Worker，用已登录的浏览器读取其他提供商读不到的页面。每个抓取器对路由来说是一个提供商；抓取按顺序交给第一个能接手的 Worker，Worker 离线、任务已满或自身出错时才交给下一个。"
-        actions={
-          <Button variant="primary" icon={<Plus />} onClick={() => setCreating(true)}>
-            新建抓取器
-          </Button>
-        }
-      />
-      {config.fetchers.length === 0 ? (
-        <Panel>
-          <Empty icon={<Server />} title="尚无自托管抓取器">
-            新建一个抓取器，再在装有 Chrome 的设备上运行它的 Worker。
-          </Empty>
-        </Panel>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {config.fetchers.map((fetcher, index) => (
-            <FetcherPanel key={fetcher.id} fetcher={fetcher} index={index} fresh={fresh} remember={remember} />
-          ))}
-        </div>
-      )}
-      <CreateDialog
-        open={creating}
-        onClose={() => setCreating(false)}
-        onCreate={(type, name) => {
-          const worker = newWorker(1);
-          remember(worker);
-          update((d) => {
-            d.fetchers.push({ id: newFetcherID(d, meta, type.id), type: type.id, name, rate_limit: type.default_rate_limit, concurrency: 0, workers: [worker] });
-          });
-          setCreating(false);
-        }}
-      />
-    </>
-  );
+/** How a fetcher stands as a whole: tripped, or how many of its enabled workers take fetches now. */
+export function fetcherState(fetcher: Fetcher, status?: Status): { tone: Tone; label: string; health?: RouteStatus } {
+  const health = status?.routes.find((r) => r.key === `${fetcher.id}:fetch`);
+  if (health?.disabled) return { tone: "warn", label: "已熔断", health };
+  const enabled = fetcher.workers.filter((w) => w.enabled).length;
+  if (enabled === 0) return { tone: "neutral", label: "未启用 Worker" };
+  const usable = fetcher.workers.filter((w) => workerState(w, status?.workers[w.id]).usable).length;
+  if (usable > 0) return { tone: "ok", label: `${usable}/${enabled} 可用` };
+  return { tone: "warn", label: "无可用 Worker" };
 }
 
-function CreateDialog({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (type: Meta["fetcher_types"][number], name: string) => void }) {
+/** Adds a fetcher of the chosen type with one worker, and returns its id. */
+export function addFetcher(config: Config, meta: Meta, update: (change: (draft: Config) => void) => void, type: Meta["fetcher_types"][number], name: string): {
+  id: string;
+  worker: FetcherWorker;
+} {
+  const id = newFetcherID(config, meta, type.id);
+  const worker = newWorker(1);
+  update((d) => {
+    d.fetchers.push({ id, type: type.id, name, rate_limit: type.default_rate_limit, concurrency: 0, workers: [worker] });
+  });
+  return { id, worker };
+}
+
+export function CreateFetcherDialog({ open, onClose, onCreate }: { open: boolean; onClose: () => void; onCreate: (type: Meta["fetcher_types"][number], name: string) => void }) {
   const { meta } = useConfig();
   const [type, setType] = useState(meta.fetcher_types[0]?.id ?? "");
   const [name, setName] = useState("");
@@ -131,7 +107,7 @@ function CreateDialog({ open, onClose, onCreate }: { open: boolean; onClose: () 
       open={open}
       onOpenChange={(next) => !next && onClose()}
       title="新建抓取器"
-      description="创建后会附带一个 Worker 及其令牌；之后可以继续添加 Worker 并调整顺序。"
+      description="在自己的设备上运行 Worker，用已登录的浏览器读取其他提供商读不到的页面。创建后附带一个 Worker 及其令牌，之后可以继续添加 Worker 并调整顺序。"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -176,30 +152,34 @@ function CreateDialog({ open, onClose, onCreate }: { open: boolean; onClose: () 
   );
 }
 
-function FetcherPanel({
+type FetcherTab = "settings" | "workers" | "adapters";
+
+/** A self-hosted fetcher on the providers page: its settings, workers and adapters, one tab each. */
+export function FetcherDetail({
   fetcher,
-  index,
   fresh,
   remember,
+  onRemoved,
 }: {
   fetcher: Fetcher;
-  index: number;
   fresh: Record<string, string>;
   remember: (worker: FetcherWorker) => void;
+  onRemoved: () => void;
 }) {
   const { config, update, meta } = useConfig();
   const status = useStatus();
   const confirm = useConfirm();
   const toast = useToast();
   const type = meta.fetcher_types.find((t) => t.id === fetcher.type);
+  const adapters = type?.adapters ?? [];
+  // A fetcher just created opens on its workers, whose command is what comes next.
+  const [tab, setTab] = useState<FetcherTab>(() => (fetcher.workers.some((w) => fresh[w.id]) ? "workers" : "settings"));
   const set = (change: (f: Fetcher) => void) =>
     update((d) => {
       const f = d.fetchers.find((x) => x.id === fetcher.id);
       if (f) change(f);
     });
-  const health = status?.routes.find((r) => r.key === `${fetcher.id}:fetch`);
-  const usable = fetcher.workers.filter((w) => workerState(w, status?.workers[w.id]).usable).length;
-  const enabled = fetcher.workers.filter((w) => w.enabled).length;
+  const state = fetcherState(fetcher, status);
   const route = config.fetch.routes.find((r) => r.provider === fetcher.id);
   const rules = routingRules(config, meta).filter((r) => r.enabled && r.providers.includes(fetcher.id));
   const used = Boolean(route?.enabled) || rules.length > 0;
@@ -226,124 +206,153 @@ function FetcherPanel({
         else d.routing.builtin![id] = { ...rule, providers };
       }
     });
+    onRemoved();
   };
 
+  const tabs: { value: FetcherTab; label: ReactNode }[] = [
+    { value: "settings", label: "设置" },
+    {
+      value: "workers",
+      label: (
+        <>
+          Worker <span className="num text-2xs text-ink-3">{fetcher.workers.length}</span>
+        </>
+      ),
+    },
+  ];
+  if (adapters.length > 0)
+    tabs.push({
+      value: "adapters",
+      label: (
+        <>
+          适配器 <span className="num text-2xs text-ink-3">{adapters.length}</span>
+        </>
+      ),
+    });
+
   return (
-    <Panel
-      flush
-      index={String(index + 1).padStart(2, "0")}
-      title={
-        <span className="flex items-center gap-2 self-center">
+    <section className="rounded-panel border border-line bg-surface">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3">
+        <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
           <BrandIcon id={fetcher.type} className="size-4" />
-          <span>{fetcher.name}</span>
-          {health?.disabled ? (
-            <Tripped id={health.key} health={health} />
-          ) : enabled === 0 ? (
-            <Badge>未启用 Worker</Badge>
-          ) : usable > 0 ? (
-            <Badge tone="ok" dot>
-              {usable}/{enabled} 可用
-            </Badge>
+          <span className="truncate">{fetcher.name}</span>
+          {state.health ? (
+            <Tripped id={state.health.key} health={state.health} />
           ) : (
-            <Badge tone="warn" dot>
-              无可用 Worker
+            <Badge tone={state.tone} dot={state.tone !== "neutral"}>
+              {state.label}
             </Badge>
           )}
         </span>
-      }
-      actions={
-        <>
+        <span className="flex items-center gap-2">
           <Badge>{type?.name ?? fetcher.type}</Badge>
           <span className="num text-2xs text-ink-3">{fetcher.id}</span>
-          {type?.adapters && type.adapters.length > 0 && <Adapters ids={type.adapters} />}
           {type?.website && (
             <a href={type.website} target="_blank" rel="noreferrer" className="ml-1 inline-flex items-center gap-1 text-xs text-ink-3 transition-colors hover:text-ink">
               项目 <ExternalLink className="size-3" />
             </a>
           )}
           <Button size="sm" variant="ghost" icon={<Trash2 />} aria-label={`删除 ${fetcher.name}`} onClick={remove} />
-        </>
-      }
-    >
-      {!used && (
-        <div className="border-b border-line p-3.5">
-          <Notice tone="info">
-            尚未投入使用：在{" "}
-            <Link href="/tools/fetch" className="text-ink underline underline-offset-2">
-              网页抓取的路由
-            </Link>{" "}
-            中启用它作为兜底，或在{" "}
-            <Link href="/routing/rules" className="text-ink underline underline-offset-2">
-              服务路由
-            </Link>{" "}
-            的规则中选用它。
-          </Notice>
-        </div>
-      )}
+        </span>
+      </header>
 
-      <CardRow label="名称">
-        <Input value={fetcher.name} maxLength={64} aria-label="抓取器名称" onChange={(e) => set((f) => (f.name = e.target.value))} />
-      </CardRow>
+      <Tabs value={tab} onChange={setTab}>
+        <TabList
+          tabs={tabs}
+          actions={
+            tab === "workers" && (
+              <Button
+                size="sm"
+                icon={<Plus />}
+                onClick={() => {
+                  const worker = newWorker(fetcher.workers.length + 1);
+                  remember(worker);
+                  set((f) => f.workers.push(worker));
+                }}
+              >
+                添加 Worker
+              </Button>
+            )
+          }
+        />
 
-      <CardRow label="配额限流" aside="所有 Worker 共用">
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <RateLimitInput value={fetcher.rate_limit} fallback={type?.default_rate_limit} onChange={(rate_limit) => set((f) => (f.rate_limit = rate_limit))} />
-          <div className="flex items-center gap-1.5 text-xs text-ink-3">
-            <span>并发</span>
-            <NumberInput
-              className="w-20"
-              min={0}
-              suffix={fetcher.concurrency === 0 ? "不限" : undefined}
-              value={fetcher.concurrency}
-              onChange={(concurrency) => set((f) => (f.concurrency = Math.max(0, Math.round(concurrency))))}
-              aria-label={`${fetcher.name} 并发上限`}
-            />
-          </div>
-        </div>
-      </CardRow>
+        <TabPanel value="settings">
+          {!used && (
+            <div className="border-b border-line p-3.5">
+              <Notice tone="info">
+                尚未投入使用：在{" "}
+                <Link href="/tools/fetch" className="text-ink underline underline-offset-2">
+                  网页抓取的路由
+                </Link>{" "}
+                中启用它作为兜底，或在{" "}
+                <Link href="/routing/rules" className="text-ink underline underline-offset-2">
+                  服务路由
+                </Link>{" "}
+                的规则中选用它。
+              </Notice>
+            </div>
+          )}
+          <CardRow label="名称">
+            <Input value={fetcher.name} maxLength={64} aria-label="抓取器名称" onChange={(e) => set((f) => (f.name = e.target.value))} />
+          </CardRow>
+          <CardRow label="配额限流" aside="所有 Worker 共用">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+              <RateLimitInput value={fetcher.rate_limit} fallback={type?.default_rate_limit} onChange={(rate_limit) => set((f) => (f.rate_limit = rate_limit))} />
+              <div className="flex items-center gap-1.5 text-xs text-ink-3">
+                <span>并发</span>
+                <NumberInput
+                  className="w-20"
+                  min={0}
+                  suffix={fetcher.concurrency === 0 ? "不限" : undefined}
+                  value={fetcher.concurrency}
+                  onChange={(concurrency) => set((f) => (f.concurrency = Math.max(0, Math.round(concurrency))))}
+                  aria-label={`${fetcher.name} 并发上限`}
+                />
+              </div>
+            </div>
+          </CardRow>
+        </TabPanel>
 
-      <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
-        <div>
-          <div className="text-xs font-medium text-ink-2">Worker</div>
-          <div className="text-2xs text-ink-3">按顺序接手抓取；前一个离线、任务已满或出错时才交给下一个。并发由各 Worker 的 --slots 决定。</div>
-        </div>
-        <Button
-          size="sm"
-          icon={<Plus />}
-          onClick={() => {
-            const worker = newWorker(fetcher.workers.length + 1);
-            remember(worker);
-            set((f) => f.workers.push(worker));
-          }}
-        >
-          添加 Worker
-        </Button>
-      </div>
-      <ol>
-        {fetcher.workers.map((worker, i) => (
-          <WorkerItem
-            key={worker.id}
-            worker={worker}
-            index={i}
-            count={fetcher.workers.length}
-            status={status?.workers[worker.id]}
-            token={worker.token || current(worker, fresh[worker.id])}
-            set={(change) => set((f) => change(f.workers[i]))}
-            move={(by) =>
-              set((f) => {
-                [f.workers[i], f.workers[i + by]] = [f.workers[i + by], f.workers[i]];
-              })
-            }
-            regenerate={() => {
-              const token = newToken();
-              remember({ ...worker, token });
-              set((f) => (f.workers[i].token = token));
-            }}
-            remove={() => set((f) => f.workers.splice(i, 1))}
-          />
-        ))}
-      </ol>
-    </Panel>
+        <TabPanel value="workers">
+          <p className="border-b border-line px-4 py-2.5 text-2xs text-ink-3">
+            按顺序接手抓取；前一个离线、任务已满或出错时才交给下一个。并发由各 Worker 的 --slots 决定。
+          </p>
+          <ol>
+            {fetcher.workers.map((worker, i) => (
+              <WorkerItem
+                key={worker.id}
+                worker={worker}
+                index={i}
+                count={fetcher.workers.length}
+                status={status?.workers[worker.id]}
+                token={worker.token || current(worker, fresh[worker.id])}
+                set={(change) => set((f) => change(f.workers[i]))}
+                move={(by) =>
+                  set((f) => {
+                    [f.workers[i], f.workers[i + by]] = [f.workers[i + by], f.workers[i]];
+                  })
+                }
+                regenerate={() => {
+                  const token = newToken();
+                  remember({ ...worker, token });
+                  set((f) => (f.workers[i].token = token));
+                }}
+                remove={() => set((f) => f.workers.splice(i, 1))}
+              />
+            ))}
+          </ol>
+        </TabPanel>
+
+        {adapters.length > 0 && (
+          <TabPanel value="adapters">
+            <p className="border-b border-line px-4 py-2.5 text-2xs text-ink-3">
+              服务路由把这些站点的帖子交给它时，用站点适配器读取正文与完整的评论回复；其他页面，以及抓取路由中的兜底，按页面渲染结果读取。
+            </p>
+            <Adapters fetcher={fetcher.id} ids={adapters} />
+          </TabPanel>
+        )}
+      </Tabs>
+    </section>
   );
 }
 
@@ -479,36 +488,28 @@ function WorkerItem({
 }
 
 /** The sites a fetcher reads through adapters of its own, when a routing rule sends them to it. */
-function Adapters({ ids }: { ids: string[] }) {
-  const { meta } = useConfig();
+function Adapters({ fetcher, ids }: { fetcher: string; ids: string[] }) {
+  const { config, meta } = useConfig();
+  const rules = routingRules(config, meta);
   return (
-    <Popover
-      align="end"
-      className="w-72"
-      trigger={
-        <Button size="sm" variant="ghost" icon={<Puzzle />}>
-          能力
-        </Button>
-      }
-    >
-      <div className="p-3.5">
-        <div className="text-xs font-medium text-ink">专属适配器</div>
-        <p className="mt-1 text-xs text-ink-3">
-          服务路由把这些站点的帖子交给它时，用站点适配器读取正文与完整的评论回复；其他页面，以及抓取路由中的兜底，按页面渲染结果读取。
-        </p>
-        <div className="mt-3 flex flex-col gap-1.5">
-          {ids.map((id) => {
-            const rule = meta.rules.find((r) => r.id === id);
-            return (
-              <Link key={id} href="/routing/rules" className="flex items-center gap-2 rounded-ctl px-2 py-1.5 text-sm text-ink-2 transition-colors hover:bg-sunken hover:text-ink">
-                <BrandIcon id={id} className="size-3.5" />
-                <span>{rule?.name ?? id}</span>
-                <span className="num ml-auto truncate text-2xs text-ink-3">{rule?.match.join(" ")}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-    </Popover>
+    <ul>
+      {ids.map((id) => {
+        const rule = meta.rules.find((r) => r.id === id);
+        const chosen = rules.find((r) => r.id === id);
+        const on = Boolean(chosen?.enabled && chosen.providers.includes(fetcher));
+        return (
+          <li key={id} className="border-b border-line last:border-b-0">
+            <Link href="/routing/rules" className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink-2 transition-colors hover:bg-raised/60 hover:text-ink">
+              <BrandIcon id={id} className="size-4" />
+              <span>{rule?.name ?? id}</span>
+              <span className="num min-w-0 flex-1 truncate text-2xs text-ink-3">{rule?.match.join(" ")}</span>
+              <Badge tone={on ? "ok" : "neutral"} dot={on}>
+                {on ? "已选用" : "未选用"}
+              </Badge>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
