@@ -521,6 +521,16 @@
   }
 }
 
+/* The ground a flow is drawn on (components/flow): the page color under a
+   faint dot grid, so that the cards, on `surface`, stand off it. */
+@layer components {
+  .flow-canvas {
+    background-color: var(--bg);
+    background-image: radial-gradient(circle, color-mix(in oklch, var(--line-strong) 55%, transparent) 0.75px, transparent 1px);
+    background-size: 16px 16px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

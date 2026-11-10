@@ -161,6 +161,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { meta, saving, saved, error, retry, discard } = useConfig();
   const [menu, setMenu] = useState(false);
+  // A workbench and the page of one call are laid out across the window; the other pages are read as a column.
+  const wide = /^\/(play\/|logs\/.)/.test(location);
   const current = nav.flatMap((section) => section.items).find(({ href }) => (href === "/" ? location === "/" : location.startsWith(href)));
 
   // The menu of a phone closes once a page is chosen.
@@ -198,7 +200,8 @@ export function Shell({ children }: { children: ReactNode }) {
       <main className="min-w-0 flex-1">
         <div
           className={cx(
-            "mx-auto w-full max-w-6xl px-6 py-6 max-md:px-4",
+            "mx-auto w-full px-6 py-6 max-md:px-4",
+            wide ? "max-w-[104rem]" : "max-w-6xl",
             "max-md:pr-[max(1rem,env(safe-area-inset-right))] max-md:pb-[max(1.5rem,env(safe-area-inset-bottom))] max-md:pl-[max(1rem,env(safe-area-inset-left))]",
             error && "pb-24",
           )}

@@ -9,11 +9,12 @@ import { cx } from "../ui/primitives";
  */
 export function ProviderName({ id, kind, className, icon = "size-3.5" }: { id: string; kind?: string; className?: string; icon?: string }) {
   const { provider } = useConfig();
-  if (kind === "llm") return <span className={cx("num min-w-0 truncate", className)}>{id}</span>;
+  if (kind === "llm") return <span title={id} className={cx("num min-w-0 truncate", className)}>{id}</span>;
+  const name = provider(id).name;
   return (
-    <span className={cx("inline-flex min-w-0 items-center gap-1.5", className)}>
+    <span title={name} className={cx("inline-flex min-w-0 items-center gap-1.5", className)}>
       <ProviderIcon id={id} className={cx("shrink-0", icon)} />
-      <span className="truncate">{provider(id).name}</span>
+      <span className="truncate">{name}</span>
     </span>
   );
 }
@@ -21,7 +22,7 @@ export function ProviderName({ id, kind, className, icon = "size-3.5" }: { id: s
 /** The providers that answered a call, such as `brave,exa` for a search whose queries went to two. */
 export function ProviderNames({ ids, kind }: { ids: string; kind?: string }) {
   return (
-    <span className="inline-flex items-center gap-2">
+    <span className="inline-flex flex-wrap items-center gap-x-2.5 gap-y-1">
       {ids.split(",").map((id) => (
         <ProviderName key={id} id={id} kind={kind} />
       ))}

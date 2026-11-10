@@ -1,6 +1,10 @@
-import { Play, Plus, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { Waterfall } from "../components/Waterfall";
+import { Play, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { fetchText, fetchTrace, replay, researchTrace, searchTrace } from "../components/flow/fixtures";
+import { FlowView } from "../components/flow/FlowView";
+import { Timeline } from "../components/flow/Timeline";
+import type { TraceNode } from "../lib/api";
+import { TraceStore, useTraceStore } from "../lib/trace";
 import { PageHeader } from "../Shell";
 import { ChipInput, RateLimitInput } from "../ui/inputs";
 import { Markdown } from "../ui/markdown";
@@ -89,8 +93,70 @@ function Specimen({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line px-4 py-3 last:border-b-0">
       <span className="tag w-24 shrink-0">{label}</span>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{children}</div>
+      <div className="flex min-w-0 flex-1 basis-56 flex-wrap items-center gap-2">{children}</div>
     </div>
+  );
+}
+
+const flows = {
+  fetch: { label: "抓取", nodes: fetchTrace, text: fetchText, speed: 2 },
+  search: { label: "搜索", nodes: searchTrace, text: {}, speed: 0.5 },
+  research: { label: "研究", nodes: researchTrace, text: {}, speed: 6 },
+};
+
+/** A flow from sample data: as a stored call, or played again as a call in flight. */
+function FlowSpecimen() {
+  const [which, setWhich] = useState<keyof typeof flows>("fetch");
+  const [run, setRun] = useState(0);
+  const sample = flows[which];
+  const store = useMemo(() => new TraceStore(), []);
+  const live = useTraceStore(store);
+  const [origin, setOrigin] = useState(0);
+  // The sample on the clock of the replay: a long call is shortened, a short one drawn out.
+  const scaled = useMemo<TraceNode[]>(
+    () => sample.nodes.map((n) => ({ ...n, start_ms: Math.round(n.start_ms / sample.speed), duration_ms: n.duration_ms ? Math.max(1, Math.round(n.duration_ms / sample.speed)) : n.duration_ms })),
+    [sample],
+  );
+  useEffect(() => {
+    if (!run) return;
+    store.reset();
+    setOrigin(Date.now());
+    const stop = replay(scaled, (node) => store.put(node));
+    const end = setTimeout(() => setRun(0), scaled[0].duration_ms! + 400);
+    return () => {
+      stop();
+      clearTimeout(end);
+    };
+  }, [run, scaled, store]);
+  return (
+    <Panel
+      index="08"
+      title="流程"
+      description="一次调用怎么被判断和执行：顺序往下走，同时发生的并排；判断是一枚写着结论的药丸，耗时的调用是一张带状态、耗时和时间位置的卡片。虚线是没走通的分支。"
+      flush
+      actions={
+        <>
+          <Segmented
+            size="sm"
+            value={which}
+            onChange={(v) => {
+              setRun(0);
+              setWhich(v);
+            }}
+            options={Object.entries(flows).map(([value, f]) => ({ value: value as keyof typeof flows, label: f.label }))}
+          />
+          <Button size="sm" icon={<RotateCcw />} onClick={() => setRun((n) => n + 1)}>
+            按进行中重放
+          </Button>
+        </>
+      }
+    >
+      {run ? (
+        <FlowView key={`live${run}`} nodes={live.nodes} live origin={origin} className="min-h-96 overflow-hidden rounded-b-panel" />
+      ) : (
+        <FlowView key={which} nodes={sample.nodes} text={sample.text} className="overflow-hidden rounded-b-panel" />
+      )}
+    </Panel>
   );
 }
 
@@ -207,7 +273,7 @@ export function DesignPage() {
             <RateLimitInput value={limit} onChange={setLimit} />
           </Specimen>
           <Specimen label="Chips">
-            <div className="w-80">
+            <div className="w-80 max-w-full min-w-0">
               <ChipInput value={domains} onChange={setDomains} max={5} placeholder="example.com" aria-label="示例域名" />
             </div>
           </Specimen>
@@ -265,7 +331,7 @@ export function DesignPage() {
           </Specimen>
         </Panel>
 
-        <Panel index="06" title="数据" description="设置用行，数据用表；一次调用背后的上游请求用瀑布图。">
+        <Panel index="06" title="数据" description="设置用行，数据用表；一次调用里每一段的耗时排在同一条时间轴上。">
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-ctl border border-line">
               <Row label="设置项" hint="左边说明是什么，右边是它的控件">
@@ -275,15 +341,9 @@ export function DesignPage() {
                 <NumberInput className="w-24" suffix="秒" value={count} onChange={setCount} />
               </Row>
             </div>
-            <Waterfall
-              total={4200}
-              attempts={[
-                { kind: "fetch", provider: "jina", status: "error", start_ms: 0, duration_ms: 1400, http_status: 429, error: "rate limited" },
-                { kind: "fetch", provider: "firecrawl", status: "ok", start_ms: 1400, duration_ms: 1900, http_status: 200 },
-                { kind: "fetch", provider: "tavily", status: "canceled", start_ms: 2400, duration_ms: 900 },
-                { kind: "llm", provider: "extract/haiku", status: "ok", start_ms: 3300, duration_ms: 900 },
-              ]}
-            />
+            <div className="overflow-hidden rounded-ctl border border-line">
+              <Timeline nodes={fetchTrace} />
+            </div>
           </div>
           <CodeBlock copy className="mt-4">
             {'{\n  "queries": ["mcp streamable http"],\n  "search_engine": "auto"\n}'}
@@ -309,7 +369,7 @@ export function DesignPage() {
                       value: "trace",
                       label: (
                         <>
-                          调用链<span className="num text-xs text-ink-3">2</span>
+                          流程
                           <Dot tone="warn" />
                         </>
                       ),
@@ -333,6 +393,8 @@ export function DesignPage() {
             <Markdown>{sampleMarkdown}</Markdown>
           </div>
         </Panel>
+
+        <FlowSpecimen />
       </div>
     </>
   );

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Activity } from "lucide-react";
+import { Activity, ArrowRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { api, type Overview, type RouteStatus, type Tool } from "../lib/api";
@@ -41,6 +41,7 @@ export function OverviewPage() {
         <div className="grid place-items-center py-24">{overview.error ? <span className="text-sm text-err">{overview.error.message}</span> : <Spinner />}</div>
       ) : (
         <div className="flex flex-col gap-4">
+          <InFlight />
           <Kpis data={data} />
           <Panel index={next()} title="请求量" description={`时间粒度：${stepLabel(windows[window].step)}；点击柱条查看该时段的日志`}>
             <Histogram key={window} data={data} window={window} />
@@ -58,6 +59,39 @@ export function OverviewPage() {
         </div>
       )}
     </>
+  );
+}
+
+/** The calls being served at this moment; each opens on its live flow. Nothing is shown when there are none. */
+function InFlight() {
+  const live = useQuery({ queryKey: ["live"], queryFn: api.live, refetchInterval: 2000, retry: false });
+  const calls = live.data?.calls ?? [];
+  if (calls.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-panel border border-signal-text/40 bg-surface py-2 pr-2 pl-4">
+      <span className="flex shrink-0 items-center gap-2 text-sm font-medium">
+        <Dot tone="signal" live />
+        进行中
+        <span className="num text-signal-text">{calls.length}</span>
+      </span>
+      <div className="flex min-w-0 flex-1 basis-60 flex-wrap items-center gap-1.5">
+        {calls.slice(0, 4).map((call) => (
+          <Link
+            key={call.call_id}
+            href={`/logs/${call.call_id}`}
+            className="flex h-7 max-w-64 min-w-0 items-center gap-1.5 rounded-ctl border border-line px-2 text-xs transition-colors hover:border-line-strong hover:bg-raised"
+          >
+            <span className="tag shrink-0 normal-case">{toolLabel[call.tool] ?? call.tool}</span>
+            <span className="num min-w-0 truncate text-ink-2">{call.summary || call.call_id}</span>
+          </Link>
+        ))}
+        {calls.length > 4 && <span className="num shrink-0 text-xs text-ink-3">+{calls.length - 4}</span>}
+      </div>
+      <Link href="/logs" className="ml-auto flex h-7 shrink-0 items-center gap-1 rounded-ctl px-2 text-xs text-ink-3 transition-colors hover:bg-raised hover:text-ink">
+        请求日志
+        <ArrowRight className="size-3.5" />
+      </Link>
+    </div>
   );
 }
 

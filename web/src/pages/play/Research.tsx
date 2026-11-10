@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Braces, ExternalLink, FileText, Flag, History, MessageSquareText, RotateCcw, Search, SlidersHorizontal, Square, Undo2 } from "lucide-react";
+import { Bot, Braces, ExternalLink, FileText, Flag, History, MessageSquareText, RotateCcw, ScrollText, Search, SlidersHorizontal, Square, Undo2, Workflow } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "wouter";
+import { FlowView, TimelineView } from "../../components/flow/FlowView";
 import { hasOtherModels, ModelOverride } from "../../components/ModelPicker";
 import {
   api,
@@ -18,9 +19,10 @@ import {
 import { useConfig } from "../../lib/config";
 import { ago, compact, duration, percent } from "../../lib/format";
 import { useNow, useTween } from "../../lib/motion";
+import { useLiveCall } from "../../lib/trace";
 import { Markdown } from "../../ui/markdown";
-import { Popover, useConfirm, useToast } from "../../ui/overlays";
-import { Badge, Button, CodeBlock, CopyButton, cx, Dot, Empty, Notice, NumberInput, Panel, Segmented, Spinner, TabList, Tabs, Tooltip, type Tone } from "../../ui/primitives";
+import { Drawer, Popover, useConfirm, useToast } from "../../ui/overlays";
+import { Button, CodeBlock, CopyButton, cx, Dot, Empty, Notice, NumberInput, Segmented, Spinner, TabList, Tabs, Tooltip, type Tone } from "../../ui/primitives";
 import { Chip, CodeButton, Composer, Examples, Group, host, LocalNotice, LocalTag, onModEnter, OptionGroup, ResetButton, RunButton, Stage, TabPanel } from "./kit";
 
 /** Where the task on show is remembered, so a reload returns to it. */
@@ -141,7 +143,30 @@ export function ResearchPlay() {
   };
 
   return (
-    <Stage tool="research" title="深度研究" description="调用 research 工具：研究 Agent 调用网关的搜索与抓取工具多轮查证，最终生成附带引用出处的深度报告。">
+    <Stage
+      tool="research"
+      title="深度研究"
+      description="调用 research 工具：研究 Agent 调用网关的搜索与抓取工具多轮查证，最终生成附带引用出处的深度报告。"
+      history={<Tasks tasks={tasks.data} pending={tasks.isPending} days={config.logs.retention_days} active={taskId} onPick={show} onReuse={reuse} />}
+      output={
+        taskId !== null && !gone ? (
+          data ? (
+            // The clock of the server, so a run is timed the same wherever the console is opened.
+            <Run key={data.id} task={data} skew={data.now - task.dataUpdatedAt} onStop={() => void stop()} onReuse={() => reuse(data)} onClose={() => show(null)} />
+          ) : (
+            <section className="grid min-h-[26rem] place-items-center rounded-panel border border-line bg-surface">
+              {task.error ? <Notice tone="err">{task.error.message}</Notice> : <Spinner />}
+            </section>
+          )
+        ) : (
+          <section className="grid min-h-[26rem] place-items-center rounded-panel border border-line bg-surface">
+            <Empty icon={<Workflow />} title="研究的过程会画在这里">
+              每一步模型决定查什么、并行发出的搜索和抓取各自怎么走、预算用到哪里，运行时逐步出现；报告写完后在「报告」里。也可以从右上角的「历史」里选一次回看。
+            </Empty>
+          </section>
+        )
+      }
+    >
       {!saved.enabled && (
         <Notice tone="warn">
           深度研究尚未启用。请前往{" "}
@@ -202,7 +227,7 @@ export function ResearchPlay() {
         }
         panel={
           <OptionGroup title="本次运行预算与读取方式" local action={changed > 0 && <ResetButton onClick={() => setOverride({})} />}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 @lg:grid-cols-2 @4xl:grid-cols-4">
               {limits.map((limit) => {
                 const base = saved[limit.key];
                 return (
@@ -254,7 +279,7 @@ export function ResearchPlay() {
             />
           )
         }
-        actions={<RunButton label={running ? "研究中" : "开始研究"} loading={start.isPending || running} disabled={!ready || running} onClick={submit} />}
+        actions={<RunButton label="开始研究" loading={start.isPending || running} disabled={!ready || running} onClick={submit} onStop={running ? () => void stop() : undefined} />}
       >
         <div className="flex items-start px-3.5 py-2.5">
           <span className="tag w-12 shrink-0 pt-1 text-ink-3">课题</span>
@@ -272,19 +297,6 @@ export function ResearchPlay() {
       </Composer>
 
       {start.error && <Notice tone="err">{start.error.message}</Notice>}
-
-      {taskId !== null &&
-        !gone &&
-        (data ? (
-          // The clock of the server, so a run is timed the same wherever the console is opened.
-          <Run key={data.id} task={data} skew={data.now - task.dataUpdatedAt} onStop={() => void stop()} onReuse={() => reuse(data)} onClose={() => show(null)} />
-        ) : (
-          <section className="grid place-items-center rounded-panel border border-line bg-surface py-16">
-            {task.error ? <Notice tone="err">{task.error.message}</Notice> : <Spinner />}
-          </section>
-        ))}
-
-      <Tasks tasks={tasks.data} pending={tasks.isPending} days={config.logs.retention_days} active={taskId} onPick={show} onReuse={reuse} />
     </Stage>
   );
 }
@@ -320,27 +332,60 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
   const last = rows.at(-1);
   const meta = statusMeta[task.status];
 
-  const [view, setView] = useState<"process" | "report">(live || !(task.result || task.draft) ? "process" : "report");
+  // The flow of the run: followed live while it runs, read from its log entry afterwards.
+  // A run that was watched keeps what it was told until its entry is there.
+  const [watched] = useState(live);
+  const stored = useQuery({
+    queryKey: ["research-log", task.id],
+    queryFn: () => (task.log_id ? api.log(task.log_id) : api.logByCall(task.call_id!)),
+    enabled: !live && Boolean(task.log_id || task.call_id),
+    // The entry is written a moment after the run ends.
+    retry: 8,
+    retryDelay: 400,
+    staleTime: Infinity,
+  });
+  const trace = stored.data?.trace?.length ? stored.data.trace : undefined;
+  const flying = useLiveCall(watched && task.call_id && !trace ? task.call_id : undefined);
+  const following = live && flying.nodes.length > 0;
+  const nodes = trace ?? flying.nodes;
+  const origin = flying.origin || task.created_at - skew;
+  // What the model writes in the step under way reaches here sooner than the task's draft does.
+  const writing = following ? flying.nodes.findLast((n) => n.kind === "step" && n.status === "running") : undefined;
+  const draft = (writing && flying.text[writing.id]) || task.draft || "";
+  const body = task.result || draft;
+
+  const [view, setView] = useState<"flow" | "timeline" | "report">(live || !body ? "flow" : "report");
+  const [selected, setSelected] = useState(0);
   const [format, setFormat] = useState<"rendered" | "text">("rendered");
   const [expanded, setExpanded] = useState(false);
   const longQuestion = task.question.length > 100 || task.question.includes("\n");
-  // The report is what a finished run is opened for.
+  // The report is what a finished run is opened for, unless the user is inspecting the flow or timeline.
+  const touched = useRef(false);
   const wasLive = useRef(live);
   useEffect(() => {
-    if (wasLive.current && !live && (task.result || task.draft)) setView("report");
+    if (wasLive.current && !live && !touched.current && (task.result || task.draft)) setView("report");
     wasLive.current = live;
-  }, [live]);
-  // A run that has just been started is brought into view; one reopened is where the click was.
+  }, [live, task.draft, task.result]);
+  const pickView = (next: "flow" | "timeline" | "report") => {
+    touched.current = true;
+    setView(next);
+  };
+  const selectNode = (id: number) => {
+    setSelected(id);
+    if (id !== 0) touched.current = true;
+  };
+  // Under a narrow window the run sits below the composer, where a new one would go unseen.
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
-    if (wasLive.current && task.steps.length === 0) ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const node = ref.current;
+    if (wasLive.current && task.steps.length === 0 && node && node.getBoundingClientRect().top > window.innerHeight * 0.6) node.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
   const phase = !live
     ? null
     : spent.exhausted
       ? `${limitLabel[spent.exhausted]}预算用尽，正在撰写报告`
-      : task.draft
+      : draft
         ? "模型正在输出"
         : last?.kind === "search" && last.step === spent.steps
           ? "正在搜索，等待结果"
@@ -352,8 +397,13 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
                 ? "正在规划"
                 : "模型正在思考下一步";
 
+  const record = stored.data ? String(stored.data.id) : live ? task.call_id : undefined;
+  // The flow is still on its way: the stream has not answered yet, or the entry is not written yet.
+  const loading = nodes.length === 0 && ((live && Boolean(task.call_id) && !flying.gone) || (!live && stored.isPending && stored.fetchStatus !== "idle"));
+
   return (
-    <section ref={ref} className="min-w-0 scroll-mt-6 rounded-panel border border-line bg-surface">
+    // No overflow clipping here: the panes inside clip themselves.
+    <section ref={ref} className="@container flex min-h-[32rem] min-w-0 scroll-mt-6 flex-col rounded-panel border border-line bg-surface">
       <header className="flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-line px-4 py-3">
         <div className="min-w-0 flex-1 basis-72">
           <div className="flex items-center gap-2 text-xs">
@@ -363,9 +413,7 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
             </span>
             {phase && <span className="min-w-0 truncate text-ink-3">{phase}</span>}
           </div>
-          <h2 className={cx("mt-1 text-base font-medium whitespace-pre-line", !expanded && "line-clamp-2")}>
-            {task.question}
-          </h2>
+          <h2 className={cx("mt-1 text-base font-medium whitespace-pre-line", !expanded && "line-clamp-2")}>{task.question}</h2>
           {longQuestion && (
             <button type="button" onClick={() => setExpanded(!expanded)} className="mt-0.5 text-xs text-ink-3 underline underline-offset-2 hover:text-ink">
               {expanded ? "收起问题" : "展开全文"}
@@ -405,61 +453,106 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
 
       <Gauges spent={spent} budget={budget} elapsed={elapsed} live={live} />
 
-      <Tabs value={view} onChange={setView}>
+      <Tabs value={view} onChange={pickView} className="flex-1">
         <TabList
           tabs={[
             {
-              value: "process",
+              value: "flow",
               label: (
                 <>
-                  过程{rows.length > 0 && <span className="num text-xs text-ink-3">{rows.length}</span>}
+                  流程{live && <Dot tone="signal" live />}
                 </>
               ),
             },
+            { value: "timeline", label: "时间轴" },
             {
               value: "report",
               label: (
                 <>
-                  报告{live && task.draft && <Dot tone="signal" live />}
+                  报告{live && draft && <Dot tone="signal" live />}
                 </>
               ),
             },
           ]}
           actions={
-            view === "report" &&
-            task.result && (
-              <>
-                {task.status === "done" && (
-                  <>
-                    <Tooltip content="报告的独立页面，无需登录即可阅读">
-                      <a href={task.report_url} target="_blank" rel="noreferrer">
-                        <Button size="sm" variant="ghost" icon={<ExternalLink />} tabIndex={-1}>
+            <>
+              {view === "report" && task.result && (
+                <>
+                  {task.status === "done" && (
+                    <>
+                      <Tooltip content="报告的独立页面，无需登录即可阅读">
+                        <a
+                          href={task.report_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-7 items-center gap-1 rounded-ctl px-2.5 text-xs text-ink-2 transition-colors hover:bg-raised hover:text-ink"
+                        >
+                          <ExternalLink className="size-3.5 text-ink-3" />
                           报告页
-                        </Button>
-                      </a>
-                    </Tooltip>
-                    <CopyButton text={task.report_url} label="复制链接" />
-                  </>
-                )}
-                <CopyButton text={task.result} label="复制" />
-                <Segmented
-                  size="sm"
-                  value={format}
-                  onChange={setFormat}
-                  options={[
-                    { value: "rendered", label: "渲染" },
-                    { value: "text", label: "文本" },
-                  ]}
-                />
-              </>
-            )
+                        </a>
+                      </Tooltip>
+                      <CopyButton text={task.report_url} label="复制链接" />
+                    </>
+                  )}
+                  <CopyButton text={task.result} label="复制" />
+                  <Segmented
+                    size="sm"
+                    value={format}
+                    onChange={setFormat}
+                    options={[
+                      { value: "rendered", label: "渲染" },
+                      { value: "text", label: "文本" },
+                    ]}
+                  />
+                </>
+              )}
+              {record && (
+                <Tooltip content="在请求日志里打开这次研究的完整记录">
+                  <Link href={`/logs/${record}`} className="grid size-7 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-raised hover:text-ink" aria-label="完整记录">
+                    <ScrollText className="size-3.5" />
+                  </Link>
+                </Tooltip>
+              )}
+            </>
           }
         />
-        <TabPanel value="process">
-          <Timeline rows={rows} live={live} phase={phase} elapsed={elapsed} />
+        <TabPanel value="flow" className="flex flex-col">
+          {nodes.length > 0 ? (
+            <FlowView
+              nodes={nodes}
+              text={trace ? undefined : flying.text}
+              live={following}
+              origin={origin}
+              selected={selected}
+              onSelect={selectNode}
+              className="flex-1 overflow-hidden rounded-b-panel"
+            />
+          ) : loading ? (
+            <div className="grid flex-1 place-items-center py-16">
+              <Spinner />
+            </div>
+          ) : (
+            // A run from before flows were recorded, or one whose log entry is gone: what it left is its steps.
+            <StepList rows={rows} live={live} phase={phase} elapsed={elapsed} />
+          )}
+        </TabPanel>
+        <TabPanel value="timeline" className="flex flex-col">
+          {nodes.length > 0 ? (
+            <TimelineView
+              nodes={nodes}
+              text={trace ? undefined : flying.text}
+              live={following}
+              origin={origin}
+              selected={selected}
+              onSelect={selectNode}
+              className="flex-1 overflow-hidden rounded-b-panel"
+            />
+          ) : (
+            <div className="grid place-items-center px-6 py-16 text-center text-xs text-ink-3">{loading ? <Spinner /> : "这次研究没有留下流程，只有「流程」里的步骤记录。"}</div>
+          )}
         </TabPanel>
         <TabPanel value="report">
-          <Report task={task} spent={spent} rendered={format === "rendered"} />
+          <Report task={task} draft={draft} spent={spent} rendered={format === "rendered"} />
         </TabPanel>
       </Tabs>
     </section>
@@ -481,7 +574,7 @@ function Gauges({ spent, budget, elapsed, live }: { spent: ResearchSpent; budget
   const steps = budget ? Math.min(spent.steps, budget.max_steps) : spent.steps;
   const cached = spent.cache_read_tokens ?? 0;
   return (
-    <div className="grid grid-cols-2 gap-px border-b border-line bg-line lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-px border-b border-line bg-line @3xl:grid-cols-4">
       <Gauge
         label="步数"
         value={steps}
@@ -604,11 +697,12 @@ function Gauge({
   );
 }
 
-/* ---------- Process ---------- */
+/* ---------- Steps ---------- */
 
 const rowIcon = { search: Search, dev_search: Braces, fetch: FileText, note: MessageSquareText, wrap_up: Flag, line: FileText };
 
-function Timeline({ rows, live, phase, elapsed }: { rows: Row[]; live: boolean; phase: string | null; elapsed: number }) {
+/** The steps of a run as the task recorded them, for a run that has no flow. */
+function StepList({ rows, live, phase, elapsed }: { rows: Row[]; live: boolean; phase: string | null; elapsed: number }) {
   // The list follows its newest row while the reader stays at its end.
   const box = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -709,11 +803,11 @@ function RowBody({ row }: { row: Row }) {
 
 /* ---------- Report ---------- */
 
-function Report({ task, spent, rendered }: { task: ResearchTask; spent: ResearchSpent; rendered: boolean }) {
+function Report({ task, draft, spent, rendered }: { task: ResearchTask; draft: string; spent: ResearchSpent; rendered: boolean }) {
   const live = task.status === "running";
   // A run recorded before limits were named only says that one ran out.
   const exhausted = spent.exhausted !== undefined || task.stats?.budget_exhausted === true;
-  const body = task.result || task.draft || "";
+  const body = task.result || draft;
   const unread = task.stats?.unread ?? [];
   return (
     <>
@@ -740,7 +834,7 @@ function Report({ task, spent, rendered }: { task: ResearchTask; spent: Research
           </Notice>
         </div>
       )}
-      {!task.result && task.draft && (
+      {!task.result && draft && (
         <div className="flex items-center gap-2 px-5 pt-4 text-xs text-ink-3">
           {live && <Dot tone="signal" live />}
           {live ? "草稿 · 模型正在输出；若这一步接着调用工具，这段文字只是它的中间说明" : "未完成的草稿"}
@@ -765,6 +859,7 @@ function Report({ task, spent, rendered }: { task: ResearchTask; spent: Research
 
 /* ---------- Past runs ---------- */
 
+/** The past runs, in a drawer the head of the page opens. A running one lights its button. */
 function Tasks({
   tasks,
   pending,
@@ -781,92 +876,91 @@ function Tasks({
   onPick: (id: string) => void;
   onReuse: (task: ResearchTaskSummary) => void;
 }) {
+  const [open, setOpen] = useState(false);
   const list = tasks ?? [];
+  const running = list.some((t) => t.status === "running");
   return (
-    <Panel
-      flush
-      title={
-        <span className="flex items-center gap-2 self-center">
-          <History className="size-4 text-ink-3" />
-          <span>最近的研究</span>
-          {list.length > 0 && <Badge>{list.length}</Badge>}
-        </span>
-      }
-      actions={<span className="text-xs text-ink-3">与日志一同保留 {days} 天，含经 MCP 发起的任务</span>}
-    >
-      {list.length === 0 ? (
-        <div className="px-4 py-5 text-xs text-ink-3">
-          {pending ? "正在读取研究任务…" : "尚无研究任务记录。从上方发起一次研究后，可在此回看其过程、报告或载入当时的设置。"}
-        </div>
-      ) : (
-        <ol className="divide-y divide-line">
-          {list.map((task) => {
-            const meta = statusMeta[task.status];
-            const spent = spentOf(task);
-            const isCurrent = task.id === active;
-            const tokens = spent.input_tokens + spent.output_tokens;
-            return (
-              <li key={task.id}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-current={isCurrent ? "true" : undefined}
-                  onClick={() => onPick(task.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onPick(task.id);
-                    }
-                  }}
-                  className={cx(
-                    "group relative flex min-h-11 w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-raised/60",
-                    isCurrent && "bg-raised",
-                  )}
-                >
-                  {isCurrent && <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-signal-text" />}
-                  <span className="flex w-16 shrink-0 items-center gap-1.5 text-xs text-ink-2">
-                    <Dot tone={meta.tone} live={task.status === "running"} />
-                    {meta.label}
-                  </span>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium text-ink">{task.question}</div>
-                    {task.error && <div className="mt-0.5 truncate text-xs text-err">{task.error}</div>}
-                    {task.status === "running" && task.progress && <div className="mt-0.5 truncate text-xs text-ink-3">{task.progress}</div>}
+    <>
+      <Drawer
+        trigger={<Button icon={running ? <Dot tone="signal" live /> : <History />}>历史</Button>}
+        open={open}
+        onOpenChange={setOpen}
+        width="w-[min(30rem,100vw)]"
+        bodyClassName=""
+        title="最近的研究"
+        description={`点一条，在下方看它的流程和报告；↻ 只把课题和设置载入输入框。与请求日志一同保留 ${days} 天，经 MCP 发起的也在这里。`}
+      >
+        {list.length === 0 ? (
+          <div className="px-4 py-8 text-center text-xs text-ink-3">{pending ? "正在读取…" : "还没有研究任务。"}</div>
+        ) : (
+          <ol className="divide-y divide-line">
+            {list.map((task) => {
+              const meta = statusMeta[task.status];
+              const spent = spentOf(task);
+              const isCurrent = task.id === active;
+              const tokens = spent.input_tokens + spent.output_tokens;
+              const pick = () => {
+                onPick(task.id);
+                setOpen(false);
+              };
+              return (
+                <li key={task.id}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-current={isCurrent ? "true" : undefined}
+                    onClick={pick}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        pick();
+                      }
+                    }}
+                    className={cx("relative flex w-full cursor-pointer items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-raised/60", isCurrent && "bg-raised")}
+                  >
+                    {isCurrent && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-signal-text" />}
+                    <Dot tone={meta.tone} live={task.status === "running"} className="mt-1.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="line-clamp-2 text-sm text-ink">{task.question}</div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
+                        <span className="text-ink-2">{meta.label}</span>
+                        <span className="num">
+                          {task.budget ? Math.min(spent.steps, task.budget.max_steps) : spent.steps} 步 · {compact(tokens)} tok
+                        </span>
+                        {task.status !== "running" && <span className="num">{duration(task.updated_at - task.created_at)}</span>}
+                        <span>{ago(task.created_at)}</span>
+                        {task.budget && (
+                          <span className="num">
+                            {task.budget.model} · {task.budget.reading === "raw" ? "原文" : "归纳"}
+                          </span>
+                        )}
+                      </div>
+                      {task.error && <div className="mt-0.5 truncate text-xs text-err">{task.error}</div>}
+                      {task.status === "running" && task.progress && <div className="mt-0.5 truncate text-xs text-ink-3">{task.progress}</div>}
+                    </div>
+                    <Tooltip content="只载入课题与设置">
+                      <button
+                        type="button"
+                        aria-label="载入设置"
+                        onKeyDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onReuse(task);
+                          setOpen(false);
+                        }}
+                        className="-mr-1.5 grid size-7 shrink-0 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-surface hover:text-ink"
+                      >
+                        <RotateCcw className="size-3.5" />
+                      </button>
+                    </Tooltip>
                   </div>
-
-                  {task.budget && (
-                    <span className="flex shrink-0 items-center gap-1.5 max-lg:hidden">
-                      <Badge>{task.budget.model}</Badge>
-                      <span className="text-xs text-ink-3">{task.budget.reading === "raw" ? "原文" : "归纳"}</span>
-                    </span>
-                  )}
-
-                  <span className="num w-32 shrink-0 text-right text-xs text-ink-3 max-sm:hidden">
-                    {task.budget ? Math.min(spent.steps, task.budget.max_steps) : spent.steps} 步 · {compact(tokens)} tok
-                  </span>
-                  <span className="num w-14 shrink-0 text-right text-xs text-ink-2">{task.status === "running" ? "—" : duration(task.updated_at - task.created_at)}</span>
-                  <span className="w-16 shrink-0 text-right text-xs text-ink-3 max-sm:hidden">{ago(task.created_at)}</span>
-
-                  <Tooltip content="载入该次研究的课题与设置">
-                    <button
-                      type="button"
-                      aria-label="载入设置"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onReuse(task);
-                      }}
-                      className="grid size-7 shrink-0 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-surface hover:text-ink"
-                    >
-                      <RotateCcw className="size-3.5" />
-                    </button>
-                  </Tooltip>
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </Panel>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </Drawer>
+    </>
   );
 }

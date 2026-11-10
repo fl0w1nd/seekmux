@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fl0w1nd/seekmux/internal/app"
@@ -158,7 +159,30 @@ func play(w http.ResponseWriter, r *http.Request, run func(context.Context) (map
 		return
 	}
 	started := make(chan playSubscription, 1)
-	ctx = app.WithCallStart(ctx, func(t *core.Trace) { events, stop := t.Subscribe(256); started <- playSubscription{events, stop} })
+	var subMu sync.Mutex
+	var stopSub func()
+	closed := false
+	defer func() {
+		subMu.Lock()
+		closed = true
+		stop := stopSub
+		stopSub = nil
+		subMu.Unlock()
+		if stop != nil {
+			stop()
+		}
+	}()
+	ctx = app.WithCallStart(ctx, func(t *core.Trace) {
+		subMu.Lock()
+		if closed {
+			subMu.Unlock()
+			return
+		}
+		events, stop := t.Subscribe(256)
+		stopSub = stop
+		subMu.Unlock()
+		started <- playSubscription{events, stop}
+	})
 	result := make(chan playOutcome, 1)
 	go func() { value, err := run(ctx); result <- playOutcome{value, err} }()
 	var sub playSubscription
@@ -176,7 +200,6 @@ func play(w http.ResponseWriter, r *http.Request, run func(context.Context) (map
 	case <-ctx.Done():
 		return
 	}
-	defer sub.cancel()
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")

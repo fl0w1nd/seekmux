@@ -156,7 +156,7 @@ func Domain(raw string) string {
 	return host
 }
 
-func traceRoute(ctx context.Context, rt Runtime, target, engine string, rule config.Rule, routed bool) {
+func traceRoute(ctx context.Context, rt Runtime, target, engine string, rule config.Rule, routed, cached bool) {
 	if core.TraceFrom(ctx) == nil {
 		return
 	}
@@ -196,6 +196,7 @@ func traceRoute(ctx context.Context, rt Runtime, target, engine string, rule con
 		mode, pinned = "pinned", engine
 	}
 	candidates := make([]core.Candidate, 0, len(routes))
+	eligible := false
 	for _, route := range routes {
 		reason := ""
 		switch {
@@ -210,7 +211,21 @@ func traceRoute(ctx context.Context, rt Runtime, target, engine string, rule con
 		case !reachable(rt.Config, route.Provider, rt.Workers):
 			reason = "offline"
 		}
+		if reason == "" {
+			eligible = true
+		}
 		candidates = append(candidates, core.Candidate{Provider: route.Provider, Eligible: reason == "", Reason: reason})
+	}
+	if cached && !eligible {
+		attrs := map[string]any{"mode": mode, "candidates": candidates, "cached": true}
+		if pinned != "" {
+			attrs["pinned"] = pinned
+		}
+		if len(matched) > 0 {
+			attrs["rule"] = matched
+		}
+		core.Mark(ctx, "route", "", "cached", attrs)
+		return
 	}
 	core.MarkRoute(ctx, mode, pinned, matched, candidates)
 }

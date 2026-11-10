@@ -319,6 +319,66 @@ export interface Attempt {
   error?: string;
 }
 
+/** How a node of a call's trace stands; `running` only while the call is live. */
+export type NodeStatus = "running" | "ok" | "error" | "canceled" | "cached" | "skipped" | "limited";
+
+/**
+ * One node of the trace of a call: a decision the gateway made or a call it
+ * placed, under the node it was made for. Node 1 is the call itself.
+ */
+export interface TraceNode {
+  id: number;
+  /** 0 or absent for the root. */
+  parent?: number;
+  kind: string;
+  name?: string;
+  status: NodeStatus;
+  /** Since the call began. */
+  start_ms: number;
+  /** 0 or absent while running, and for a decision, which takes no time. */
+  duration_ms?: number;
+  http_status?: number;
+  error?: string;
+  attrs?: Record<string, unknown>;
+}
+
+/** A running node of a call in flight that has no running node under it. */
+export interface ActiveNode {
+  id: number;
+  kind: string;
+  name?: string;
+  start_ms: number;
+}
+
+/** A tool call that has not ended yet. */
+export interface LiveCall {
+  call_id: string;
+  tool: Tool;
+  source: "mcp" | "webui";
+  api_key_id?: number;
+  api_key_name?: string;
+  client_ip?: string;
+  user_agent?: string;
+  summary: string;
+  task_id?: string;
+  started_at: number;
+  /** The research step under way. */
+  step?: number;
+  active?: ActiveNode[];
+  nodes?: number;
+}
+
+/** How a call in flight ended. */
+export interface LiveDone {
+  call_id?: string;
+  status: "ok" | "error" | "canceled";
+  duration_ms: number;
+  error?: string;
+}
+
+/** The text a model has written so far, by the id of its node. */
+export type TraceText = Record<string, string>;
+
 export interface Hop {
   kind: string;
   provider: string;
@@ -328,6 +388,8 @@ export interface Hop {
 
 export interface LogEntry {
   id: number;
+  /** The id the call had while it ran; absent on entries from before calls had one. */
+  call_id?: string;
   ts: number;
   tool: Tool;
   source: "mcp" | "webui";
@@ -348,6 +410,8 @@ export interface LogEntry {
   cache_read_tokens?: number;
   cache_write_tokens?: number;
   attempts?: Attempt[];
+  /** How the call was decided and served; only on a single entry, absent on entries from before traces. */
+  trace?: TraceNode[];
   /** The route of a call that did not go straight through; absent otherwise. */
   hops?: Hop[];
   request?: string;
@@ -647,6 +711,10 @@ export interface ResearchTask extends ResearchTaskSummary {
   now: number;
   /** The page that shows the report to anyone who has the link. */
   report_url: string;
+  /** The call of the run while it is in flight, whose trace can be followed. */
+  call_id?: string;
+  /** The request log entry of the run once it is written, which holds its trace. */
+  log_id?: number;
 }
 
 /** A research task as the page of its report shows it, to readers who are not signed in. */
@@ -693,6 +761,9 @@ export interface RouteTuning {
 /** The limits of a research run that differ from the configured ones. */
 export type BudgetOverride = Partial<Omit<ResearchBudget, "model">>;
 
+/** What the gateway says of a call that was stopped from the console (app.ErrCallStopped). The log keeps it as a failure with these words. */
+export const stoppedHere = "the call was stopped from the console";
+
 export class APIError extends Error {
   constructor(
     message: string,
@@ -738,6 +809,89 @@ async function request<T>(method: string, path: string, body?: unknown, raw?: st
   return data as T;
 }
 
+/** What a playground call reports while it runs. */
+export interface PlayEvents {
+  onCall?: (callId: string) => void;
+  onNode?: (node: TraceNode) => void;
+  onText?: (node: number, delta: string) => void;
+}
+
+/** What every playground call answers with next to its result. */
+export interface PlayRun {
+  duration_ms: number;
+  attempts: Attempt[] | null;
+  call_id?: string;
+  trace?: TraceNode[];
+}
+
+/**
+ * Makes a playground call and follows it as it runs: the server answers with
+ * one JSON object per line, the nodes of the trace as they change and the
+ * result last. Aborting `signal` stops the call on the server as well.
+ */
+async function play<T>(path: string, body: unknown, events: PlayEvents = {}, signal?: AbortSignal): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    if (signal?.aborted) throw new APIError("已停止", 499);
+    throw new APIError("无法连接到服务器", 0);
+  }
+  if (res.status === 401) onUnauthorized();
+  if (!res.ok || !res.body || !(res.headers.get("Content-Type") ?? "").includes("ndjson")) {
+    const text = await res.text();
+    let data: unknown;
+    try {
+      data = text ? JSON.parse(text) : undefined;
+    } catch {
+      data = undefined;
+    }
+    if (!res.ok) throw new APIError((data as { error?: string } | undefined)?.error ?? (text.trim() || `HTTP ${res.status}`), res.status);
+    return data as T;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: T | undefined;
+  const take = (line: string) => {
+    if (line.trim() === "") return;
+    const event = JSON.parse(line) as { call_id?: string; node?: TraceNode; text?: { node: number; delta: string }; result?: T; error?: string };
+    if (event.call_id) events.onCall?.(event.call_id);
+    if (event.node) events.onNode?.(event.node);
+    if (event.text) events.onText?.(event.text.node, event.text.delta);
+    // A call stopped from the console ends as one stopped here does.
+    if (event.error === stoppedHere) throw new APIError("已停止", 499);
+    if (event.error !== undefined) throw new APIError(event.error, 400);
+    if (event.result !== undefined) result = event.result;
+  };
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let end: number;
+      while ((end = buffer.indexOf("\n")) >= 0) {
+        take(buffer.slice(0, end));
+        buffer = buffer.slice(end + 1);
+      }
+      if (done) break;
+    }
+    take(buffer);
+  } catch (err) {
+    if (err instanceof APIError) throw err;
+    if (signal?.aborted) throw new APIError("已停止", 499);
+    throw new APIError("与服务器的连接中断，调用结果未知", 0);
+  }
+  if (result === undefined) throw new APIError("服务器未返回结果", 0);
+  return result;
+}
+
 const get = <T>(path: string) => request<T>("GET", path);
 const post = <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {});
 
@@ -772,6 +926,12 @@ export const api = {
     return get<LogEntry[]>(`/api/logs?${query}`);
   },
   log: (id: number) => get<LogEntry>(`/api/logs/${id}`),
+  /** The entry of a call by the id it ran under; 404 until it is written, a moment after the call ends. */
+  logByCall: (callId: string) => get<LogEntry>(`/api/logs/call/${encodeURIComponent(callId)}`),
+  /** The calls in flight, oldest first. */
+  live: () => get<{ now: number; calls: LiveCall[] }>("/api/live"),
+  /** Stops a call in flight, whoever made it. */
+  cancelCall: (callId: string) => post(`/api/live/${encodeURIComponent(callId)}/cancel`),
   clearLogs: () => request("DELETE", "/api/logs"),
   overview: (window: string) => get<Overview>(`/api/stats?window=${window}`),
   clearCache: () => post("/api/cache/clear"),
@@ -782,14 +942,14 @@ export const api = {
   resetBreaker: (key: string) => post("/api/breaker/reset", { key }),
 
   /** `route` replaces a provider's parameters for this call only. */
-  playSearch: (body: SearchArgs & { route?: RouteTuning }) =>
-    post<{ duration_ms: number; results: SearchResult[]; attempts: Attempt[] | null }>("/api/play/search", body),
+  playSearch: (body: SearchArgs & { route?: RouteTuning }, events?: PlayEvents, signal?: AbortSignal) =>
+    play<PlayRun & { results: SearchResult[] }>("/api/play/search", body, events, signal),
   /** `search_engine` leaves one provider to serve the call; the tool itself has no such argument. */
-  playDevSearch: (body: DevSearchArgs & { search_engine?: string; route?: RouteTuning }) =>
-    post<{ duration_ms: number; result: DevSearchResult; attempts: Attempt[] | null }>("/api/play/dev_search", body),
+  playDevSearch: (body: DevSearchArgs & { search_engine?: string; route?: RouteTuning }, events?: PlayEvents, signal?: AbortSignal) =>
+    play<PlayRun & { result: DevSearchResult }>("/api/play/dev_search", body, events, signal),
   /** `model` answers in place of the extract chain and `no_cache` reads the page anew, for this call only. */
-  playFetch: (body: FetchArgs & { model?: string; no_cache?: boolean; route?: RouteTuning }) =>
-    post<{ duration_ms: number; result: FetchResult; attempts: Attempt[] | null }>("/api/play/fetch", body),
+  playFetch: (body: FetchArgs & { model?: string; no_cache?: boolean; route?: RouteTuning }, events?: PlayEvents, signal?: AbortSignal) =>
+    play<PlayRun & { result: FetchResult }>("/api/play/fetch", body, events, signal),
   playModel: (provider: LLMProvider, model: Model) =>
     post<{ duration_ms: number; reply: string }>("/api/play/model", { provider, model }),
   /** `model` and `budget` replace the configured model and limits, for this task only. */

@@ -230,3 +230,20 @@ func TestWorkerNodesDistinguishWorkerAndPageFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestFetchCachedRouteWithNoEligibleProvidersIsNotError(t *testing.T) {
+	cfg := config.Default()
+	cfg.Fetch.Routes = []config.Route{{Provider: "jina", Enabled: false}, {Provider: "firecrawl", Enabled: true}}
+	s := NewService(core.NewLimits())
+	target := "https://example.test/cached"
+	s.pages.Set(target, Page{Engine: "jina", Content: "cached content", Title: "Cached"}, time.Minute)
+	trace := core.NewTrace()
+	result := s.Run(core.WithTrace(context.Background(), trace), Runtime{Config: cfg}, Args{URL: target, Raw: true, Engine: EngineAuto})
+	if result.Error != "" || result.Text != "cached content" {
+		t.Fatalf("result=%+v", result)
+	}
+	route := findNode(t, trace, "route", "")
+	if route.Status == "error" || route.Status != "cached" || route.Attrs["cached"] != true {
+		t.Fatalf("route=%+v", route)
+	}
+}

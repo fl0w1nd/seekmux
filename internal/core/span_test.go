@@ -315,3 +315,42 @@ func TestRunnerWaitAndHedgeReasons(t *testing.T) {
 		})
 	}
 }
+
+func TestRunnerAfterRateLimitTriggerAndCanceledWait(t *testing.T) {
+	for _, runner := range []string{"fallback", "hedged"} {
+		t.Run(runner, func(t *testing.T) {
+			trace := NewTrace()
+			ctx := WithTrace(context.Background(), trace)
+			limits := NewLimits()
+			rate := config.RateLimit{Requests: 1, Window: time.Second}
+			limits.Rate.TryAcquire("a", rate)
+			providers := []Provider[string, string]{
+				provider("a", rate, ok("unused")),
+				provider("b", config.RateLimit{}, slow(25*time.Millisecond, "answer")),
+				provider("c", config.RateLimit{}, ok("hedge")),
+			}
+			opt := RunOptions{Kind: "search", Timeout: time.Second, SlowThreshold: 5 * time.Millisecond, Strategy: StrategyFallback}
+			var err error
+			if runner == "hedged" {
+				_, _, err = RunHedged(ctx, limits, providers, "", opt)
+			} else {
+				_, _, err = RunFallback(ctx, limits, providers, "", opt)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, n := range trace.Nodes() {
+				if n.Kind == "attempt" && n.Name == "b" {
+					found = n.Attrs["trigger"] == "after_rate_limit"
+				}
+				if n.Kind == "wait" && n.Name == "rate_limit" && n.Status != "canceled" {
+					t.Fatalf("unfinished wait not marked canceled: %+v", n)
+				}
+			}
+			if !found {
+				t.Fatalf("nodes=%+v", trace.Nodes())
+			}
+		})
+	}
+}

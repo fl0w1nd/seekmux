@@ -56,7 +56,8 @@ that folds open (`animate-fold-down` / `animate-fold-up`) and a quantity that
 moves to a new value (a gauge bar, a number followed with `useTween` from
 `lib/motion.ts`) use `ease-settle`, which arrives fast and comes to rest
 without overshoot. Bars drawn for the first time grow from their baseline
-(`animate-grow-x` / `animate-grow-y`), and a row that arrives in a live list
+(`animate-grow-x` / `animate-grow-y`; the lines of a flow are drawn the same
+way, in the order the call ran), and a row that arrives in a live list
 fades in tinted with the signal color once (`animate-arrive`). Motion only
 ever shows a change of state; nothing loops
 except the dot of something that is live. All of it is disabled under
@@ -94,17 +95,49 @@ except the dot of something that is live. All of it is disabled under
 - `components/` — `ProviderName` (a provider's logo and name, or a model's
   id; use it wherever a provider is named), `RouteList` (numbered priority lanes), `ModelRefEditor`,
   `ProviderPicker` (auto or one provider, with its health), `ModelOverride`
-  (the assigned models or another one, for a single call),
-  `Waterfall` (the upstream calls of one request on a shared time axis).
+  (the assigned models or another one, for a single call).
+- `components/flow/` — how one call was decided and served, drawn from its
+  trace (`lib/trace.ts`). The same components show a stored call, a call in
+  flight and a call made in the playground.
+  - `Flow` reads top to bottom along one axis, on a dotted ground
+    (`flow-canvas`) that sets it apart from the panels around it. A **pill**
+    with a diamond is a decision or an outcome that took no time of its own
+    (cache, routing mode, what to do with the page, the result); a **card** is
+    something that was called and timed (a provider, a model, a query, a
+    tool), with its status, its duration and a hairline showing where on the
+    call's time axis it ran. Things that ran at once fork into columns and
+    join again; a branch that was dropped (a hedge that lost, a provider that
+    was passed over) is drawn dashed and does not rejoin. The steps of a
+    research run are numbered lanes, and a tool call of a step opens in place
+    into the flow of that call.
+  - Lines carry state the way dots do: solid for the path taken, the signal
+    color for what is running now, dashed for what was not taken. Nothing
+    else in the flow uses the signal color.
+  - `FlowView` puts the facts of the picked node beside the flow
+    (`NodeDetail`): in a column where the view is wide, as a sheet over the
+    flow where it is narrow. Its wording lives in `wording.ts`; a fact the
+    gateway reports that has no wording yet is shown under its own key rather
+    than dropped.
+  - `Timeline` is the same call on a shared time axis, indented by what each
+    part belonged to. `LivePhase` says in a few words what a call in flight
+    is doing.
+- `pages/Log.tsx` — the inspector of one call (`/logs/:id`): its flow, its
+  time axis, what it was asked and what it answered. A call in flight has the
+  same page under its call id and becomes its log entry when it ends.
 - `pages/play/kit.tsx` — what the playground pages are built from: `Stage`
-  (the page head and the full-width workbench stack), `Composer`
-  (a top instrument bar of `Chip`s and quick controls, a parameter panel that
-  folds open, the structured input area, and a bottom bar with examples and
-  the primary run action), `Output` (the pane a call answers into, with its
-  result and its upstream calls), `Recent` (past runs, a click inspects the
-  run in `Output`, with an action to restore its arguments). A chip carries a signal dot
-  when its value is not the configured one, and whatever applies to one call
-  only is marked `仅调试台`.
+  (the page head and the workbench: what goes into a call in a left column
+  that stays in sight, the pane it answers into on the right; the two stack
+  below `xl`), `Composer` (a top instrument bar of `Chip`s and quick controls,
+  a parameter panel that folds open, the structured input area, and a bottom
+  bar with examples and the primary run action, which stops the call while it
+  runs), `Output` (the pane a call answers into; it is always there, opens on
+  the live flow when a call is made and turns to the result when it ends),
+  `Recent` (past runs, a click inspects the run in `Output`, with an action to
+  restore its arguments). The composer and the lists are containers: what is
+  inside them lays itself out by `@` variants, never by the window, since the
+  same composer is a narrow column on a wide screen and full width on a
+  narrow one. A chip carries a signal dot when its value is not the
+  configured one, and whatever applies to one call only is marked `仅调试台`.
 
 ## Rules
 

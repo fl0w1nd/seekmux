@@ -1,27 +1,21 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, ExternalLink, Radio, ScrollText, Search, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { useSearch } from "wouter";
-import { ProviderName, ProviderNames } from "../components/ProviderName";
-import { Waterfall } from "../components/Waterfall";
-import { api, type Hop, type LogEntry } from "../lib/api";
+import { ArrowUp, ChevronRight, Maximize2, Radio, ScrollText, Search, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { Link, useSearch } from "wouter";
+import { LivePhase } from "../components/flow/LivePhase";
+import { stoppedHere } from "../components/flow/wording";
+import { ProviderName } from "../components/ProviderName";
+import { api, type Hop, type LiveCall, type LogEntry } from "../lib/api";
 import { useConfig } from "../lib/config";
-import { clientName, compact, dateTime, duration, logTime, percent, toolLabel } from "../lib/format";
+import { compact, dateTime, duration, logTime, toolLabel } from "../lib/format";
+import { useNow } from "../lib/motion";
+import { useLiveCalls } from "../lib/trace";
 import { PageHeader } from "../Shell";
-import { Drawer, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, CodeBlock, cx, Dot, Empty, Input, Panel, Segmented, Select, Spinner, Table, Td, Th } from "../ui/primitives";
+import { modalOpen, SidePanel, useConfirm, useToast } from "../ui/overlays";
+import { Badge, Button, cx, Dot, Empty, Input, Panel, Segmented, Select, Spinner, Table, Td, Th, Tooltip } from "../ui/primitives";
+import { CallInspector } from "./Log";
 
 const pageSize = 50;
-
-function pretty(json: string | undefined): string {
-  if (!json) return "";
-  try {
-    return JSON.stringify(JSON.parse(json), null, 2);
-  } catch {
-    // A captured body is cut at a size limit, which leaves invalid JSON.
-    return json;
-  }
-}
 
 const shortTime = (ts: number) => dateTime(ts).slice(5, 16);
 
@@ -47,6 +41,7 @@ export function LogsPage() {
   // The overview links here with filters in the address.
   const address = useSearch();
   const [params] = useState(() => new URLSearchParams(address));
+  const opened = useRef(params.get("id") ?? "");
   const [tool, setTool] = useState(params.get("tool") ?? "");
   const [status, setStatus] = useState(params.get("status") ?? "");
   const [provider, setProvider] = useState(params.get("provider") ?? "");
@@ -57,9 +52,12 @@ export function LogsPage() {
     const until = positive(params.get("until"));
     return since && until ? { since, until } : null;
   });
+  // The call open in the panel: the id of a log entry, or of a call in flight.
+  const [inspect, setInspect] = useState(params.get("id") ?? "");
 
   useEffect(() => {
     const next = new URLSearchParams(address);
+    setInspect(next.get("id") ?? "");
     setTool(next.get("tool") ?? "");
     setStatus(next.get("status") ?? "");
     setProvider(next.get("provider") ?? "");
@@ -79,17 +77,29 @@ export function LogsPage() {
       next.set("since", String(range.since));
       next.set("until", String(range.until));
     }
+    if (inspect) next.set("id", inspect);
     const qs = next.toString();
     const target = qs ? `/logs?${qs}` : "/logs";
-    if (`${window.location.pathname}${window.location.search}` !== target) {
-      window.history.replaceState(null, "", target);
-    }
-  }, [tool, status, provider, caller, range]);
+    // Opening the panel is a step Back undoes; going from one call to another is not.
+    const opening = inspect !== "" && opened.current === "";
+    opened.current = inspect;
+    if (`${window.location.pathname}${window.location.search}` === target) return;
+    if (opening) window.history.pushState({ panel: true }, "", target);
+    else window.history.replaceState(window.history.state, "", target);
+  }, [tool, status, provider, caller, range, inspect]);
   const keys = useQuery({ queryKey: ["keys"], queryFn: api.keys });
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [live, setLive] = useState(true);
-  const [selected, setSelected] = useState<number | null>(null);
+  // One call in the panel; with a modifier key on a page beside this one, as a link would.
+  const open = (e: MouseEvent | KeyboardEvent, id: number | string) => {
+    if (e.metaKey || e.ctrlKey) window.open(`/logs/${id}`, "_blank");
+    else setInspect(String(id));
+  };
+  const close = useCallback(() => {
+    if ((window.history.state as { panel?: boolean } | null)?.panel) window.history.back();
+    else setInspect("");
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setQuery(search.trim()), 300);
@@ -114,25 +124,41 @@ export function LogsPage() {
 
   // New entries arrive over SSE; refetching keeps the active filters
   // authoritative. A burst is folded into one refetch a second, since each
-  // refetch reloads every page shown.
-  useEffect(() => {
-    if (!live) return;
-    const source = new EventSource("/api/logs/stream");
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    source.onmessage = () => {
-      timer ??= setTimeout(() => {
-        timer = undefined;
-        void client.invalidateQueries({ queryKey: ["logs"] });
-      }, 1000);
-    };
-    return () => {
-      clearTimeout(timer);
-      source.close();
-    };
-  }, [live, client]);
+  // refetch reloads every page shown. The same stream says which calls are
+  // in flight.
+  const refetch = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const arrived = useCallback(() => {
+    refetch.current ??= setTimeout(() => {
+      refetch.current = undefined;
+      void client.invalidateQueries({ queryKey: ["logs"] });
+    }, 1000);
+  }, [client]);
+  useEffect(() => () => clearTimeout(refetch.current), []);
+  const flying = useLiveCalls(live, arrived);
 
   const entries = logs.data?.pages.flat() ?? [];
   const newest = entries[0]?.id ?? 0;
+
+  // With the panel open, ↑ and ↓ step through the rows behind it.
+  const order = useRef<number[]>([]);
+  order.current = entries.map((e) => e.id);
+  useEffect(() => {
+    if (!inspect) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if ((e.key !== "ArrowDown" && e.key !== "ArrowUp") || e.metaKey || e.ctrlKey || e.altKey || modalOpen()) return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable]")) return;
+      const ids = order.current;
+      const at = ids.indexOf(Number(inspect));
+      const next = at < 0 ? ids[0] : ids[at + (e.key === "ArrowDown" ? 1 : -1)];
+      if (next === undefined) return;
+      e.preventDefault();
+      setInspect(String(next));
+      document.querySelector(`[data-log="${next}"]`)?.scrollIntoView({ block: "nearest" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [inspect]);
 
   // Rows that arrived since the last refetch are marked for a moment. A change
   // of filters shows a different list, not new rows.
@@ -261,6 +287,8 @@ export function LogsPage() {
         </div>
       )}
 
+      {flying.calls.length > 0 && <InFlight calls={flying.calls} origin={flying.origin} onOpen={open} />}
+
       <Panel flush>
         {logs.isPending ? (
           <div className="grid place-items-center py-16">
@@ -278,7 +306,6 @@ export function LogsPage() {
                   <Th>时间</Th>
                   <Th>工具</Th>
                   <Th className="w-full">请求</Th>
-                  <Th>提供商</Th>
                   <Th>状态</Th>
                   <Th className="text-right">耗时</Th>
                   <Th className="text-right">Token</Th>
@@ -289,10 +316,16 @@ export function LogsPage() {
                 {entries.map((entry) => (
                   <tr
                     key={entry.id}
+                    data-log={entry.id}
                     tabIndex={0}
-                    onClick={() => setSelected(entry.id)}
-                    onKeyDown={(e) => e.key === "Enter" && setSelected(entry.id)}
-                    className={cx("cursor-pointer transition-colors hover:bg-raised/60 focus-visible:bg-raised", fresh.has(entry.id) && "animate-arrive")}
+                    aria-current={inspect === String(entry.id) ? "true" : undefined}
+                    onClick={(e) => open(e, entry.id)}
+                    onKeyDown={(e) => e.key === "Enter" && open(e, entry.id)}
+                    className={cx(
+                      "cursor-pointer scroll-my-12 transition-colors hover:bg-raised/60 focus-visible:bg-raised",
+                      "aria-current:bg-raised aria-current:shadow-[inset_2px_0_0_var(--color-signal-text)]",
+                      fresh.has(entry.id) && "animate-arrive",
+                    )}
                   >
                     <Td className="num text-xs whitespace-nowrap text-ink-3">{logTime(entry.ts)}</Td>
                     <Td>
@@ -300,19 +333,26 @@ export function LogsPage() {
                     </Td>
                     <Td className="max-w-0 min-w-48">
                       <div className="truncate">{entry.summary}</div>
-                      {entry.error && <div className="truncate text-xs text-err">{entry.error}</div>}
+                      {entry.error === stoppedHere ? (
+                        <div className="truncate text-xs text-ink-3">从控制台中止</div>
+                      ) : (
+                        entry.error && <div className="truncate text-xs text-err">{entry.error}</div>
+                      )}
                     </Td>
-                    <Td className="text-xs whitespace-nowrap text-ink-2">
-                      {entry.hops ? <Route hops={entry.hops} /> : entry.provider ? <ProviderNames ids={entry.provider} kind={entry.tool === "research" ? "llm" : undefined} /> : "—"}
-                    </Td>
-                    <Td>
-                      <StatusBadge status={entry.status} />
+                    <Td className="whitespace-nowrap">
+                      <span className="flex items-center gap-2">
+                        {entry.error === stoppedHere ? <Badge dot>已中止</Badge> : <StatusBadge status={entry.status} />}
+                        {entry.hops && entry.hops.length > 0 && (
+                          <Tooltip content={<Route hops={entry.hops} />}>
+                            <span className="cursor-help text-xs text-warn">回退</span>
+                          </Tooltip>
+                        )}
+                      </span>
                     </Td>
                     <Td className="num text-right text-xs whitespace-nowrap">{duration(entry.duration_ms)}</Td>
                     <Td className="num text-right text-xs whitespace-nowrap text-ink-3">{entry.input_tokens ? compact(entry.input_tokens + entry.output_tokens) : "—"}</Td>
-                    <Td className="text-xs whitespace-nowrap text-ink-3">
-                      <div>{callerName(entry)}</div>
-                      {entry.client_ip && <div className="num text-2xs text-ink-3/80">{entry.client_ip}</div>}
+                    <Td className="max-w-36 truncate text-xs whitespace-nowrap text-ink-3" title={entry.client_ip || undefined}>
+                      {callerName(entry)}
                     </Td>
                   </tr>
                 ))}
@@ -329,7 +369,32 @@ export function LogsPage() {
         )}
       </Panel>
 
-      <LogDrawer id={selected} onClose={() => setSelected(null)} />
+      {inspect && (
+        <SidePanel label="调用详情" onClose={close} className="md:w-[clamp(40rem,62vw,64rem)]">
+          <CallInspector
+            id={inspect}
+            inPanel
+            onWritten={(logId) => setInspect(String(logId))}
+            tools={
+              <span className="-mr-1.5 flex items-center">
+                <Tooltip content="整页打开">
+                  <Link
+                    href={`/logs/${inspect}`}
+                    state={{ from: "logs" }}
+                    aria-label="整页打开"
+                    className="grid size-8 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-raised hover:text-ink"
+                  >
+                    <Maximize2 className="size-4" />
+                  </Link>
+                </Tooltip>
+                <Tooltip content="关闭 · Esc；↑ ↓ 切换上下条">
+                  <Button variant="ghost" size="sm" icon={<X />} aria-label="关闭" onClick={close} />
+                </Tooltip>
+              </span>
+            }
+          />
+        </SidePanel>
+      )}
     </>
   );
 }
@@ -347,12 +412,11 @@ const hopTitle: Record<Hop["status"], string> = { ok: "成功", cached: "缓存"
 /**
  * The way a call took when it did not go straight through: each provider or
  * model it passed, struck out where it failed. Search or fetch comes first,
- * the extract models after the dot.
+ * the extract models after the dot. Shown over the fallback mark of a row.
  */
 function Route({ hops }: { hops: Hop[] }) {
   return (
-    <span className="flex items-center gap-1.5">
-      <Badge tone="warn">回退</Badge>
+    <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 py-0.5">
       {hops.map((hop, i) => (
         <span key={i} className="flex items-center gap-1.5">
           {i > 0 && <span className="text-ink-3">{hops[i - 1].kind === hop.kind ? "→" : "·"}</span>}
@@ -378,107 +442,39 @@ function StatusBadge({ status }: { status: LogEntry["status"] }) {
   );
 }
 
-function Fact({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+/**
+ * The calls being served at this moment, above the list they will join: what
+ * each is doing right now, and for how long it has been going.
+ */
+function InFlight({ calls, origin, onOpen }: { calls: LiveCall[]; origin: (call: LiveCall) => number; onOpen: (e: MouseEvent | KeyboardEvent, id: string) => void }) {
+  const now = useNow(true, 500);
   return (
-    <div className={cx("min-w-0", className)}>
-      <div className="tag">{label}</div>
-      <div className="mt-0.5 truncate text-sm">{children}</div>
-    </div>
-  );
-}
-
-function LogDrawer({ id, onClose }: { id: number | null; onClose: () => void }) {
-  const log = useQuery({ queryKey: ["log", id], queryFn: () => api.log(id!), enabled: id !== null });
-  const entry = log.data;
-  return (
-    <Drawer open={id !== null} onOpenChange={(open) => !open && onClose()} title={entry ? `${toolLabel[entry.tool] ?? entry.tool} · #${entry.id}` : "日志详情"} description={entry ? dateTime(entry.ts) : undefined}>
-      {!entry ? (
-        <div className="grid place-items-center py-16">{log.error ? <span className="text-sm text-err">{log.error.message}</span> : <Spinner />}</div>
-      ) : (
-        <div className="flex flex-col gap-5">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Fact label="状态">
-              <StatusBadge status={entry.status} />
-            </Fact>
-            <Fact label="总耗时">
-              <span className="num">{duration(entry.duration_ms)}</span>
-            </Fact>
-            <Fact label="响应提供商">{entry.provider ? <ProviderNames ids={entry.provider} kind={entry.tool === "research" ? "llm" : undefined} /> : "—"}</Fact>
-            <Fact label="调用方">{callerName(entry)}</Fact>
-            <Fact label="来源 IP">
-              <span className="num">{entry.client_ip || "—"}</span>
-            </Fact>
-            <Fact label="客户端" className="col-span-1 sm:col-span-3">
-              <span className="num" title={entry.user_agent}>
-                {clientName(entry.user_agent) || "—"}
-              </span>
-            </Fact>
-            {entry.input_tokens > 0 && (
-              <>
-                <Fact label="Token（输入 / 输出）" className="col-span-2">
-                  <span className="num">
-                    {entry.input_tokens.toLocaleString()} / {entry.output_tokens.toLocaleString()}
-                  </span>
-                </Fact>
-                <Fact label="缓存（读取 / 写入）">
-                  <span className="num">
-                    {(entry.cache_read_tokens ?? 0).toLocaleString()} / {(entry.cache_write_tokens ?? 0).toLocaleString()}
-                  </span>
-                </Fact>
-                <Fact label="缓存命中率">
-                  <span className="num">{percent(entry.cache_read_tokens ?? 0, entry.input_tokens)}</span>
-                </Fact>
-              </>
-            )}
-          </div>
-
-          {entry.task_id && (
-            <a href={`/report/${entry.task_id}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 self-start text-sm text-signal-text underline-offset-2 hover:underline">
-              <ExternalLink className="size-3.5" />
-              查看研究报告
-            </a>
-          )}
-
-          {entry.user_agent && (
-            <section>
-              <h3 className="tag mb-1.5">User-Agent</h3>
-              <CodeBlock wrap copy>
-                {entry.user_agent}
-              </CodeBlock>
-            </section>
-          )}
-
-          {entry.error && (
-            <section>
-              <h3 className="tag mb-1.5">错误</h3>
-              <CodeBlock wrap className="border-err/30 [&_pre]:text-err">
-                {entry.error}
-              </CodeBlock>
-            </section>
-          )}
-
-          <section>
-            <h3 className="tag mb-1.5">调用链 · {entry.attempts?.length ?? 0} 次请求</h3>
-            {entry.attempts?.length ? <Waterfall attempts={entry.attempts} total={entry.duration_ms} /> : <div className="text-xs text-ink-3">本次调用未请求任何上游提供商</div>}
-          </section>
-
-          <section>
-            <h3 className="tag mb-1.5">请求参数</h3>
-            <CodeBlock copy>{pretty(entry.request)}</CodeBlock>
-          </section>
-
-          <section>
-            <h3 className="tag mb-1.5">返回内容</h3>
-            {entry.response ? (
-              <CodeBlock copy wrap className="max-h-[28rem]">
-                {pretty(entry.response)}
-              </CodeBlock>
-            ) : (
-              <div className="text-xs text-ink-3">未记录。可在「系统」页开启返回内容记录。</div>
-            )}
-          </section>
-        </div>
-      )}
-    </Drawer>
+    <section className="mb-3 overflow-hidden rounded-panel border border-signal-text/40 bg-surface">
+      <header className="flex h-9 items-center gap-2 border-b border-line px-4">
+        <Dot tone="signal" live />
+        <h2 className="text-sm font-medium">进行中</h2>
+        <span className="num text-xs text-ink-3">{calls.length}</span>
+        <span className="ml-auto text-xs text-ink-3 max-sm:hidden">点开可以看它此刻走到哪一步，也可以中止</span>
+      </header>
+      <ul>
+        {calls.map((call) => (
+          <li
+            key={call.call_id}
+            tabIndex={0}
+            role="link"
+            onClick={(e) => onOpen(e, call.call_id)}
+            onKeyDown={(e) => e.key === "Enter" && onOpen(e, call.call_id)}
+            className="flex min-h-10 animate-in cursor-pointer items-center gap-3 border-b border-line px-4 py-1.5 text-sm transition-colors last:border-b-0 hover:bg-raised/60 focus-visible:bg-raised max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-0.5"
+          >
+            <Badge>{toolLabel[call.tool] ?? call.tool}</Badge>
+            <span className="min-w-0 flex-1 basis-48 truncate">{call.summary || "—"}</span>
+            <LivePhase call={call} className="inline-flex min-w-0 shrink items-center gap-1.5 text-xs text-ink-2 md:max-w-[40%]" />
+            <span className="w-24 shrink-0 truncate text-xs text-ink-3 max-md:hidden">{call.source === "webui" ? "调试台" : call.api_key_name || "—"}</span>
+            <span className="num w-14 shrink-0 text-right text-xs text-signal-text">{duration(Math.max(0, now - origin(call)))}</span>
+            <ChevronRight className="size-3.5 shrink-0 text-ink-3" />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

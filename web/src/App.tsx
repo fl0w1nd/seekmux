@@ -6,6 +6,7 @@ import { ConfigProvider } from "./lib/config";
 import { AuthorizePage } from "./pages/Authorize";
 import { DesignPage } from "./pages/Design";
 import { KeysPage } from "./pages/Keys";
+import { LogPage } from "./pages/Log";
 import { LogsPage } from "./pages/Logs";
 import { ModelsPage } from "./pages/Models";
 import { OverviewPage } from "./pages/Overview";
@@ -71,6 +72,7 @@ function Pages() {
       <Switch>
         <Route path="/" component={OverviewPage} />
         <Route path="/logs" component={LogsPage} />
+        <Route path="/logs/:id">{(params) => <LogPage id={params.id} />}</Route>
         <Route path="/play">
           <Redirect to="/play/search" replace />
         </Route>

@@ -1,4 +1,3 @@
-import { useMutation } from "@tanstack/react-query";
 import { ExternalLink, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { ProviderNames } from "../../components/ProviderName";
@@ -6,6 +5,7 @@ import { api, type DevSearchArgs, type DevSearchItem, type DevSearchResult } fro
 import { useConfig } from "../../lib/config";
 import { duration } from "../../lib/format";
 import { useElapsed } from "../../lib/motion";
+import { usePlay } from "../../lib/trace";
 import { ChipInput } from "../../ui/inputs";
 import { Markdown } from "../../ui/markdown";
 import { Badge, cx, Empty, NumberInput, Segmented } from "../../ui/primitives";
@@ -29,12 +29,11 @@ import {
   ProviderParams,
   Recent,
   ResetButton,
+  ResultError,
   RunButton,
   Stage,
   Summary,
-  TabPanel,
-  traceLabel,
-  TraceView,
+  useRunView,
   useTuning,
   Waiting,
   words,
@@ -69,12 +68,12 @@ export function DevSearchPlay() {
   const [repos, setRepos] = useState<string[]>([]);
   const [engine, setEngine] = useState("auto");
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<"result" | "trace">("result");
   const [format, setFormat] = useState<"visual" | "json">("visual");
   const [inspected, setInspected] = useState<InspectedRun<DevSearchResult> | null>(null);
   const tuning = useTuning("dev_search", engine);
-  const run = useMutation({ mutationFn: api.playDevSearch });
-  const elapsed = useElapsed(run.isPending);
+  const run = usePlay(api.playDevSearch);
+  const views = useRunView(run.pending);
+  const elapsed = useElapsed(run.pending);
 
   const args: DevSearchArgs = { query: query.trim() };
   if (maxResults !== defaultMaxResults) args.maxResults = maxResults;
@@ -83,10 +82,10 @@ export function DevSearchPlay() {
 
   const ready = args.query !== "";
   const submit = () => {
-    if (!ready || run.isPending) return;
+    if (!ready || run.pending) return;
     setInspected(null);
-    setView("result");
-    run.mutate({ ...args, search_engine: engine === "auto" ? undefined : engine, route: tuning.route });
+    views.begin();
+    run.start({ ...args, search_engine: engine === "auto" ? undefined : engine, route: tuning.route });
   };
 
   const restore = (request: Record<string, unknown>) => {
@@ -97,7 +96,7 @@ export function DevSearchPlay() {
   };
 
   const rerun = () => {
-    if (run.isPending) return;
+    if (run.pending) return;
     if (inspected?.request) {
       const req = inspected.request;
       restore(req);
@@ -111,8 +110,8 @@ export function DevSearchPlay() {
       const nextRepos = words(req.repos);
       if (nextRepos.length > 0) nextArgs.repos = nextRepos;
       setInspected(null);
-      setView("result");
-      run.mutate({ ...nextArgs, search_engine: engine === "auto" ? undefined : engine, route: tuning.route });
+      views.begin();
+      run.start({ ...nextArgs, search_engine: engine === "auto" ? undefined : engine, route: tuning.route });
       return;
     }
     submit();
@@ -120,13 +119,87 @@ export function DevSearchPlay() {
 
   const data = run.data;
   const activeResult = inspected ? inspected.response : data?.result;
-  const activeAttempts = inspected ? inspected.entry.attempts : data?.attempts;
   const activeDuration = inspected ? inspected.entry.duration_ms : (data?.duration_ms ?? 0);
   const activeEngine = inspected ? inspected.entry.provider : data?.result.search_engine;
-  const showOutput = run.isPending || Boolean(run.error) || Boolean(data) || Boolean(inspected);
 
   return (
-    <Stage tool="dev_search" title="开发搜索" description="调用 dev_search 工具。检索范围是公开代码仓库的 Issue、已合并 PR、README 与技术文档站，返回匹配段落。">
+    <Stage
+      tool="dev_search"
+      title="开发搜索"
+      description="调用 dev_search 工具。检索范围是公开代码仓库的 Issue、已合并 PR、README 与技术文档站，返回匹配段落。"
+      history={
+        <Recent<DevSearchResult>
+          tool="dev_search"
+          stamp={run.pending ? undefined : run.submittedAt || undefined}
+          activeId={inspected?.entry.id}
+          onPick={restore}
+          onInspect={(item) => {
+            setInspected(item);
+            views.show("result");
+          }}
+        />
+      }
+      output={
+        <Output
+          run={run}
+          inspected={inspected}
+          view={views.view}
+          onView={views.pick}
+          hint="匹配的段落按来源分组列出。「流程」里是请求了哪个提供商、它被跳过或失败时换了谁。"
+          banner={
+            inspected && (
+              <HistoryBanner
+                entry={inspected.entry}
+                onRestore={inspected.request ? () => restore(inspected.request!) : undefined}
+                onRerun={rerun}
+                onClose={() => setInspected(null)}
+              />
+            )
+          }
+          actions={
+            views.view === "result" &&
+            activeResult &&
+            !activeResult.error && (
+              <Segmented
+                size="sm"
+                value={format}
+                onChange={setFormat}
+                options={[
+                  { value: "visual", label: "可视" },
+                  { value: "json", label: "JSON" },
+                ]}
+              />
+            )
+          }
+          strip={
+            (inspected || data) && (
+              <>
+                <span className="num font-medium text-ink">{duration(activeDuration)}</span>
+                {activeEngine && <ProviderNames ids={activeEngine} />}
+                {activeResult?.results && <span>{activeResult.results.length} 条结果</span>}
+                {!inspected && run.variables?.route && <Badge>临时参数</Badge>}
+              </>
+            )
+          }
+        >
+          {!inspected && run.pending ? (
+            <Waiting label={run.variables?.query} elapsed={elapsed} />
+          ) : !inspected && run.error ? (
+            <Failure error={run.error} />
+          ) : inspected && !inspected.response ? (
+            <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={rerun} />
+          ) : activeResult?.error ? (
+            <div className="p-4">
+              <ResultError error={activeResult.error} />
+            </div>
+          ) : activeResult && format === "json" ? (
+            <JSONView value={activeResult} />
+          ) : (
+            activeResult && <DevResults key={inspected ? inspected.entry.id : run.submittedAt} items={activeResult.results ?? []} />
+          )}
+        </Output>
+      }
+    >
       <Composer
         open={open}
         tools={
@@ -205,7 +278,7 @@ export function DevSearchPlay() {
             onClear={() => setQuery("")}
           />
         }
-        actions={<RunButton label="搜索" loading={run.isPending} disabled={!ready} onClick={submit} />}
+        actions={<RunButton label="搜索" loading={run.pending} disabled={!ready} onClick={submit} onStop={run.stop} />}
       >
         <div className="flex items-start px-3.5 py-2.5">
           <span className="tag w-12 shrink-0 pt-1 text-ink-3">问题</span>
@@ -221,84 +294,6 @@ export function DevSearchPlay() {
           />
         </div>
       </Composer>
-
-      {showOutput && (
-        <Output
-          stamp={inspected ? inspected.entry.id : run.submittedAt}
-          view={view}
-          onView={setView}
-          banner={
-            inspected && (
-              <HistoryBanner
-                entry={inspected.entry}
-                onRestore={inspected.request ? () => restore(inspected.request!) : undefined}
-                onRerun={rerun}
-                onClose={() => setInspected(null)}
-              />
-            )
-          }
-          tabs={[
-            { value: "result", label: "结果" },
-            { value: "trace", label: traceLabel(activeAttempts) },
-          ]}
-          actions={
-            view === "result" &&
-            activeResult &&
-            !activeResult.error && (
-              <Segmented
-                size="sm"
-                value={format}
-                onChange={setFormat}
-                options={[
-                  { value: "visual", label: "可视" },
-                  { value: "json", label: "JSON" },
-                ]}
-              />
-            )
-          }
-          strip={
-            !run.isPending &&
-            (inspected || data) && (
-              <>
-                <span className="num font-medium text-ink">{duration(activeDuration)}</span>
-                {activeEngine && <ProviderNames ids={activeEngine} />}
-                {activeResult?.results && <span>{activeResult.results.length} 条结果</span>}
-                {!inspected && run.variables?.route && <Badge>临时参数</Badge>}
-              </>
-            )
-          }
-        >
-          <TabPanel value="result">
-            {run.isPending ? (
-              <Waiting label={run.variables?.query} elapsed={elapsed} />
-            ) : !inspected && run.error ? (
-              <Failure error={run.error} />
-            ) : inspected && !inspected.response ? (
-              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={rerun} />
-            ) : activeResult?.error ? (
-              <Failure error={new Error(activeResult.error)} />
-            ) : activeResult && format === "json" ? (
-              <JSONView value={activeResult} />
-            ) : (
-              activeResult && <DevResults key={inspected ? inspected.entry.id : run.submittedAt} items={activeResult.results ?? []} />
-            )}
-          </TabPanel>
-          <TabPanel value="trace">
-            <TraceView attempts={run.isPending ? undefined : activeAttempts} total={activeDuration} />
-          </TabPanel>
-        </Output>
-      )}
-
-      <Recent<DevSearchResult>
-        tool="dev_search"
-        stamp={run.isPending ? undefined : run.submittedAt || undefined}
-        activeId={inspected?.entry.id}
-        onPick={restore}
-        onInspect={(item) => {
-          setInspected(item);
-          setView("result");
-        }}
-      />
     </Stage>
   );
 }

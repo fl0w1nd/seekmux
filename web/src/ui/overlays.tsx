@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { Dialog as RadixDialog, Popover as RadixPopover } from "radix-ui";
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Button, cx, Dot, type Tone } from "./primitives";
 
 /* ---------- Dialog & Drawer ---------- */
@@ -61,16 +62,25 @@ export function Drawer({
   description,
   children,
   side = "right",
+  width,
   bodyClassName = "p-5",
-}: OverlayProps & { side?: "left" | "right"; bodyClassName?: string }) {
+  trigger,
+}: OverlayProps & {
+  side?: "left" | "right";
+  width?: string;
+  bodyClassName?: string;
+  /** The control that opens the drawer, which gets the focus back when it closes. */
+  trigger?: ReactNode;
+}) {
   return (
     <RadixDialog.Root open={open} onOpenChange={onOpenChange}>
+      {trigger && <RadixDialog.Trigger asChild>{trigger}</RadixDialog.Trigger>}
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-scrim" />
         <RadixDialog.Content
           className={cx(
             "fixed inset-y-0 z-50 flex animate-slide flex-col border-line-strong bg-overlay pb-[env(safe-area-inset-bottom)] shadow-overlay",
-            side === "right" ? "right-0 w-[min(44rem,100vw)] border-l" : "left-0 w-[min(18rem,85vw)] border-r",
+            side === "right" ? cx("right-0 border-l", width ?? "w-[min(44rem,100vw)]") : cx("left-0 border-r", width ?? "w-[min(18rem,85vw)]"),
           )}
         >
           <Header title={title} description={description} />
@@ -80,6 +90,41 @@ export function Drawer({
     </RadixDialog.Root>
   );
 }
+
+/**
+ * A panel at the right edge that leaves the page usable: what it shows can be
+ * changed from the page behind it, as when stepping through the rows of a
+ * list. It has no scrim and does not take the focus. On a narrow window it
+ * covers the page.
+ */
+export function SidePanel({ label, onClose, className, children }: { label: string; onClose: () => void; className?: string; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || modalOpen() || tooltipOpen()) return;
+      onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return createPortal(
+    <section
+      aria-label={label}
+      className={cx(
+        "fixed inset-y-0 right-0 z-30 flex w-full animate-slide flex-col border-l border-line-strong bg-overlay pb-[env(safe-area-inset-bottom)] shadow-overlay",
+        className,
+      )}
+    >
+      {children}
+    </section>,
+    document.body,
+  );
+}
+
+/** Whether a tooltip is up; Escape closes it first. */
+export const tooltipOpen = () => !!document.querySelector('[data-state="delayed-open"], [data-state="instant-open"]');
+
+/** Whether a dialog, a drawer or a menu has the page; keys then belong to it. */
+export const modalOpen = () => !!document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [role="menu"][data-state="open"]');
 
 /* ---------- Popover ---------- */
 

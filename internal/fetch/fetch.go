@@ -175,7 +175,6 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 	// A provider asked for by name is not overruled by a rule either.
 	rule, matched := rt.Config.RuleFor(target)
 	routed := matched && engine == EngineAuto
-	traceRoute(ctx, rt, target, engine, rule, routed)
 	serves := func(provider string) bool {
 		if routed {
 			return slices.Contains(rule.Providers, provider)
@@ -196,6 +195,18 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 	case adapter && page.Rendered:
 		reason = "rendered"
 	}
+	gone, goneHit := s.gone.Get(target)
+	goneStatus, goneReason := "cached", ""
+	switch {
+	case !goneHit:
+		goneStatus, goneReason = "ok", "miss"
+	case rt.NoCache:
+		goneStatus, goneReason = "ok", "bypassed"
+	case engine != EngineAuto:
+		goneStatus, goneReason = "ok", "other_engine"
+	}
+	cached := reason == "" || (goneHit && goneReason == "")
+	traceRoute(ctx, rt, target, engine, rule, routed, cached)
 	attrs := map[string]any{"hit": hit}
 	if reason != "" {
 		attrs["reason"] = reason
@@ -213,22 +224,15 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 		return page, nil
 	}
 	// A named provider is still asked: the caller may know better.
-	if gone, hit := s.gone.Get(target); hit {
-		status, reason := "cached", ""
-		switch {
-		case rt.NoCache:
-			status, reason = "ok", "bypassed"
-		case engine != EngineAuto:
-			status, reason = "ok", "other_engine"
-		}
+	if goneHit {
 		attrs := map[string]any{"hit": true}
-		if reason != "" {
-			attrs["reason"] = reason
+		if goneReason != "" {
+			attrs["reason"] = goneReason
 		} else {
 			attrs["engine"], attrs["bytes"] = strings.Join(gone.Providers, ","), 0
 		}
-		core.Mark(ctx, "cache", "gone", status, attrs)
-		if reason == "" {
+		core.Mark(ctx, "cache", "gone", goneStatus, attrs)
+		if goneReason == "" {
 			for _, provider := range gone.Providers {
 				core.TraceFrom(ctx).Note(config.ToolFetch, provider, target, core.AttemptCached)
 			}

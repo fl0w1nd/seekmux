@@ -1,4 +1,3 @@
-import { useMutation } from "@tanstack/react-query";
 import { Bot, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Link } from "wouter";
@@ -8,6 +7,7 @@ import { api, type FetchArgs, type FetchResult } from "../../lib/api";
 import { useConfig } from "../../lib/config";
 import { compact, duration } from "../../lib/format";
 import { useElapsed } from "../../lib/motion";
+import { usePlay } from "../../lib/trace";
 import { Markdown } from "../../ui/markdown";
 import { Popover } from "../../ui/overlays";
 import { Badge, Button, CodeBlock, Notice, NumberInput, Segmented, Switch } from "../../ui/primitives";
@@ -22,6 +22,7 @@ import {
   HistoryBanner,
   type InspectedRun,
   JSONView,
+  latestText,
   LocalNotice,
   LocalTag,
   onModEnter,
@@ -30,14 +31,14 @@ import {
   ProviderChip,
   ProviderParams,
   Recent,
+  ResultError,
   RunButton,
   Stage,
   Summary,
-  TabPanel,
-  traceLabel,
-  TraceView,
+  useRunView,
   useTuning,
   Waiting,
+  Writing,
 } from "./kit";
 
 type Sent = Parameters<typeof api.playFetch>[0];
@@ -64,12 +65,12 @@ export function FetchPlay() {
   const [engine, setEngine] = useState("auto");
   const [noCache, setNoCache] = useState(false);
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<"result" | "trace">("result");
   const [format, setFormat] = useState<"rendered" | "text" | "json">("rendered");
   const [inspected, setInspected] = useState<InspectedRun<FetchResult> | null>(null);
   const tuning = useTuning("fetch", engine);
-  const run = useMutation({ mutationFn: api.playFetch });
-  const elapsed = useElapsed(run.isPending);
+  const run = usePlay(api.playFetch);
+  const views = useRunView(run.pending);
+  const elapsed = useElapsed(run.pending);
 
   const extract = answer && canExtract;
   const args: FetchArgs = { url: address(url), prompt: extract ? prompt.trim() : "" };
@@ -83,10 +84,10 @@ export function FetchPlay() {
   const ready = args.url !== "" && (!extract || args.prompt !== "");
   const send = (next: Sent) => {
     setInspected(null);
-    setView("result");
-    run.mutate(next);
+    views.begin();
+    run.start(next);
   };
-  const submit = () => ready && !run.isPending && send({ ...args, model: override, no_cache: noCache || undefined, route: tuning.route });
+  const submit = () => ready && !run.pending && send({ ...args, model: override, no_cache: noCache || undefined, route: tuning.route });
   // An offset belongs to one page.
   const changeUrl = (next: string) => {
     setUrl(next);
@@ -103,7 +104,7 @@ export function FetchPlay() {
   };
 
   const rerun = () => {
-    if (run.isPending) return;
+    if (run.pending) return;
     if (inspected?.request) {
       const req = inspected.request;
       restore(req);
@@ -126,16 +127,117 @@ export function FetchPlay() {
 
   const data = run.data;
   const activeResult = inspected ? inspected.response : data?.result;
-  const activeAttempts = inspected ? inspected.entry.attempts : data?.attempts;
   const activeDuration = inspected ? inspected.entry.duration_ms : (data?.duration_ms ?? 0);
   const activeEngine = inspected ? inspected.entry.provider : data?.result.fetch_engine;
-  const cached = activeAttempts?.some((a) => a.status === "cached");
+  const cached = inspected
+    ? (inspected.entry.trace?.some((n) => n.kind === "cache" && n.status === "cached") ?? false) || (inspected.entry.attempts?.some((a) => a.status === "cached") ?? false)
+    : run.nodes.some((n) => n.kind === "cache" && n.status === "cached");
+  // The answer as its model writes it.
+  const writing = run.pending ? latestText(run.text) : "";
   // Tuned parameters bypass the cache by themselves.
   const fresh = noCache || tuning.changed;
-  const showOutput = run.isPending || Boolean(run.error) || Boolean(data) || Boolean(inspected);
 
   return (
-    <Stage tool="fetch" title="网页抓取" description="调用 fetch 工具：读取页面并由提取模型按问题提炼回答，或直接返回 Markdown 原文。">
+    <Stage
+      tool="fetch"
+      title="网页抓取"
+      description="调用 fetch 工具：读取页面并由提取模型按问题提炼回答，或直接返回 Markdown 原文。"
+      history={
+        <Recent<FetchResult>
+          tool="fetch"
+          stamp={run.pending ? undefined : run.submittedAt || undefined}
+          activeId={inspected?.entry.id}
+          onPick={restore}
+          onInspect={(item) => {
+            setInspected(item);
+            views.show("result");
+          }}
+        />
+      }
+      output={
+        <Output
+          run={run}
+          inspected={inspected}
+          view={views.view}
+          onView={views.pick}
+          hint="提取回答会随模型的输出逐字出现，原文按段返回。「流程」里是缓存、路由、各提供商的请求和提取模型的参数。"
+          banner={
+            inspected && (
+              <HistoryBanner
+                entry={inspected.entry}
+                onRestore={inspected.request ? () => restore(inspected.request!) : undefined}
+                onRerun={rerun}
+                onClose={() => setInspected(null)}
+              />
+            )
+          }
+          actions={
+            views.view === "result" &&
+            activeResult && (
+              <Segmented
+                size="sm"
+                value={format}
+                onChange={setFormat}
+                options={[
+                  { value: "rendered", label: "渲染" },
+                  { value: "text", label: "文本" },
+                  { value: "json", label: "JSON" },
+                ]}
+              />
+            )
+          }
+          strip={
+            (inspected || data) && (
+              <>
+                <span className="num font-medium text-ink">{duration(activeDuration)}</span>
+                {activeEngine && <ProviderNames ids={activeEngine} />}
+                {cached && <Badge tone="info">缓存命中</Badge>}
+                {!inspected && run.variables?.model && <Badge>{run.variables.model}</Badge>}
+                {!inspected && run.variables?.route && <Badge>临时参数</Badge>}
+                {activeResult && <span>{activeResult.answer !== undefined ? "提取回答" : "原文"}</span>}
+                {activeResult && textLength(activeResult) !== undefined && <span className="num">全文 {compact(textLength(activeResult)!)} 字节</span>}
+              </>
+            )
+          }
+        >
+          {!inspected && run.pending ? (
+            writing ? (
+              <Writing text={writing} />
+            ) : (
+              <Waiting label={run.variables?.url} elapsed={elapsed} />
+            )
+          ) : !inspected && run.error ? (
+            <Failure error={run.error} />
+          ) : inspected && !inspected.response ? (
+            <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={rerun} />
+          ) : activeResult && format === "json" ? (
+            <JSONView value={activeResult} />
+          ) : (
+            activeResult && (
+              <FetchResultView
+                result={activeResult}
+                from={inspected ? (typeof inspected.request?.offset === "number" ? inspected.request.offset : 0) : (run.variables?.offset ?? 0)}
+                rendered={format === "rendered"}
+                onNext={(next) => {
+                  const targetUrl = inspected ? (typeof inspected.request?.url === "string" ? inspected.request.url : url) : (run.variables?.url ?? url);
+                  const targetEngine = inspected
+                    ? typeof inspected.request?.fetch_engine === "string"
+                      ? inspected.request.fetch_engine
+                      : undefined
+                    : run.variables?.fetch_engine;
+                  if (!targetUrl) return;
+                  setUrl(targetUrl);
+                  setEngine(targetEngine ?? "auto");
+                  setAnswer(false);
+                  setOffset(next);
+                  send({ url: targetUrl, prompt: "", raw: true, offset: next, fetch_engine: targetEngine, no_cache: noCache || undefined, route: tuning.route });
+                }}
+              />
+            )
+          )}
+        </Output>
+      }
+    >
       <Composer
         open={open}
         tools={
@@ -242,7 +344,7 @@ export function FetchPlay() {
             }}
           />
         }
-        actions={<RunButton label="抓取" loading={run.isPending} disabled={!ready} onClick={submit} />}
+        actions={<RunButton label="抓取" loading={run.pending} disabled={!ready} onClick={submit} onStop={run.stop} />}
       >
         <div className="flex items-center border-b border-line px-3.5">
           <span className="tag w-12 shrink-0 text-ink-3">URL</span>
@@ -282,103 +384,6 @@ export function FetchPlay() {
           </div>
         )}
       </Composer>
-
-      {showOutput && (
-        <Output
-          stamp={inspected ? inspected.entry.id : run.submittedAt}
-          view={view}
-          onView={setView}
-          banner={
-            inspected && (
-              <HistoryBanner
-                entry={inspected.entry}
-                onRestore={inspected.request ? () => restore(inspected.request!) : undefined}
-                onRerun={rerun}
-                onClose={() => setInspected(null)}
-              />
-            )
-          }
-          tabs={[
-            { value: "result", label: "结果" },
-            { value: "trace", label: traceLabel(activeAttempts) },
-          ]}
-          actions={
-            view === "result" &&
-            activeResult && (
-              <Segmented
-                size="sm"
-                value={format}
-                onChange={setFormat}
-                options={[
-                  { value: "rendered", label: "渲染" },
-                  { value: "text", label: "文本" },
-                  { value: "json", label: "JSON" },
-                ]}
-              />
-            )
-          }
-          strip={
-            !run.isPending &&
-            (inspected || data) && (
-              <>
-                <span className="num font-medium text-ink">{duration(activeDuration)}</span>
-                {activeEngine && <ProviderNames ids={activeEngine} />}
-                {cached && <Badge tone="info">缓存命中</Badge>}
-                {!inspected && run.variables?.model && <Badge>{run.variables.model}</Badge>}
-                {!inspected && run.variables?.route && <Badge>临时参数</Badge>}
-                {activeResult && <span>{activeResult.answer !== undefined ? "提取回答" : "原文"}</span>}
-                {activeResult && textLength(activeResult) !== undefined && <span className="num">全文 {compact(textLength(activeResult)!)} 字节</span>}
-              </>
-            )
-          }
-        >
-          <TabPanel value="result" className="flex flex-col">
-            {run.isPending ? (
-              <Waiting label={run.variables?.url} elapsed={elapsed} />
-            ) : !inspected && run.error ? (
-              <Failure error={run.error} />
-            ) : inspected && !inspected.response ? (
-              <HistoricalFallback entry={inspected.entry} request={inspected.request} onRerun={rerun} />
-            ) : activeResult && format === "json" ? (
-              <JSONView value={activeResult} />
-            ) : (
-              activeResult && (
-                <FetchResultView
-                  result={activeResult}
-                  from={inspected ? (typeof inspected.request?.offset === "number" ? inspected.request.offset : 0) : (run.variables?.offset ?? 0)}
-                  rendered={format === "rendered"}
-                  onNext={(next) => {
-                    const targetUrl = inspected ? (typeof inspected.request?.url === "string" ? inspected.request.url : url) : (run.variables?.url ?? url);
-                    const targetEngine = inspected
-                      ? (typeof inspected.request?.fetch_engine === "string" ? inspected.request.fetch_engine : undefined)
-                      : run.variables?.fetch_engine;
-                    if (!targetUrl) return;
-                    setUrl(targetUrl);
-                    setEngine(targetEngine ?? "auto");
-                    setAnswer(false);
-                    setOffset(next);
-                    send({ url: targetUrl, prompt: "", raw: true, offset: next, fetch_engine: targetEngine, no_cache: noCache || undefined, route: tuning.route });
-                  }}
-                />
-              )
-            )}
-          </TabPanel>
-          <TabPanel value="trace">
-            <TraceView attempts={run.isPending ? undefined : activeAttempts} total={activeDuration} />
-          </TabPanel>
-        </Output>
-      )}
-
-      <Recent<FetchResult>
-        tool="fetch"
-        stamp={run.isPending ? undefined : run.submittedAt || undefined}
-        activeId={inspected?.entry.id}
-        onPick={restore}
-        onInspect={(item) => {
-          setInspected(item);
-          setView("result");
-        }}
-      />
     </Stage>
   );
 }
@@ -397,7 +402,7 @@ function FetchResultView({ result, from, rendered, onNext }: { result: FetchResu
     <>
       {(result.error || result.warning || result.answer_truncated) && (
         <div className="flex flex-col gap-2 px-4 pt-4">
-          {result.error && <Notice tone="err">{result.error}</Notice>}
+          {result.error && <ResultError error={result.error} />}
           {result.warning && <Notice tone="warn">{result.warning}</Notice>}
           {result.answer_truncated && <Notice tone="warn">模型未在超时前完成输出，以下为已接收的部分。</Notice>}
         </div>

@@ -299,6 +299,8 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 			opt.trigger = "first"
 			if len(errs) > 0 {
 				opt.trigger = "after_failure"
+			} else if len(limited) > 0 {
+				opt.trigger = "after_rate_limit"
 			}
 			if limited[p.Name] {
 				opt.trigger = "slot_freed"
@@ -480,6 +482,15 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 			solo[p.Name] = p.NoHedge
 			launchOpt := opt
 			launchOpt.trigger = trigger
+			if launchOpt.trigger == "first" {
+				if limited[p.Name] {
+					launchOpt.trigger = "slot_freed"
+				} else if len(errs) > 0 {
+					launchOpt.trigger = "after_failure"
+				} else if len(limited) > 0 {
+					launchOpt.trigger = "after_rate_limit"
+				}
+			}
 			runCtx, attempt := attemptSpan(ctx, p, launchOpt)
 			spans[p.Name] = attempt
 			go func() {
@@ -497,11 +508,16 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 				results <- result{p.Name, out, err}
 			}()
 		}
+		if retry != nil {
+			retry.Stop()
+			retry = nil
+			retryC = nil
+		}
+		if retryWait != nil {
+			retryWait.End(context.Canceled)
+			retryWait = nil
+		}
 		if earliest >= 0 {
-			if retry != nil {
-				retry.Stop()
-			}
-			retryWait.End(nil)
 			if earliest > 5*time.Millisecond {
 				_, retryWait = StartSpan(ctx, "wait", "rate_limit", map[string]any{"provider": waitProvider, "wait_ms": earliest.Milliseconds()})
 			}
@@ -549,6 +565,8 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 			launch("slow")
 		case <-retryC:
 			retryWait.End(nil)
+			retryWait = nil
+			retry = nil
 			retryC = nil
 			launch("slot_freed")
 		case <-ctx.Done():
