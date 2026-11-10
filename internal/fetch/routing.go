@@ -155,3 +155,62 @@ func Domain(raw string) string {
 	}
 	return host
 }
+
+func traceRoute(ctx context.Context, rt Runtime, target, engine string, rule config.Rule, routed bool) {
+	if core.TraceFrom(ctx) == nil {
+		return
+	}
+	mode := "auto"
+	pinned := ""
+	var matched map[string]any
+	routes := rt.Config.Fetch.Routes
+	if routed {
+		mode = "rule"
+		matched = map[string]any{"name": rule.Name, "builtin": rule.Builtin}
+		if u, err := url.Parse(target); err == nil {
+			for _, p := range rule.Match {
+				domain, prefix, _ := strings.Cut(p, "/")
+				host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+				if (host == domain || strings.HasSuffix(host, "."+domain)) && (prefix == "" || strings.HasPrefix(u.Path, "/"+prefix)) {
+					matched["pattern"] = p
+					break
+				}
+			}
+		}
+		ordered := make([]config.Route, 0, len(routes))
+		for _, id := range rule.Providers {
+			for _, route := range routes {
+				if route.Provider == id {
+					ordered = append(ordered, route)
+					break
+				}
+			}
+		}
+		for _, route := range routes {
+			if !slices.Contains(rule.Providers, route.Provider) {
+				ordered = append(ordered, route)
+			}
+		}
+		routes = ordered
+	} else if engine != EngineAuto {
+		mode, pinned = "pinned", engine
+	}
+	candidates := make([]core.Candidate, 0, len(routes))
+	for _, route := range routes {
+		reason := ""
+		switch {
+		case routed && !slices.Contains(rule.Providers, route.Provider):
+			reason = "not_in_rule"
+		case pinned != "" && pinned != route.Provider:
+			reason = "not_pinned"
+		case !routed && !route.Enabled:
+			reason = "disabled"
+		case !rt.Config.HasCredentials(route.Provider):
+			reason = "no_credentials"
+		case !reachable(rt.Config, route.Provider, rt.Workers):
+			reason = "offline"
+		}
+		candidates = append(candidates, core.Candidate{Provider: route.Provider, Eligible: reason == "", Reason: reason})
+	}
+	core.MarkRoute(ctx, mode, pinned, matched, candidates)
+}

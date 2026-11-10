@@ -94,6 +94,7 @@ func (a *Args) Validate(cfg *config.Config) error {
 // Run answers every query concurrently and removes URLs repeated across them.
 // Args must have passed Validate.
 func Run(ctx context.Context, cfg *config.Config, client *http.Client, lim *core.Limits, args Args) []QueryResult {
+	traceRoute(ctx, cfg, cfg.Search.Routes, args.Engine)
 	providers := Providers(cfg, client)
 	strategy := core.StrategyFallback
 	if args.Engine != EngineAuto {
@@ -102,9 +103,11 @@ func Run(ctx context.Context, cfg *config.Config, client *http.Client, lim *core
 	}
 
 	results := make([]QueryResult, len(args.Queries))
+	filtered := make([]int, len(args.Queries))
 	var wg sync.WaitGroup
 	for i, query := range args.Queries {
 		wg.Go(func() {
+			ctx, span := core.StartSpan(ctx, "query", query, nil)
 			in := Input{
 				Query: query, MaxResults: args.MaxResults, TimeRange: args.TimeRange,
 				IncludeDomains: args.IncludeDomains, ExcludeDomains: args.ExcludeDomains,
@@ -117,6 +120,7 @@ func Run(ctx context.Context, cfg *config.Config, client *http.Client, lim *core
 				SingleRetry: true,
 			})
 			if err != nil {
+				span.End(err)
 				results[i] = QueryResult{Query: query, Error: err.Error()}
 				return
 			}
@@ -125,16 +129,35 @@ func Run(ctx context.Context, cfg *config.Config, client *http.Client, lim *core
 			}
 			// Providers apply the filters in their own ways and not all can
 			// take both at once, so the result is checked here as well.
+			before := len(out.Web) + len(out.Videos)
 			results[i] = QueryResult{Engine: provider, Query: out.Query, Web: filterDomains(out.Web, args), Videos: filterDomains(out.Videos, args)}
+			filtered[i] = before - len(results[i].Web) - len(results[i].Videos)
+			span.Set(map[string]any{"engine": provider, "web": len(results[i].Web), "videos": len(results[i].Videos)})
+			span.End(nil)
 		})
 	}
 	wg.Wait()
 
+	total, removed, dupes, ok := 0, 0, 0, 0
 	seen := map[string]bool{}
 	for i := range results {
+		before := len(results[i].Web) + len(results[i].Videos)
 		results[i].Web = dedupe(results[i].Web, seen)
 		results[i].Videos = dedupe(results[i].Videos, seen)
+		n := len(results[i].Web) + len(results[i].Videos)
+		total += n
+		removed += filtered[i]
+		dupes += before - n
+		if results[i].Error == "" {
+			ok++
+		}
 	}
+	core.Mark(ctx, "merge", "", "ok", map[string]any{"filtered": removed, "deduped": dupes, "total": total})
+	var resultErr error
+	if ok == 0 && len(results) > 0 {
+		resultErr = fmt.Errorf("%s", results[0].Error)
+	}
+	core.MarkResult(ctx, resultErr, map[string]any{"queries": len(results), "ok": ok, "failed": len(results) - ok, "items": total})
 	return results
 }
 

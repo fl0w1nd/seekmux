@@ -53,7 +53,13 @@ func (u Usage) Add(o Usage) Usage {
 // Trace collects the attempts and token usage of one tool call so the request
 // log can show how the answer was produced.
 type Trace struct {
-	Start time.Time
+	Start  time.Time
+	CallID string
+	nodes  []Node
+	text   map[string]string
+	subs   map[chan TraceEvent]struct{}
+	sealed bool
+	done   *CallDone
 
 	mu       sync.Mutex
 	attempts []Attempt
@@ -62,7 +68,9 @@ type Trace struct {
 	models map[string]Usage
 }
 
-func NewTrace() *Trace { return &Trace{Start: time.Now()} }
+func NewTrace() *Trace {
+	return &Trace{Start: time.Now(), CallID: token(), nodes: []Node{{ID: 1, Kind: "call", Status: "running"}}}
+}
 
 type traceKey struct{}
 
@@ -130,7 +138,9 @@ func (t *Trace) Limited(kind, provider, target string, wait time.Duration) {
 
 func (t *Trace) add(a Attempt) {
 	t.mu.Lock()
-	t.attempts = append(t.attempts, a)
+	if !t.sealed {
+		t.attempts = append(t.attempts, a)
+	}
 	t.mu.Unlock()
 }
 
@@ -140,6 +150,10 @@ func (t *Trace) AddUsage(model string, u Usage) {
 		return
 	}
 	t.mu.Lock()
+	if t.sealed {
+		t.mu.Unlock()
+		return
+	}
 	t.usage = t.usage.Add(u)
 	if t.models == nil {
 		t.models = map[string]Usage{}

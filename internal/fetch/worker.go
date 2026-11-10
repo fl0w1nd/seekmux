@@ -52,20 +52,25 @@ func openCLIFetch(ctx context.Context, c call, in Input) (Page, error) {
 		if !wk.Enabled {
 			continue
 		}
+		workerCtx, span := core.StartSpan(ctx, "worker", wk.Name, map[string]any{"worker_id": wk.ID, "profile": wk.Profile, "adapter": in.Adapter})
 		var page *worker.Page
 		err := worker.ErrOffline
 		if c.workers != nil {
-			page, err = c.workers.Fetch(ctx, wk.ID, worker.Request{URL: in.URL, Adapter: in.Adapter, Profile: wk.Profile})
+			page, err = c.workers.Fetch(workerCtx, wk.ID, worker.Request{URL: in.URL, Adapter: in.Adapter, Profile: wk.Profile})
 		}
 		if err == nil {
+			span.End(nil)
 			return Page{URL: cmp.Or(page.URL, in.URL), Title: page.Title, Content: page.Content, Rendered: !in.Adapter}, nil
 		}
 		if ctx.Err() != nil {
+			span.EndStatus("error", ctx.Err())
 			return Page{}, ctx.Err()
 		}
 		if !workerFault(err) {
+			span.EndStatus("error", err)
 			return Page{}, pageError(name, err)
 		}
+		span.EndStatus("skipped", err)
 		skipped = append(skipped, fmt.Sprintf("%s: %v", wk.Name, err))
 	}
 	reason := "no worker is switched on"

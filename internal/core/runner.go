@@ -23,6 +23,8 @@ type Provider[In, Out any] struct {
 	LimitKey    string
 	RateLimit   config.RateLimit
 	Concurrency int
+	Options     map[string]any
+	ExtraBody   map[string]any
 	// Available is false when the provider is disabled or lacks its API key.
 	Available bool
 	// NoHedge keeps it out of RunHedged's race: it starts only once no other
@@ -73,6 +75,8 @@ type RunOptions struct {
 	// provider may have been served a false 404 for being a crawler. Zero
 	// tries every provider.
 	GoneAfter int
+	trigger   string
+	try       int
 }
 
 // ErrRateLimited reports that the providers not yet tried have no free
@@ -174,6 +178,8 @@ func disabled[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out]
 	}
 	err := fmt.Errorf("disabled %s, %s", why, back)
 	TraceFrom(ctx).Skip(opt.Kind, p.Name, opt.Target, err.Error())
+	_, span := StartSpan(ctx, "attempt", p.Name, map[string]any{"kind": opt.Kind, "target": opt.Target, "reason": trip.Reason, "until_ms": untilMillis(trip.Until)})
+	span.EndStatus("skipped", err)
 	return err
 }
 
@@ -188,17 +194,25 @@ func report[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out], 
 		// The run's time was mostly spent before this provider got its turn.
 	case ctx.Err() != nil || Tripping(err):
 		lim.Breaker.Failure(p.Key)
+		if !opt.Untraced {
+			CurrentSpan(ctx).Set(map[string]any{"breaker": "failure"})
+		}
 	default:
 		if httpErr, ok := accountProblem(err); ok {
 			lim.Breaker.Disable(p.Key, httpErr.Kind(), httpErr.Error(), httpErr.DisableFor)
+			if !opt.Untraced {
+				CurrentSpan(ctx).Set(map[string]any{"breaker": "disabled"})
+			}
 		}
 	}
 }
 
 func execute[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out], in In, opt RunOptions) (Out, error) {
+	ctx, span := attemptSpan(ctx, p, opt)
 	release, err := lim.Concurrency.Acquire(ctx, p.limitKey(), p.Concurrency)
 	if err != nil {
 		var zero Out
+		span.End(err)
 		return zero, err
 	}
 	defer release()
@@ -210,12 +224,20 @@ func execute[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out],
 	out, err := p.Execute(ctx, in)
 	done(err)
 	report(ctx, lim, p, err, time.Since(started), opt)
+	endAttempt(span, err)
 	return out, err
 }
 
 // RunFallback tries the providers in order and returns the first success
 // together with the name of the provider that produced it.
-func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Provider[In, Out], in In, opt RunOptions) (Out, string, error) {
+func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Provider[In, Out], in In, opt RunOptions) (out Out, winner string, runErr error) {
+	ctx, span := runSpan(ctx, "fallback", opt)
+	defer func() {
+		if winner != "" {
+			span.Set(map[string]any{"winner": winner})
+		}
+		span.End(runErr)
+	}()
 	var zero Out
 	avail, err := available(providers)
 	if err != nil {
@@ -225,6 +247,7 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 	defer cancel()
 
 	if len(avail) == 1 && opt.SingleRetry {
+		span.Rename("single")
 		return runSingle(ctx, lim, avail[0], in, opt)
 	}
 
@@ -234,6 +257,7 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 	var errs []providerError
 	for len(failed) < len(avail) {
 		earliest := time.Duration(-1)
+		waitProvider := ""
 		for _, p := range avail {
 			if failed[p.Name] {
 				continue
@@ -251,17 +275,34 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 				if !ok {
 					if !limited[p.Name] {
 						limited[p.Name] = true
-						TraceFrom(ctx).Limited(opt.Kind, p.Name, opt.Target, wait)
+						noteLimited(ctx, opt, p.Name, wait)
 					}
 					if earliest < 0 || wait < earliest {
 						earliest = wait
+						waitProvider = p.Name
 					}
 					continue
 				}
-			} else if err := lim.Rate.Acquire(ctx, p.limitKey(), p.RateLimit); err != nil {
-				return zero, "", ended(ctx, opt.Timeout, errs)
+			} else {
+				ready := true
+				if TraceFrom(ctx) != nil {
+					ready, _ = lim.Rate.Peek(p.limitKey(), p.RateLimit)
+				}
+				if !ready {
+					limited[p.Name] = true
+				}
+				if err := lim.Rate.Acquire(ctx, p.limitKey(), p.RateLimit); err != nil {
+					return zero, "", ended(ctx, opt.Timeout, errs)
+				}
 			}
 
+			opt.trigger = "first"
+			if len(errs) > 0 {
+				opt.trigger = "after_failure"
+			}
+			if limited[p.Name] {
+				opt.trigger = "slot_freed"
+			}
 			out, err := execute(ctx, lim, p, in, opt)
 			if err == nil {
 				return out, p.Name, nil
@@ -282,7 +323,7 @@ func RunFallback[In, Out any](ctx context.Context, lim *Limits, providers []Prov
 			errs = append(errs, providerError{"rate limit", ErrRateLimited})
 			break
 		}
-		if err := Sleep(ctx, earliest); err != nil {
+		if err := Wait(ctx, "rate_limit", waitProvider, earliest, func() error { return Sleep(ctx, earliest) }); err != nil {
 			return zero, "", ended(ctx, opt.Timeout, errs)
 		}
 	}
@@ -303,8 +344,19 @@ func runSingle[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out
 		if err := disabled(ctx, lim, p, opt); err != nil {
 			return zero, "", summarize(append(errs, providerError{p.Name, err}))
 		}
+		ready := true
+		if TraceFrom(ctx) != nil {
+			ready, _ = lim.Rate.Peek(p.limitKey(), p.RateLimit)
+		}
 		if err := lim.Rate.Acquire(ctx, p.limitKey(), p.RateLimit); err != nil {
 			return zero, "", ended(ctx, opt.Timeout, errs)
+		}
+		opt.trigger, opt.try = "first", attempt+1
+		if !ready {
+			opt.trigger = "slot_freed"
+		}
+		if attempt > 0 {
+			opt.trigger = "retry"
 		}
 		out, err := execute(ctx, lim, p, in, opt)
 		if err == nil {
@@ -325,7 +377,7 @@ func runSingle[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out
 		if ok, wait := lim.Rate.Peek(p.limitKey(), p.RateLimit); !ok {
 			delay = max(delay, wait)
 		}
-		if err := Sleep(ctx, delay); err != nil {
+		if err := Wait(ctx, "retry", p.Name, delay, func() error { return Sleep(ctx, delay) }); err != nil {
 			return zero, "", ended(ctx, opt.Timeout, errs)
 		}
 	}
@@ -335,7 +387,14 @@ func runSingle[In, Out any](ctx context.Context, lim *Limits, p Provider[In, Out
 // and adds the next one whenever an attempt fails or stays slower than
 // SlowThreshold. The first success wins and cancels the rest. A provider
 // with NoHedge waits its turn until nothing else runs, and then runs alone.
-func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provider[In, Out], in In, opt RunOptions) (Out, string, error) {
+func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provider[In, Out], in In, opt RunOptions) (out Out, winner string, runErr error) {
+	ctx, span := runSpan(ctx, "hedged", opt)
+	defer func() {
+		if winner != "" {
+			span.Set(map[string]any{"winner": winner})
+		}
+		span.End(runErr)
+	}()
 	var zero Out
 	avail, err := available(providers)
 	if err != nil {
@@ -346,7 +405,7 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 	// The losers are recorded here rather than by their goroutines, which may
 	// outlive the call.
 	trace := TraceFrom(ctx)
-	runCtx := WithTrace(ctx, nil)
+	spans := map[string]*Span{}
 
 	type result struct {
 		name string
@@ -363,22 +422,26 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 	var errs []providerError
 	var retry *time.Timer
 	var retryC <-chan time.Time
+	var retryWait *Span
 	defer func() {
 		if retry != nil {
 			retry.Stop()
 		}
+		retryWait.End(context.Canceled)
 	}()
 
-	launch := func() {
+	launch := func(trigger string) {
 		for name := range running {
 			if solo[name] {
 				return
 			}
 		}
 		earliest := time.Duration(-1)
-		note := func(wait time.Duration) {
+		waitProvider := ""
+		note := func(provider string, wait time.Duration) {
 			if earliest < 0 || wait < earliest {
 				earliest = wait
+				waitProvider = provider
 			}
 		}
 		launched := false
@@ -398,7 +461,7 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 			}
 			if launched {
 				if ok, wait := lim.Rate.Peek(p.limitKey(), p.RateLimit); !ok {
-					note(wait)
+					note(p.Name, wait)
 				}
 				continue
 			}
@@ -406,15 +469,19 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 			if !ok {
 				if !limited[p.Name] {
 					limited[p.Name] = true
-					trace.Limited(opt.Kind, p.Name, opt.Target, wait)
+					noteLimited(ctx, opt, p.Name, wait)
 				}
-				note(wait)
+				note(p.Name, wait)
 				continue
 			}
 			launched = true
 			started[p.Name] = time.Now()
 			running[p.Name] = true
 			solo[p.Name] = p.NoHedge
+			launchOpt := opt
+			launchOpt.trigger = trigger
+			runCtx, attempt := attemptSpan(ctx, p, launchOpt)
+			spans[p.Name] = attempt
 			go func() {
 				timer := time.AfterFunc(opt.SlowThreshold, func() { slow <- struct{}{} })
 				defer timer.Stop()
@@ -434,6 +501,10 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 			if retry != nil {
 				retry.Stop()
 			}
+			retryWait.End(nil)
+			if earliest > 5*time.Millisecond {
+				_, retryWait = StartSpan(ctx, "wait", "rate_limit", map[string]any{"provider": waitProvider, "wait_ms": earliest.Milliseconds()})
+			}
 			retry = time.NewTimer(earliest)
 			retryC = retry.C
 		}
@@ -441,11 +512,14 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 
 	finish := func() {
 		for name := range running {
-			trace.Record(opt.Kind, name, opt.Target, started[name], context.Canceled)
+			if !opt.Untraced {
+				trace.Record(opt.Kind, name, opt.Target, started[name], context.Canceled)
+			}
+			endAttempt(spans[name], context.Canceled)
 		}
 	}
 
-	launch()
+	launch("first")
 	for {
 		if len(running) == 0 && retryC == nil {
 			return zero, "", summarize(errs)
@@ -453,7 +527,10 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 		select {
 		case r := <-results:
 			delete(running, r.name)
-			trace.Record(opt.Kind, r.name, opt.Target, started[r.name], r.err)
+			if !opt.Untraced {
+				trace.Record(opt.Kind, r.name, opt.Target, started[r.name], r.err)
+			}
+			endAttempt(spans[r.name], r.err)
 			if r.err == nil {
 				finish()
 				return r.out, r.name, nil
@@ -467,12 +544,13 @@ func RunHedged[In, Out any](ctx context.Context, lim *Limits, providers []Provid
 				finish()
 				return zero, "", err
 			}
-			launch()
+			launch("after_failure")
 		case <-slow:
-			launch()
+			launch("slow")
 		case <-retryC:
+			retryWait.End(nil)
 			retryC = nil
-			launch()
+			launch("slot_freed")
 		case <-ctx.Done():
 			finish()
 			return zero, "", ended(ctx, opt.Timeout, errs)

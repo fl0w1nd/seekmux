@@ -24,6 +24,7 @@ import (
 
 // Model is a configured model, ready to use.
 type Model struct {
+	Attrs map[string]any
 	// Label is the model's id, used in traces and errors.
 	Label           string
 	Language        fantasy.LanguageModel
@@ -98,10 +99,28 @@ func NewModel(ctx context.Context, cfg *config.Config, id string, client *http.C
 		return nil, fmt.Errorf("model %q: %w", id, err)
 	}
 	m := &Model{
+		Attrs: map[string]any{"provider": p.ID, "model": ref.Name, "api": p.Type},
 		Label: id, Language: language, Options: options,
 		Key: LimitKey(id), RateLimit: limit, Concurrency: ref.Concurrency,
 		promptCache: p.Type == config.LLMAnthropic,
 	}
+	reasoning := map[string]any{}
+	if ref.Reasoning.Mode != "" {
+		reasoning["mode"] = ref.Reasoning.Mode
+	}
+	if ref.Reasoning.Effort != "" {
+		reasoning["effort"] = ref.Reasoning.Effort
+	}
+	if ref.Reasoning.BudgetTokens > 0 {
+		reasoning["budget_tokens"] = ref.Reasoning.BudgetTokens
+	}
+	if len(reasoning) > 0 {
+		m.Attrs["reasoning"] = reasoning
+	}
+	if len(ref.ExtraBody) > 0 {
+		m.Attrs["extra_body"] = ref.ExtraBody
+	}
+	m.Attrs["max_output_tokens"] = maxOutput
 	if maxOutput > 0 {
 		m.MaxOutputTokens = &maxOutput
 	}
@@ -171,7 +190,8 @@ func openAIOptions(m config.Model) fantasy.ProviderOptions {
 
 // ChatResult is the answer of a single chat turn.
 type ChatResult struct {
-	Text string
+	Model string
+	Text  string
 	// Truncated is set when the timeout or the output token limit cut the
 	// answer off; Text is the part received.
 	Truncated bool
@@ -196,13 +216,32 @@ func (m *Model) Chat(ctx context.Context, system, user string, opt ChatOptions) 
 	noRetries := 0
 
 	for attempt := 0; attempt < max(opt.MaxRetries, 1); attempt++ {
-		runCtx, cancel := context.WithCancel(ctx)
+		attrs := maps.Clone(m.Attrs)
+		if attrs == nil {
+			attrs = map[string]any{}
+		}
+		if limit := m.outputLimit(opt.MaxOutputTokens); limit != nil {
+			attrs["max_output_tokens"] = *limit
+		}
+		attrs["first_chunk_timeout_ms"], attrs["total_timeout_ms"] = opt.FirstChunkTimeout.Milliseconds(), opt.TotalTimeout.Milliseconds()
+		attrs["try"], attrs["max_tries"], attrs["role"] = attempt+1, max(opt.MaxRetries, 1), "extract"
+		spanCtx, span := core.StartSpan(ctx, "llm", m.Label, attrs)
+		began := time.Now()
+		var firstChunk int64
+		var used core.Usage
+		var finish string
+		runCtx, cancel := context.WithCancel(spanCtx)
 		var mu sync.Mutex
 		var text strings.Builder
 		started := false
 		timer := time.AfterFunc(opt.FirstChunkTimeout, cancel)
 
-		done := trace.Begin("llm", m.Label, "")
+		record := trace.Begin("llm", m.Label, "")
+		closeSpan := func(err error) {
+			span.Set(map[string]any{"usage": core.UsageAttrs(used), "first_chunk_ms": firstChunk, "truncated": false, "finish_reason": finish})
+			span.End(err)
+		}
+		done := func(err error) { record(err); closeSpan(err) }
 		result, err := agent.Stream(runCtx, fantasy.AgentStreamCall{
 			Prompt:          user,
 			ProviderOptions: m.Options,
@@ -214,12 +253,19 @@ func (m *Model) Chat(ctx context.Context, system, user string, opt ChatOptions) 
 				defer mu.Unlock()
 				if !started {
 					started = true
+					firstChunk = time.Since(began).Milliseconds()
 					timer.Stop()
 					timer = time.AfterFunc(opt.TotalTimeout, cancel)
 				}
 				return nil
 			},
+			OnStreamFinish: func(u fantasy.Usage, reason fantasy.FinishReason, _ fantasy.ProviderMetadata) error {
+				used = Usage(u)
+				finish = string(reason)
+				return nil
+			},
 			OnTextDelta: func(_, delta string) error {
+				span.Text(delta)
 				mu.Lock()
 				text.WriteString(delta)
 				mu.Unlock()
@@ -235,16 +281,24 @@ func (m *Model) Chat(ctx context.Context, system, user string, opt ChatOptions) 
 		cancel()
 
 		if err == nil {
-			done(nil)
-			trace.AddUsage(m.Label, Usage(result.TotalUsage))
+			used = Usage(result.TotalUsage)
+			finish = string(result.Response.FinishReason)
+			record(nil)
+			trace.AddUsage(m.Label, used)
 			hitLimit := result.Response.FinishReason == fantasy.FinishReasonLength
+			var responseErr error
 			if answer == "" {
+				responseErr = errors.New("the model returned an empty response")
 				if hitLimit {
-					return ChatResult{}, errors.New("the model used its whole output token limit before answering")
+					responseErr = errors.New("the model used its whole output token limit before answering")
 				}
-				return ChatResult{}, errors.New("the model returned an empty response")
 			}
-			return ChatResult{Text: answer, Truncated: hitLimit}, nil
+			closeSpan(responseErr)
+			span.Set(map[string]any{"truncated": hitLimit})
+			if responseErr != nil {
+				return ChatResult{}, responseErr
+			}
+			return ChatResult{Model: m.Label, Text: answer, Truncated: hitLimit}, nil
 		}
 		if !timedOut {
 			err = Describe(err)
@@ -261,7 +315,8 @@ func (m *Model) Chat(ctx context.Context, system, user string, opt ChatOptions) 
 			return ChatResult{}, err
 		}
 		done(nil)
-		return ChatResult{Text: answer, Truncated: true}, nil
+		span.Set(map[string]any{"truncated": true})
+		return ChatResult{Model: m.Label, Text: answer, Truncated: true}, nil
 	}
 	return ChatResult{}, fmt.Errorf("the stream did not start in %d attempts: %w", max(opt.MaxRetries, 1), core.ErrUnresponsive)
 }

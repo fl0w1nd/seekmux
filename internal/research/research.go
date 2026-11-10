@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -203,11 +205,36 @@ type fetchInput struct {
 
 // Run investigates the question of req, which must have passed Validate. progress receives an event for every tool
 // call the agent makes and whenever the budget it has spent moves.
-func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools, req Request, progress func(Event)) (Result, error) {
+func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools, req Request, progress func(Event)) (result Result, runErr error) {
 	if progress == nil {
 		progress = func(Event) {}
 	}
 	trace := core.TraceFrom(ctx)
+	callCtx := ctx
+	attrs := maps.Clone(model.Attrs)
+	if attrs == nil {
+		attrs = map[string]any{}
+	}
+	names := []string{"search"}
+	if tools.DevSearch != nil {
+		names = append(names, "dev_search")
+	}
+	names = append(names, "fetch")
+	if cfg.Reading == config.ReadingExtract {
+		names = append(names, "read_page")
+	}
+	attrs["role"], attrs["reading"], attrs["tools"], attrs["custom_prompt"] = "research", cfg.Reading, names, strings.TrimSpace(cfg.SystemPrompt) != ""
+	attrs["budget"] = map[string]any{"max_steps": cfg.MaxSteps, "max_duration_seconds": cfg.MaxDurationSeconds, "max_tokens": cfg.MaxTokens, "max_context_tokens": cfg.MaxContextTokens}
+	ctx, agentSpan := core.StartSpan(ctx, "agent", model.Label, attrs)
+	agentCtx := ctx
+	var stepSpan *core.Span
+	var stepStarted time.Time
+	defer func() {
+		stepSpan.End(runErr)
+		agentSpan.Set(map[string]any{"usage": core.UsageAttrs(result.Usage), "steps": result.Steps, "exhausted": result.Exhausted})
+		agentSpan.End(runErr)
+		core.MarkResult(callCtx, runErr, map[string]any{"report_bytes": len(result.Report), "steps": result.Steps, "searches": result.Searches, "dev_searches": result.DevSearches, "fetches": result.Fetches, "read": len(result.Read), "unread": len(result.Unread), "exhausted": result.Exhausted})
+	}()
 	started := time.Now()
 	budget := time.Duration(cfg.MaxDurationSeconds) * time.Second
 	// The agent is told to wrap up before the budget ends, so the report
@@ -252,24 +279,38 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	}
 	searchTool := fantasy.NewParallelAgentTool("search", "Search the web and return relevant results.",
 		func(ctx context.Context, in searchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
+			ctx, span := core.StartSpan(ctx, "tool", "search", map[string]any{"args": core.Object(in)})
+			defer span.End(nil)
 			report(EventSearch, strings.Join(in.Queries, " | "), func() { spent.Searches++ })
 			out, err := tools.Search(ctx, search.Args{
 				Queries: in.Queries, MaxResults: 6, TimeRange: in.TimeRange,
 				IncludeDomains: req.IncludeDomains, ExcludeDomains: req.ExcludeDomains,
 			})
 			if err != nil {
+				span.End(err)
 				return fantasy.NewTextErrorResponse(err.Error()), nil
+			}
+			ok := false
+			for _, query := range out {
+				ok = ok || query.Error == ""
+			}
+			if !ok && len(out) > 0 {
+				span.End(errors.New(out[0].Error))
 			}
 			return jsonResponse(out), nil
 		})
 	devSearchTool := fantasy.NewParallelAgentTool("dev_search", "Search the issues, pull requests and READMEs of public code repositories and documentation sites. Each result carries the passages that matched.",
 		func(ctx context.Context, in devSearchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
+			ctx, span := core.StartSpan(ctx, "tool", "dev_search", map[string]any{"args": core.Object(in)})
+			defer span.End(nil)
 			report(EventDevSearch, in.Query, func() { spent.DevSearches++ })
 			out, err := tools.DevSearch(ctx, search.DevArgs{Query: in.Query, Types: in.Types, Repos: in.Repos})
 			if err != nil {
+				span.End(err)
 				return fantasy.NewTextErrorResponse(err.Error()), nil
 			}
 			if out.Error != "" {
+				span.End(errors.New(out.Error))
 				return fantasy.NewTextErrorResponse(out.Error), nil
 			}
 			// A result carries the passages that matched: the agent has read
@@ -281,11 +322,17 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 			mu.Unlock()
 			return jsonResponse(out), nil
 		})
-	read := func(ctx context.Context, args fetch.Args) (fantasy.ToolResponse, error) {
+	read := func(ctx context.Context, args fetch.Args, name string) (fantasy.ToolResponse, error) {
+		ctx, span := core.StartSpan(ctx, "tool", name, map[string]any{"args": core.Object(args)})
+		defer span.End(nil)
 		report(EventFetch, args.URL, func() { spent.Fetches++ })
 		out, err := tools.Fetch(ctx, args)
 		if err != nil {
+			span.End(err)
 			return fantasy.NewTextErrorResponse(err.Error()), nil
+		}
+		if out.Error != "" {
+			span.End(errors.New(out.Error))
 		}
 		if key := pageKey(args.URL); out.Error == "" {
 			mu.Lock()
@@ -302,7 +349,7 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	page := func(name, description string) fantasy.AgentTool {
 		return fantasy.NewParallelAgentTool(name, description+" A long page comes in parts: when the result has next_offset, call again with it to read on.",
 			func(ctx context.Context, in readInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
-				return read(ctx, fetch.Args{URL: in.URL, Raw: true, Offset: in.Offset})
+				return read(ctx, fetch.Args{URL: in.URL, Raw: true, Offset: in.Offset}, name)
 			})
 	}
 	readers := []fantasy.AgentTool{page("fetch", "Read the text of a web page.")}
@@ -312,7 +359,7 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 		readers = []fantasy.AgentTool{
 			fantasy.NewParallelAgentTool("fetch", "Read a web page and get the answer to your prompt from its content.",
 				func(ctx context.Context, in fetchInput, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
-					return read(ctx, fetch.Args{URL: in.URL, Prompt: in.Prompt})
+					return read(ctx, fetch.Args{URL: in.URL, Prompt: in.Prompt}, "fetch")
 				}),
 			page("read_page", "Read the original text of a web page instead of an answer about it. This costs far more context than fetch: keep it for code, commands and exact wording, and for checking an answer that matters."),
 		}
@@ -334,7 +381,6 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	system = strings.ReplaceAll(system, "{{date}}", started.Format("2006-01-02"))
 	agent := fantasy.NewAgent(model.Language, fantasy.WithSystemPrompt(system), fantasy.WithTools(offered...))
 
-	var result Result
 	done := trace.Begin("llm", model.Label, "")
 	out, err := agent.Stream(ctx, fantasy.AgentStreamCall{
 		Prompt:          req.prompt(),
@@ -367,6 +413,11 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 			case context >= cfg.MaxContextTokens:
 				limit = LimitContext
 			}
+			mu.Lock()
+			stepSpan.End(nil)
+			ctx, stepSpan = core.StartSpan(agentCtx, "step", strconv.Itoa(opt.StepNumber+1), map[string]any{"context_tokens": context})
+			stepStarted = time.Now()
+			mu.Unlock()
 			settle := func() {
 				step = opt.StepNumber + 1
 				spent.Steps, spent.Usage = step, total
@@ -377,6 +428,8 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 				report("", "", settle)
 				return ctx, fantasy.PrepareStepResult{Messages: model.CachePrefix(opt.Messages)}, nil
 			}
+			core.Mark(agentCtx, "wrap_up", limit, "ok", nil)
+			stepSpan.Set(map[string]any{"final": true})
 			result.BudgetExhausted, result.Exhausted = true, limit
 			report(EventWrapUp, limit, func() {
 				settle()
@@ -387,6 +440,7 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 		},
 		OnTextDelta: func(_, text string) error {
 			mu.Lock()
+			stepSpan.Text(text)
 			draft.WriteString(text)
 			due := time.Since(drafted) >= 250*time.Millisecond
 			if due {
@@ -400,8 +454,21 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 		},
 		// The request is answered before its tools run, so the totals move
 		// here rather than once the step is over.
-		OnStreamFinish: func(u fantasy.Usage, _ fantasy.FinishReason, _ fantasy.ProviderMetadata) error {
+		OnStreamFinish: func(u fantasy.Usage, reason fantasy.FinishReason, _ fantasy.ProviderMetadata) error {
 			usage := llm.Usage(u)
+			mu.Lock()
+			attrs := map[string]any{"usage": core.UsageAttrs(usage), "llm_ms": time.Since(stepStarted).Milliseconds(), "final": reason != fantasy.FinishReasonToolCalls}
+			if reason == fantasy.FinishReasonToolCalls {
+				note := strings.TrimSpace(draft.String())
+				if runes := []rune(note); len(runes) > maxNote {
+					note = string(runes[:maxNote]) + "…"
+				}
+				if note != "" {
+					attrs["note"] = note
+				}
+			}
+			stepSpan.Set(attrs)
+			mu.Unlock()
 			report("", "", func() {
 				spent.Usage = spent.Usage.Add(usage)
 				settled = usage.InputTokens + usage.OutputTokens
@@ -411,12 +478,14 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 		OnStepFinish: func(s fantasy.StepResult) error {
 			// Words before a tool call are the agent thinking aloud, not the report.
 			note := strings.TrimSpace(s.Content.Text())
+			stepSpan.Set(map[string]any{"final": len(s.Content.ToolCalls()) == 0})
 			if len(s.Content.ToolCalls()) == 0 || note == "" {
 				return nil
 			}
 			if runes := []rune(note); len(runes) > maxNote {
 				note = string(runes[:maxNote]) + "…"
 			}
+			stepSpan.Set(map[string]any{"note": note})
 			report(EventNote, note, draft.Reset)
 			return nil
 		},
@@ -428,6 +497,8 @@ func Run(ctx context.Context, cfg config.Research, model *llm.Model, tools Tools
 	used := spent.Usage
 	mu.Unlock()
 	if err != nil {
+		result.Steps = step
+		result.Usage = used
 		result.Draft = unfinished
 		// A run that failed has still spent what its finished requests cost.
 		trace.AddUsage(model.Label, used)

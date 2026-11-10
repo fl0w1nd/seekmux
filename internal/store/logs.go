@@ -16,14 +16,16 @@ import (
 
 // LogEntry is one served tool call.
 type LogEntry struct {
-	ID         int64  `json:"id"`
-	TS         int64  `json:"ts"`
-	Tool       string `json:"tool"`
-	Source     string `json:"source"`
-	APIKeyID   int64  `json:"api_key_id,omitempty"`
-	APIKeyName string `json:"api_key_name,omitempty"`
-	ClientIP   string `json:"client_ip,omitempty"`
-	UserAgent  string `json:"user_agent,omitempty"`
+	ID         int64           `json:"id"`
+	TS         int64           `json:"ts"`
+	Tool       string          `json:"tool"`
+	Source     string          `json:"source"`
+	APIKeyID   int64           `json:"api_key_id,omitempty"`
+	APIKeyName string          `json:"api_key_name,omitempty"`
+	ClientIP   string          `json:"client_ip,omitempty"`
+	UserAgent  string          `json:"user_agent,omitempty"`
+	CallID     string          `json:"call_id,omitempty"`
+	Trace      json.RawMessage `json:"trace,omitempty"`
 	// TaskID is the research task a research call ran as, whose report has a page.
 	TaskID     string `json:"task_id,omitempty"`
 	Status     string `json:"status"`
@@ -118,7 +120,7 @@ func (w *LogWriter) run() {
 		batch = batch[:0]
 		w.mu.Lock()
 		for _, entry := range stored {
-			entry.Request, entry.Response = "", ""
+			entry.Request, entry.Response, entry.Trace = "", "", nil
 			for ch := range w.subs {
 				select {
 				case ch <- entry:
@@ -157,9 +159,9 @@ func (s *Store) insertLogs(batch []LogEntry) []LogEntry {
 			attempts = "[]"
 		}
 		res, err := tx.Exec(`INSERT INTO request_logs
-			(ts, tool, source, api_key_id, api_key_name, client_ip, user_agent, task_id, status, duration_ms, provider, summary, request, response, error, attempts, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			e.TS, e.Tool, e.Source, e.APIKeyID, e.APIKeyName, e.ClientIP, e.UserAgent, e.TaskID, e.Status, e.DurationMs, e.Provider, e.Summary,
+			(ts, tool, source, api_key_id, api_key_name, client_ip, user_agent, task_id, call_id, trace, status, duration_ms, provider, summary, request, response, error, attempts, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			e.TS, e.Tool, e.Source, e.APIKeyID, e.APIKeyName, e.ClientIP, e.UserAgent, e.TaskID, e.CallID, string(e.Trace), e.Status, e.DurationMs, e.Provider, e.Summary,
 			e.Request, e.Response, e.Error, attempts, e.InputTokens, e.OutputTokens, e.CacheReadTokens, e.CacheWriteTokens)
 		if err != nil {
 			continue
@@ -223,11 +225,11 @@ func hops(attempts string) []Hop {
 	return out
 }
 
-const logListColumns = `id, ts, tool, source, api_key_id, api_key_name, client_ip, user_agent, task_id, status, duration_ms, provider, summary, error, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens`
+const logListColumns = `id, ts, tool, source, api_key_id, api_key_name, client_ip, user_agent, task_id, call_id, status, duration_ms, provider, summary, error, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens`
 
 // scanTargets are the destinations of logListColumns, in order.
 func (e *LogEntry) scanTargets() []any {
-	return []any{&e.ID, &e.TS, &e.Tool, &e.Source, &e.APIKeyID, &e.APIKeyName, &e.ClientIP, &e.UserAgent, &e.TaskID, &e.Status, &e.DurationMs,
+	return []any{&e.ID, &e.TS, &e.Tool, &e.Source, &e.APIKeyID, &e.APIKeyName, &e.ClientIP, &e.UserAgent, &e.TaskID, &e.CallID, &e.Status, &e.DurationMs,
 		&e.Provider, &e.Summary, &e.Error, &e.InputTokens, &e.OutputTokens, &e.CacheReadTokens, &e.CacheWriteTokens}
 }
 
@@ -305,14 +307,32 @@ func (s *Store) ListLogs(ctx context.Context, f LogFilter) ([]LogEntry, error) {
 }
 
 func (s *Store) GetLog(ctx context.Context, id int64) (LogEntry, bool, error) {
+	return s.getLog(ctx, "id", id)
+}
+
+func (s *Store) GetLogByCall(ctx context.Context, callID string) (LogEntry, bool, error) {
+	return s.getLog(ctx, "call_id", callID)
+}
+
+// LogIDByTask returns the latest request log id for a research task.
+func (s *Store) LogIDByTask(ctx context.Context, taskID string) (int64, bool, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx, `SELECT id FROM request_logs WHERE task_id = ? ORDER BY id DESC LIMIT 1`, taskID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	return id, err == nil, err
+}
+
+func (s *Store) getLog(ctx context.Context, column string, value any) (LogEntry, bool, error) {
 	var e LogEntry
-	var attempts string
-	err := s.db.QueryRowContext(ctx, `SELECT `+logListColumns+`, attempts, request, response FROM request_logs WHERE id = ?`, id).
-		Scan(append(e.scanTargets(), &attempts, &e.Request, &e.Response)...)
+	var attempts, tree string
+	err := s.db.QueryRowContext(ctx, `SELECT `+logListColumns+`, attempts, request, response, trace FROM request_logs WHERE `+column+` = ? ORDER BY id DESC LIMIT 1`, value).
+		Scan(append(e.scanTargets(), &attempts, &e.Request, &e.Response, &tree)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return LogEntry{}, false, nil
 	}
-	e.Attempts = json.RawMessage(attempts)
+	e.Attempts, e.Trace = raw(attempts), raw(tree)
 	return e, err == nil, err
 }
 

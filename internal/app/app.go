@@ -38,6 +38,7 @@ type Snapshot struct {
 	Version int64
 	Config  *config.Config
 	Client  *http.Client
+	policy  map[string]any
 }
 
 // Caller identifies who made a tool call, for the request log.
@@ -68,6 +69,7 @@ type App struct {
 	Store  *store.Store
 	Logs   *store.LogWriter
 	Limits *core.Limits
+	Live   *Registry
 	// Workers holds the connections of the workers of the self-hosted
 	// fetchers.
 	Workers *worker.Hub
@@ -94,7 +96,7 @@ type App struct {
 // New loads the stored configuration, creating the default one on first run.
 func New(ctx context.Context, st *store.Store) (*App, error) {
 	limits := core.NewLimits()
-	a := &App{Store: st, Logs: st.NewLogWriter(), Limits: limits, domains: st.NewDomainWriter(), usage: st.NewUsageWriter(), fetcher: fetch.NewService(limits), researching: map[int64]int{}}
+	a := &App{Store: st, Logs: st.NewLogWriter(), Limits: limits, Live: NewRegistry(), domains: st.NewDomainWriter(), usage: st.NewUsageWriter(), fetcher: fetch.NewService(limits), researching: map[int64]int{}}
 	a.fetcher.Observe = func(o fetch.Observation) {
 		a.domains.Record(store.DomainSample{
 			TS: o.Time.UnixMilli(), Domain: o.Domain, Provider: o.Provider, Outcome: o.Outcome,
@@ -154,6 +156,7 @@ func (a *App) workerByToken(token string) (string, bool) {
 func (a *App) Close() {
 	a.Workers.Close()
 	a.stop()
+	a.Live.Close()
 	a.tasks.Wait()
 	a.Logs.Close()
 	a.domains.Close()
@@ -166,6 +169,7 @@ func (a *App) Snapshot() *Snapshot { return a.snapshot.Load() }
 // console uses it to try a model, a budget or a provider's parameters before
 // saving them; tool calls over MCP never carry one.
 type Override struct {
+	TraceAttrs map[string]any
 	// ExtractModel answers fetch prompts on its own, in place of the
 	// extract chain.
 	ExtractModel string
@@ -315,7 +319,24 @@ func (s *Snapshot) under(p store.KeyPolicy) *Snapshot {
 	if r.MaxTokens > 0 {
 		cfg.Research.MaxTokens = min(cfg.Research.MaxTokens, r.MaxTokens)
 	}
-	return &Snapshot{Version: s.Version, Config: cfg, Client: s.Client}
+	changes := map[string]any{}
+	if !reflect.DeepEqual(s.Config.Fetch.Extract.Models, cfg.Fetch.Extract.Models) {
+		changes["extract_models"] = cfg.Fetch.Extract.Models
+	}
+	before, after := s.Config.Research, cfg.Research
+	if before.Model != after.Model {
+		changes["research_model"] = after.Model
+	}
+	if before.MaxSteps != after.MaxSteps {
+		changes["max_steps"] = after.MaxSteps
+	}
+	if before.MaxDurationSeconds != after.MaxDurationSeconds {
+		changes["max_duration_seconds"] = after.MaxDurationSeconds
+	}
+	if before.MaxTokens != after.MaxTokens {
+		changes["max_tokens"] = after.MaxTokens
+	}
+	return &Snapshot{Version: s.Version, Config: cfg, Client: s.Client, policy: changes}
 }
 
 // View returns the current configuration as caller's key sees it.
@@ -323,7 +344,8 @@ func (a *App) View(caller Caller) *Snapshot { return a.Snapshot().under(caller.P
 
 // view returns the configuration a call of tool by caller runs on.
 func (a *App) view(caller Caller, tool string, o Override) (*Snapshot, error) {
-	if tool == config.ToolResearch && caller.Policy.Research.QuickOnly {
+	quickPolicy := tool == config.ToolResearch && caller.Policy.Research.QuickOnly && !o.Research.Quick
+	if quickPolicy {
 		o.Research.Quick = true
 	}
 	s, err := a.Snapshot().with(tool, o)
@@ -331,7 +353,14 @@ func (a *App) view(caller Caller, tool string, o Override) (*Snapshot, error) {
 		return nil, err
 	}
 	// The key's ceilings come last, so no effort lifts a run above them.
-	return s.under(caller.Policy), nil
+	s = s.under(caller.Policy)
+	if quickPolicy {
+		if s.policy == nil {
+			s.policy = map[string]any{}
+		}
+		s.policy["quick_only"] = true
+	}
+	return s, nil
 }
 
 // admitResearch counts a research run of caller's key in, unless the key
@@ -450,7 +479,16 @@ func (a *App) fetchRuntime(s *Snapshot, o Override) fetch.Runtime {
 }
 
 // logCall writes the request log entry of a finished tool call.
-func (a *App) logCall(s *Snapshot, caller Caller, tool string, trace *core.Trace, entry store.LogEntry, request, response any) {
+func (a *App) logCall(ctx context.Context, s *Snapshot, caller Caller, tool string, trace *core.Trace, entry store.LogEntry, request, response any) {
+	status := entry.Status
+	if ctx.Err() != nil {
+		status = "canceled"
+		entry.Status = store.StatusError
+		entry.Error = context.Cause(ctx).Error()
+	}
+	trace.Seal(status, entry.Error)
+	entry.CallID = trace.CallID
+	entry.Trace, _ = json.Marshal(trace.Nodes())
 	entry.TS = trace.Start.UnixMilli()
 	entry.Tool = tool
 	entry.Source = caller.Source
@@ -466,6 +504,7 @@ func (a *App) logCall(s *Snapshot, caller Caller, tool string, trace *core.Trace
 	entry.Summary = truncate(entry.Summary, 500)
 	entry.Error = truncate(entry.Error, 2000)
 	a.Logs.Write(entry)
+	a.Live.Finish(trace.CallID, core.CallDone{CallID: trace.CallID, Status: status, DurationMs: entry.DurationMs, Error: entry.Error})
 	if caller.KeyID != 0 {
 		a.usage.Record(usageOf(entry, trace)...)
 	}
@@ -552,8 +591,14 @@ func (a *App) Search(ctx context.Context, caller Caller, args search.Args, o Ove
 	if err := args.Validate(s.Config); err != nil {
 		return nil, err
 	}
-	ctx, trace := traced(ctx)
+	ctx, trace, cancel := a.startCall(ctx, s, caller, config.ToolSearch, strings.Join(args.Queries, " | "), "", args, o)
+	defer cancel()
 	results := search.Run(ctx, s.Config, s.Client, a.Limits, args)
+	if ctx.Err() != nil {
+		for i := range results {
+			results[i].Error = context.Cause(ctx).Error()
+		}
+	}
 
 	entry := store.LogEntry{Status: store.StatusError, Summary: strings.Join(args.Queries, " | ")}
 	var engines []string
@@ -568,7 +613,7 @@ func (a *App) Search(ctx context.Context, caller Caller, args search.Args, o Ove
 		}
 	}
 	entry.Provider = strings.Join(engines, ",")
-	a.logCall(s, caller, config.ToolSearch, trace, entry, args, results)
+	a.logCall(ctx, s, caller, config.ToolSearch, trace, entry, args, results)
 	return results, nil
 }
 
@@ -582,14 +627,18 @@ func (a *App) DevSearch(ctx context.Context, caller Caller, args search.DevArgs,
 	if err := args.Validate(s.Config); err != nil {
 		return search.DevResult{}, err
 	}
-	ctx, trace := traced(ctx)
+	ctx, trace, cancel := a.startCall(ctx, s, caller, config.ToolDevSearch, args.Query, "", args, o)
+	defer cancel()
 	result := search.RunDev(ctx, s.Config, s.Client, a.Limits, args)
+	if ctx.Err() != nil {
+		result.Error = context.Cause(ctx).Error()
+	}
 
 	entry := store.LogEntry{Status: store.StatusOK, Summary: args.Query, Provider: result.Engine, Error: result.Error}
 	if result.Error != "" {
 		entry.Status = store.StatusError
 	}
-	a.logCall(s, caller, config.ToolDevSearch, trace, entry, args, result)
+	a.logCall(ctx, s, caller, config.ToolDevSearch, trace, entry, args, result)
 	return result, nil
 }
 
@@ -603,14 +652,18 @@ func (a *App) Fetch(ctx context.Context, caller Caller, args fetch.Args, o Overr
 	if err := args.Validate(s.Config); err != nil {
 		return fetch.Result{}, err
 	}
-	ctx, trace := traced(ctx)
+	ctx, trace, cancel := a.startCall(ctx, s, caller, config.ToolFetch, args.URL, "", args, o)
+	defer cancel()
 	result := a.fetcher.Run(ctx, a.fetchRuntime(s, o), args)
+	if ctx.Err() != nil {
+		result.Error = context.Cause(ctx).Error()
+	}
 
 	entry := store.LogEntry{Status: store.StatusOK, Summary: args.URL, Provider: result.Engine, Error: result.Error}
 	if result.Error != "" {
 		entry.Status = store.StatusError
 	}
-	a.logCall(s, caller, config.ToolFetch, trace, entry, args, result)
+	a.logCall(ctx, s, caller, config.ToolFetch, trace, entry, args, result)
 	return result, nil
 }
 
@@ -643,8 +696,8 @@ func (a *App) research(ctx context.Context, caller Caller, req research.Request,
 		return research.Result{}, fmt.Errorf("research is not enabled")
 	}
 
-	trace := core.NewTrace()
-	ctx = core.WithTrace(ctx, trace)
+	ctx, trace, cancel := a.startCall(ctx, s, caller, config.ToolResearch, req.Question, task, req, o)
+	defer cancel()
 	var progressMu sync.Mutex
 	report := func(event research.Event) {
 		if progress != nil {
@@ -689,7 +742,10 @@ func (a *App) research(ctx context.Context, caller Caller, req research.Request,
 	if err != nil {
 		entry.Status, entry.Error = store.StatusError, err.Error()
 	}
-	a.logCall(s, caller, config.ToolResearch, trace, entry, req, result)
+	a.logCall(ctx, s, caller, config.ToolResearch, trace, entry, req, result)
+	if ctx.Err() != nil {
+		err = context.Cause(ctx)
+	}
 	return result, err
 }
 
@@ -811,7 +867,7 @@ func (a *App) runTask(ctx context.Context, id string, caller Caller, req researc
 	}
 	status, message := store.TaskDone, ""
 	switch {
-	case context.Cause(run) == errCanceled:
+	case context.Cause(run) == errCanceled || errors.Is(err, ErrCallStopped):
 		status, message = store.TaskCanceled, errCanceled.Error()
 	case err != nil:
 		status, message = store.TaskFailed, err.Error()

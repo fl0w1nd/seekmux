@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/fl0w1nd/seekmux/internal/app"
 	"github.com/fl0w1nd/seekmux/internal/config"
-	"github.com/fl0w1nd/seekmux/internal/core"
 	"github.com/fl0w1nd/seekmux/internal/fetch"
 	"github.com/fl0w1nd/seekmux/internal/llm"
 	"github.com/fl0w1nd/seekmux/internal/oauth"
@@ -72,6 +72,10 @@ func (s *Server) Handler() http.Handler {
 		"PATCH /api/keys/{id}":                 s.handleUpdateKey,
 		"POST /api/keys/{id}/revoke":           s.handleRevokeKey,
 		"DELETE /api/keys/{id}":                s.handleDeleteKey,
+		"GET /api/live":                        s.handleLive,
+		"GET /api/live/{call_id}/stream":       s.handleLiveStream,
+		"POST /api/live/{call_id}/cancel":      s.handleLiveCancel,
+		"GET /api/logs/call/{call_id}":         s.handleGetLogByCall,
 		"GET /api/logs":                        s.handleListLogs,
 		"GET /api/logs/stream":                 s.handleLogStream,
 		"GET /api/logs/{id}":                   s.handleGetLog,
@@ -446,28 +450,45 @@ func (s *Server) handleClearLogs(w http.ResponseWriter, r *http.Request) {
 
 // handleLogStream pushes new log entries as server-sent events.
 func (s *Server) handleLogStream(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
+	flusher, ok := startSSE(w)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, errors.New("streaming is not supported"))
 		return
 	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Accel-Buffering", "no")
 	entries, cancel := s.app.Logs.Subscribe()
 	defer cancel()
-	_, _ = io.WriteString(w, ": connected\n\n")
-	flusher.Flush()
-
+	events, stop := s.app.Live.Subscribe(64)
+	defer stop()
 	keepAlive := time.NewTicker(20 * time.Second)
 	defer keepAlive.Stop()
+	// The snapshot precedes entries queued while the stream was connecting.
+	initial := <-events
+	if sendSSE(w, "snapshot", initial.Snapshot) != nil {
+		return
+	}
+	flusher.Flush()
 	for {
 		select {
 		case entry := <-entries:
-			data, _ := json.Marshal(entry)
-			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+			if sendSSE(w, "", entry) != nil {
+				return
+			}
+		case e := <-events:
+			var value any
+			switch e.Type {
+			case "snapshot":
+				value = e.Snapshot
+			case "call":
+				value = e.Call
+			case "done":
+				value = e.Done
+			}
+			if sendSSE(w, e.Type, value) != nil {
+				return
+			}
 		case <-keepAlive.C:
-			_, _ = io.WriteString(w, ": ping\n\n")
+			if _, err := io.WriteString(w, ": ping\n\n"); err != nil {
+				return
+			}
 		case <-r.Context().Done():
 			return
 		}
@@ -666,40 +687,36 @@ func (s *Server) handlePlaySearch(w http.ResponseWriter, r *http.Request) {
 		search.Args
 		tuning
 	}
-	if !readJSON(w, r, &body) {
+	attrs, ok := readPlay(w, r, &body, "")
+	if !ok {
 		return
 	}
-	trace := core.NewTrace()
-	results, err := s.app.Search(core.WithTrace(r.Context(), trace), webui.From(r), body.Args, app.Override{Route: body.Route})
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, map[string]any{"duration_ms": time.Since(trace.Start).Milliseconds(), "results": results, "attempts": trace.Attempts()})
+	play(w, r, func(ctx context.Context) (map[string]any, error) {
+		results, err := s.app.Search(ctx, webui.From(r), body.Args, app.Override{Route: body.Route, TraceAttrs: attrs})
+		return map[string]any{"results": results}, err
+	})
 }
 
 func (s *Server) handlePlayDevSearch(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		search.DevArgs
 		tuning
-		// Engine leaves one provider to serve the call; the tool itself has
-		// no such argument.
+		// Engine leaves one provider to serve the call; the tool itself has no such argument.
 		Engine string `json:"search_engine"`
 	}
-	if !readJSON(w, r, &body) {
+	attrs, ok := readPlay(w, r, &body, "")
+	if !ok {
 		return
 	}
-	o := app.Override{Route: body.Route}
-	if body.Engine != search.EngineAuto {
+	o := app.Override{Route: body.Route, TraceAttrs: attrs}
+	if body.Engine != search.EngineAuto && body.Engine != "" {
 		o.Pin = body.Engine
+		attrs["pin"] = body.Engine
 	}
-	trace := core.NewTrace()
-	result, err := s.app.DevSearch(core.WithTrace(r.Context(), trace), webui.From(r), body.DevArgs, o)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, map[string]any{"duration_ms": time.Since(trace.Start).Milliseconds(), "result": result, "attempts": trace.Attempts()})
+	play(w, r, func(ctx context.Context) (map[string]any, error) {
+		result, err := s.app.DevSearch(ctx, webui.From(r), body.DevArgs, o)
+		return map[string]any{"result": result}, err
+	})
 }
 
 func (s *Server) handlePlayFetch(w http.ResponseWriter, r *http.Request) {
@@ -711,16 +728,14 @@ func (s *Server) handlePlayFetch(w http.ResponseWriter, r *http.Request) {
 		// NoCache reads the page anew instead of answering from the cache.
 		NoCache bool `json:"no_cache"`
 	}
-	if !readJSON(w, r, &body) {
+	attrs, ok := readPlay(w, r, &body, "extract_model")
+	if !ok {
 		return
 	}
-	trace := core.NewTrace()
-	result, err := s.app.Fetch(core.WithTrace(r.Context(), trace), webui.From(r), body.Args, app.Override{ExtractModel: body.Model, Route: body.Route, NoCache: body.NoCache})
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	writeJSON(w, map[string]any{"duration_ms": time.Since(trace.Start).Milliseconds(), "result": result, "attempts": trace.Attempts()})
+	play(w, r, func(ctx context.Context) (map[string]any, error) {
+		result, err := s.app.Fetch(ctx, webui.From(r), body.Args, app.Override{ExtractModel: body.Model, Route: body.Route, NoCache: body.NoCache, TraceAttrs: attrs})
+		return map[string]any{"result": result}, err
+	})
 }
 
 func (s *Server) handlePlayResearch(w http.ResponseWriter, r *http.Request) {
@@ -782,12 +797,19 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errors.New("task not found"))
 		return
 	}
+	callID := s.app.Live.TaskCall(task.ID)
+	var logID int64
+	if id, ok, err := s.app.Store.LogIDByTask(r.Context(), task.ID); err == nil && ok {
+		logID = id
+	}
 	// Now lets the console time a running task by the server's clock.
 	writeJSON(w, struct {
 		store.ResearchTask
 		Now       int64  `json:"now"`
 		ReportURL string `json:"report_url"`
-	}{task, time.Now().UnixMilli(), s.app.Snapshot().ReportURL(r, task.ID)})
+		CallID    string `json:"call_id,omitempty"`
+		LogID     int64  `json:"log_id,omitempty"`
+	}{task, time.Now().UnixMilli(), s.app.Snapshot().ReportURL(r, task.ID), callID, logID})
 }
 
 // report is a research task as the page of its report shows it to anyone

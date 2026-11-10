@@ -38,6 +38,7 @@ type Page struct {
 	// Rendered marks a page a worker read as rendered where a site adapter
 	// was not asked for. It does not answer a call that asks for one.
 	Rendered bool
+	Cached   bool
 }
 
 // call is what a provider needs besides the URL: where and how to reach it,
@@ -87,6 +88,8 @@ func Providers(cfg *config.Config, client *http.Client, w Workers) []core.Provid
 		limit, concurrency := cfg.Limits(route.Provider)
 		out = append(out, core.Provider[Input, Page]{
 			Name:        route.Provider,
+			Options:     map[string]any(c.opt),
+			ExtraBody:   route.ExtraBody,
 			Key:         route.Provider + ":" + config.ToolFetch,
 			LimitKey:    route.Provider,
 			RateLimit:   limit,
@@ -98,6 +101,9 @@ func Providers(cfg *config.Config, client *http.Client, w Workers) []core.Provid
 				if err == nil && strings.TrimSpace(page.Content) == "" {
 					// An empty page is a failed fetch: let the next provider try.
 					return Page{}, &core.TargetError{Provider: info.Name, Reason: "the page came back empty"}
+				}
+				if err == nil {
+					core.CurrentSpan(ctx).Set(map[string]any{"bytes": len(page.Content)})
 				}
 				return page, err
 			},

@@ -148,6 +148,7 @@ func (a *DevArgs) Validate(cfg *config.Config) error {
 
 // RunDev answers args, which must have passed Validate.
 func RunDev(ctx context.Context, cfg *config.Config, client *http.Client, lim *core.Limits, args DevArgs) DevResult {
+	traceRoute(ctx, cfg, cfg.DevSearch.Routes, EngineAuto)
 	in := DevInput{Query: args.Query, MaxResults: args.MaxResults, Types: args.Types, Repos: args.Repos}
 	items, engine, err := core.RunFallback(ctx, lim, DevProviders(cfg, client), in, core.RunOptions{
 		Kind:        config.ToolDevSearch,
@@ -156,6 +157,7 @@ func RunDev(ctx context.Context, cfg *config.Config, client *http.Client, lim *c
 		Strategy:    core.StrategyFallback,
 		SingleRetry: true,
 	})
+	core.MarkResult(ctx, err, map[string]any{"items": len(items)})
 	if err != nil {
 		return DevResult{Query: args.Query, Results: []DevItem{}, Error: err.Error()}
 	}

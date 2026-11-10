@@ -1,0 +1,219 @@
+[
+  {
+    "id": 1,
+    "kind": "call",
+    "name": "fetch",
+    "status": "ok",
+    "start_ms": 0,
+    "duration_ms": 3,
+    "attrs": {
+      "api_key_name": "test",
+      "args": {
+        "fetch_engine": "auto",
+        "offset": 0,
+        "prompt": "What does the page say?",
+        "raw": false,
+        "url": "https://example.test/page"
+      },
+      "client_ip": "127.0.0.1",
+      "config_version": 2,
+      "source": "webui"
+    }
+  },
+  {
+    "id": 2,
+    "parent": 1,
+    "kind": "route",
+    "status": "ok",
+    "start_ms": 0,
+    "attrs": {
+      "candidates": [
+        {
+          "eligible": true,
+          "provider": "jina",
+          "reason": ""
+        }
+      ],
+      "mode": "auto"
+    }
+  },
+  {
+    "id": 3,
+    "parent": 1,
+    "kind": "cache",
+    "name": "page",
+    "status": "ok",
+    "start_ms": 0,
+    "attrs": {
+      "hit": false,
+      "reason": "miss"
+    }
+  },
+  {
+    "id": 4,
+    "parent": 1,
+    "kind": "run",
+    "name": "single",
+    "status": "ok",
+    "start_ms": 0,
+    "duration_ms": 1,
+    "attrs": {
+      "gone_after": 2,
+      "kind": "fetch",
+      "rate_strategy": "wait",
+      "target": "https://example.test/page",
+      "timeout_ms": 30000,
+      "winner": "jina"
+    }
+  },
+  {
+    "id": 5,
+    "parent": 4,
+    "kind": "attempt",
+    "name": "jina",
+    "status": "ok",
+    "start_ms": 0,
+    "duration_ms": 1,
+    "attrs": {
+      "bytes": 32,
+      "kind": "fetch",
+      "options": {
+        "cache_tolerance_seconds": null,
+        "engine": "auto",
+        "proxy_country": "",
+        "retain_images": "none"
+      },
+      "target": "https://example.test/page",
+      "trigger": "first",
+      "try": 1
+    }
+  },
+  {
+    "id": 6,
+    "parent": 1,
+    "kind": "page",
+    "status": "ok",
+    "start_ms": 1,
+    "attrs": {
+      "bytes": 32,
+      "cached": false,
+      "engine": "jina",
+      "rendered": false,
+      "title": "Fake page"
+    }
+  },
+  {
+    "id": 7,
+    "parent": 1,
+    "kind": "decide",
+    "name": "extract",
+    "status": "ok",
+    "start_ms": 1,
+    "attrs": {
+      "length": 32,
+      "offset": 0,
+      "passthrough_length": 1,
+      "raw_page_length": 40000
+    }
+  },
+  {
+    "id": 8,
+    "parent": 1,
+    "kind": "extract",
+    "status": "ok",
+    "start_ms": 1,
+    "duration_ms": 2,
+    "attrs": {
+      "custom_prompt": false,
+      "excerpt": false,
+      "max_input_length": 150000,
+      "max_output_tokens": 500,
+      "models": [
+        "extract_test"
+      ],
+      "range": [
+        0,
+        32
+      ],
+      "raw_on_failure": true
+    }
+  },
+  {
+    "id": 9,
+    "parent": 8,
+    "kind": "cache",
+    "name": "answer",
+    "status": "ok",
+    "start_ms": 1,
+    "attrs": {
+      "hit": false,
+      "reason": "miss"
+    }
+  },
+  {
+    "id": 10,
+    "parent": 8,
+    "kind": "run",
+    "name": "fallback",
+    "status": "ok",
+    "start_ms": 2,
+    "duration_ms": 1,
+    "attrs": {
+      "kind": "llm",
+      "rate_strategy": "fallback",
+      "target": "",
+      "timeout_ms": 8000,
+      "winner": "extract_test"
+    }
+  },
+  {
+    "id": 11,
+    "parent": 10,
+    "kind": "llm",
+    "name": "extract_test",
+    "status": "ok",
+    "start_ms": 2,
+    "duration_ms": 1,
+    "attrs": {
+      "api": "openai-compatible",
+      "extra_body": {
+        "temperature": 0.2
+      },
+      "finish_reason": "stop",
+      "first_chunk_ms": 1,
+      "first_chunk_timeout_ms": 1000,
+      "max_output_tokens": 500,
+      "max_tries": 1,
+      "model": "fake-model",
+      "provider": "fake_llm",
+      "reasoning": {
+        "mode": "off"
+      },
+      "role": "extract",
+      "total_timeout_ms": 2000,
+      "truncated": false,
+      "try": 1,
+      "usage": {
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "input_tokens": 10,
+        "output_tokens": 3
+      }
+    }
+  },
+  {
+    "id": 12,
+    "parent": 1,
+    "kind": "result",
+    "status": "ok",
+    "start_ms": 3,
+    "attrs": {
+      "bytes": 14,
+      "kind": "answer",
+      "next_offset": 0,
+      "text_length": 32,
+      "truncated": false,
+      "warning": ""
+    }
+  }
+]

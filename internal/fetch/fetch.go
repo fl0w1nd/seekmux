@@ -148,11 +148,26 @@ func (a *Args) Validate(cfg *config.Config) error {
 }
 
 // Run serves one fetch call. Args must have passed Validate.
-func (s *Service) Run(ctx context.Context, rt Runtime, args Args) Result {
+func (s *Service) Run(ctx context.Context, rt Runtime, args Args) (result Result) {
+	defer func() {
+		kind := "text"
+		if result.Answer != "" {
+			kind = "answer"
+		}
+		var resultErr error
+		if result.Error != "" {
+			kind, resultErr = "error", errors.New(result.Error)
+		}
+		if ctx.Err() != nil {
+			kind = "error"
+		}
+		core.MarkResult(ctx, resultErr, map[string]any{"kind": kind, "bytes": len(result.Text) + len(result.Answer), "text_length": result.TextLength, "next_offset": result.NextOffset, "truncated": result.AnswerTruncated, "warning": result.Warning})
+	}()
 	page, err := s.load(ctx, rt, args.URL, args.Engine)
 	if err != nil {
 		return Result{Error: err.Error()}
 	}
+	core.Mark(ctx, "page", "", "ok", map[string]any{"engine": page.Engine, "bytes": len(page.Content), "title": page.Title, "rendered": page.Rendered, "cached": page.Cached})
 	return s.build(ctx, rt, page, args)
 }
 
@@ -160,6 +175,7 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 	// A provider asked for by name is not overruled by a rule either.
 	rule, matched := rt.Config.RuleFor(target)
 	routed := matched && engine == EngineAuto
+	traceRoute(ctx, rt, target, engine, rule, routed)
 	serves := func(provider string) bool {
 		if routed {
 			return slices.Contains(rule.Providers, provider)
@@ -168,16 +184,56 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 	}
 	// A worker's rendered page does not stand in for a site adapter's read.
 	adapter := routed || engine != EngineAuto
-	if page, ok := s.pages.Get(target); ok && !rt.NoCache && serves(page.Engine) && !(adapter && page.Rendered) {
+	page, hit := s.pages.Get(target)
+	reason := ""
+	switch {
+	case rt.NoCache:
+		reason = "bypassed"
+	case !hit:
+		reason = "miss"
+	case !serves(page.Engine):
+		reason = "other_engine"
+	case adapter && page.Rendered:
+		reason = "rendered"
+	}
+	attrs := map[string]any{"hit": hit}
+	if reason != "" {
+		attrs["reason"] = reason
+	} else {
+		attrs["engine"], attrs["bytes"] = page.Engine, len(page.Content)
+	}
+	status := "ok"
+	if reason == "" {
+		status = "cached"
+	}
+	core.Mark(ctx, "cache", "page", status, attrs)
+	if reason == "" {
 		core.TraceFrom(ctx).Note(config.ToolFetch, page.Engine, target, core.AttemptCached)
+		page.Cached = true
 		return page, nil
 	}
 	// A named provider is still asked: the caller may know better.
-	if gone, ok := s.gone.Get(target); ok && !rt.NoCache && engine == EngineAuto {
-		for _, provider := range gone.Providers {
-			core.TraceFrom(ctx).Note(config.ToolFetch, provider, target, core.AttemptCached)
+	if gone, hit := s.gone.Get(target); hit {
+		status, reason := "cached", ""
+		switch {
+		case rt.NoCache:
+			status, reason = "ok", "bypassed"
+		case engine != EngineAuto:
+			status, reason = "ok", "other_engine"
 		}
-		return Page{}, gone
+		attrs := map[string]any{"hit": true}
+		if reason != "" {
+			attrs["reason"] = reason
+		} else {
+			attrs["engine"], attrs["bytes"] = strings.Join(gone.Providers, ","), 0
+		}
+		core.Mark(ctx, "cache", "gone", status, attrs)
+		if reason == "" {
+			for _, provider := range gone.Providers {
+				core.TraceFrom(ctx).Note(config.ToolFetch, provider, target, core.AttemptCached)
+			}
+			return Page{}, gone
+		}
 	}
 
 	cfg := rt.Config.Fetch
@@ -204,7 +260,6 @@ func (s *Service) load(ctx context.Context, rt Runtime, target, engine string) (
 	}
 	in := Input{URL: target, IsPDF: hasExtension(target, ".pdf"), Adapter: adapter}
 
-	var page Page
 	var provider string
 	var err error
 	if engine == EngineAuto && cfg.SmartFallback && countAvailable(providers) > 1 {
@@ -249,15 +304,32 @@ func (s *Service) build(ctx context.Context, rt Runtime, page Page, args Args) R
 		return Result{Error: fmt.Sprintf("offset %d is past the end of the page", args.Offset), TextLength: len(content)}
 	}
 
-	if args.Raw || isSourceCode(args.URL) || weightedLen(content[offset:]) <= cfg.PassthroughLength {
-		return rawPage(page, offset, cfg.RawPageLength, "")
+	decision := "extract"
+	switch {
+	case args.Raw:
+		decision = "raw"
+	case isSourceCode(args.URL):
+		decision = "source_code"
+	case weightedLen(content[offset:]) <= cfg.PassthroughLength:
+		decision = "passthrough"
+	case !cfg.Extract.Configured():
+		decision = "no_model"
 	}
-	if !cfg.Extract.Configured() {
-		return rawPage(page, offset, cfg.RawPageLength, "Helper model is not configured; returning the original text instead of an answer.")
+	core.Mark(ctx, "decide", decision, "ok", map[string]any{"offset": offset, "length": weightedLen(content[offset:]), "passthrough_length": cfg.PassthroughLength, "raw_page_length": cfg.RawPageLength})
+	if decision != "extract" {
+		warning := ""
+		if decision == "no_model" {
+			warning = "Helper model is not configured; returning the original text instead of an answer."
+		}
+		return rawPage(page, offset, cfg.RawPageLength, warning)
 	}
-
+	end := weightedSliceEnd(content, offset, cfg.Extract.MaxInputLength)
+	ctx, extract := core.StartSpan(ctx, "extract", "", map[string]any{"models": cfg.Extract.Models, "range": []int{offset, end}, "excerpt": offset > 0 || end < len(content), "max_input_length": cfg.Extract.MaxInputLength, "max_output_tokens": cfg.Extract.MaxOutputTokens, "custom_prompt": strings.TrimSpace(cfg.Extract.SystemPrompt) != "", "raw_on_failure": cfg.Extract.RawOnFailure})
 	result, err := s.answer(ctx, rt, page, args, offset)
-	if err != nil && cfg.Extract.RawOnFailure {
+	defer extract.End(err)
+	// A call that was stopped, or whose caller is gone, has nothing to fall back to.
+	if err != nil && cfg.Extract.RawOnFailure && ctx.Err() == nil {
+		extract.Set(map[string]any{"fallback": "raw"})
 		return rawPage(page, offset, cfg.RawPageLength, fmt.Sprintf("Helper model unavailable (%s); returning the original text instead of an answer.", err))
 	}
 	if err != nil {
@@ -296,6 +368,19 @@ func (s *Service) answer(ctx context.Context, rt Runtime, page Page, args Args, 
 	keyData, _ := json.Marshal([]any{args.URL, offset, end, args.Prompt, cfg.Models, cfg.SystemPrompt, cfg.MaxOutputTokens})
 	key := string(keyData)
 	chat, cached := s.answers.Get(key)
+	cacheAttrs := map[string]any{"hit": cached}
+	cacheStatus := "ok"
+	switch {
+	case rt.NoCache:
+		cacheAttrs["reason"] = "bypassed"
+	case !cached:
+		cacheAttrs["reason"] = "miss"
+	default:
+		cacheStatus = "cached"
+		cacheAttrs["bytes"] = len(chat.Text)
+		cacheAttrs["engine"] = chat.Model
+	}
+	core.Mark(ctx, "cache", "answer", cacheStatus, cacheAttrs)
 	if !cached || rt.NoCache {
 		system := cfg.SystemPrompt
 		if strings.TrimSpace(system) == "" {

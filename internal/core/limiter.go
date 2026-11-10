@@ -71,7 +71,7 @@ func (l *RateLimiter) Acquire(ctx context.Context, key string, limit config.Rate
 		if ok {
 			return nil
 		}
-		if err := Sleep(ctx, wait); err != nil {
+		if err := Wait(ctx, "rate_limit", key, wait, func() error { return Sleep(ctx, wait) }); err != nil {
 			return err
 		}
 	}
@@ -134,24 +134,29 @@ func (l *ConcurrencyLimiter) Acquire(ctx context.Context, key string, limit int)
 	l.admit(key)
 	l.mu.Unlock()
 
-	select {
-	case <-ready:
-		return l.releaser(key), nil
-	case <-ctx.Done():
-		l.mu.Lock()
-		defer l.mu.Unlock()
-		queue := l.queues[key]
-		for i, w := range queue {
-			if w == ready {
-				l.queues[key] = append(queue[:i], queue[i+1:]...)
-				l.admit(key)
-				return nil, ctx.Err()
+	err := Wait(ctx, "concurrency", key, 0, func() error {
+		select {
+		case <-ready:
+			return nil
+		case <-ctx.Done():
+			l.mu.Lock()
+			defer l.mu.Unlock()
+			queue := l.queues[key]
+			for i, w := range queue {
+				if w == ready {
+					l.queues[key] = append(queue[:i], queue[i+1:]...)
+					l.admit(key)
+					return ctx.Err()
+				}
 			}
+			l.release(key)
+			return ctx.Err()
 		}
-		// The slot was granted while the context ended; give it back.
-		l.release(key)
-		return nil, ctx.Err()
+	})
+	if err != nil {
+		return nil, err
 	}
+	return l.releaser(key), nil
 }
 
 func (l *ConcurrencyLimiter) releaser(key string) func() {

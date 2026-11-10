@@ -89,13 +89,24 @@ func routed[In, Out any](cfg *config.Config, tool string, route config.Route, c 
 	limit, concurrency := cfg.Limits(route.Provider)
 	return core.Provider[In, Out]{
 		Name:        route.Provider,
+		Options:     map[string]any(c.opt),
+		ExtraBody:   route.ExtraBody,
 		Key:         route.Provider + ":" + tool,
 		LimitKey:    route.Provider,
 		RateLimit:   limit,
 		Concurrency: concurrency,
 		Available:   route.Enabled && (c.apiKey != "" || !info.KeyRequired),
 		Execute: func(ctx context.Context, in In) (Out, error) {
-			return run(ctx, c, in)
+			out, err := run(ctx, c, in)
+			if err == nil {
+				switch result := any(out).(type) {
+				case Output:
+					core.CurrentSpan(ctx).Set(map[string]any{"results": len(result.Web) + len(result.Videos)})
+				case []DevItem:
+					core.CurrentSpan(ctx).Set(map[string]any{"results": len(result)})
+				}
+			}
+			return out, err
 		},
 	}
 }
@@ -114,6 +125,12 @@ func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, O
 		}
 		if _, ok := c.opt[config.OptionLanguage]; ok {
 			c.language = cmp.Or(c.opt.Str(config.OptionLanguage), cfg.Search.Language)
+		}
+		if _, ok := c.opt[config.OptionCountry]; ok {
+			c.opt[config.OptionCountry] = c.country
+		}
+		if _, ok := c.opt[config.OptionLanguage]; ok {
+			c.opt[config.OptionLanguage] = c.language
 		}
 		out = append(out, routed(cfg, config.ToolSearch, route, c, run))
 	}
