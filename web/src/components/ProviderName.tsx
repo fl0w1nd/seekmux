@@ -1,4 +1,5 @@
-import type { Meta, ProviderInfo } from "../lib/api";
+import { Globe } from "lucide-react";
+import type { Meta, ProviderInfo, Rule } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { BrandIcon } from "../ui/brand";
 import { cx } from "../ui/primitives";
@@ -64,4 +65,9 @@ export function ProviderIcon({ id, className }: { id: string; className?: string
 /** What a provider that cannot be called lacks, and where to set it up. */
 export function missing(info: ProviderInfo): { label: string; href: string } {
   return { label: info.fetcher ? "未启用 Worker" : "缺少密钥", href: `/providers/${info.id}` };
+}
+
+/** A routing rule's mark: the site's logo for a built-in rule, a globe for one of the user's. */
+export function RuleIcon({ rule, className = "size-4" }: { rule: Rule; className?: string }) {
+  return rule.builtin ? <BrandIcon id={rule.id} className={cx("shrink-0", className)} /> : <Globe className={cx("shrink-0 text-ink-3", className)} />;
 }

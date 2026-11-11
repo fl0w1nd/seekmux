@@ -1,5 +1,5 @@
 import { clsx, type ClassValue } from "clsx";
-import { Check, ChevronDown, ChevronRight, CircleHelp, Copy, Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, CircleHelp, Copy, Eye, EyeOff, GripVertical, LoaderCircle } from "lucide-react";
 import {
   Collapsible as RadixCollapsible,
   Popover as RadixPopover,
@@ -18,6 +18,7 @@ import {
   type PointerEvent,
   type ReactElement,
   type ReactNode,
+  type Ref,
   type TextareaHTMLAttributes,
 } from "react";
 
@@ -84,6 +85,32 @@ export function IconButton({
     </button>
   );
   return tooltip ? <Tooltip content={label}>{button}</Tooltip> : button;
+}
+
+/**
+ * The grip a row of an ordered list is dragged by (see `useReorder`); with
+ * focus, the arrow keys move the row. `active` while its row is in hand.
+ */
+export function DragHandle({
+  label,
+  active,
+  className,
+  ...rest
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & { label: string; active?: boolean; ref?: Ref<HTMLButtonElement> }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      className={cx(
+        "-ml-1 grid h-7 w-5 shrink-0 touch-none place-items-center rounded-tag text-ink-3 transition-colors hover:bg-fill hover:text-ink-2 disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-3.5",
+        active ? "cursor-grabbing bg-fill text-ink-2" : "cursor-grab",
+        className,
+      )}
+      {...rest}
+    >
+      <GripVertical />
+    </button>
+  );
 }
 
 /* ---------- Form controls ---------- */

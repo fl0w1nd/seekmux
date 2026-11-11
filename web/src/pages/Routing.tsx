@@ -1,18 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Pencil, Plus, Radar } from "lucide-react";
-import { Fragment, useState } from "react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Radar } from "lucide-react";
+import { Fragment, useState, type CSSProperties } from "react";
 import { Link, Redirect, useLocation, useParams } from "wouter";
 import { api, type Config, type DomainProviderStats, type DomainStats, type FetchOutcome, type Rule } from "../lib/api";
-import { missing, ProviderIcon } from "../components/ProviderName";
+import { missing, ProviderIcon, RuleIcon } from "../components/ProviderName";
 import { useConfig } from "../lib/config";
 import { routingPages } from "../lib/pages";
+import { lifted, useReorder } from "../lib/reorder";
 import { bytes, duration, percent } from "../lib/format";
 import { cleanPattern, newRuleID, routingRules, ruleForDomain, validPattern } from "../lib/routing";
 import { PageHeader } from "../components/PageHeader";
 import { BrandIcon } from "../ui/brand";
 import { ChipInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, cx, Empty, Field, Input, Loading, Panel, Segmented, Status, Switch, Table, Td, Th, Tooltip } from "../ui/primitives";
+import { Badge, Button, cx, DragHandle, Empty, IconButton, Field, Input, Loading, Panel, Segmented, Status, Switch, Table, Td, Th, Tooltip } from "../ui/primitives";
 
 /** Whether a provider can be called: it has an API key or needs none; a fetcher has a worker switched on. */
 function useCredentials() {
@@ -70,11 +71,15 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
   const rules = routingRules(config, meta);
   const own = config.routing.rules.length;
 
-  const move = (index: number, by: number) =>
-    update((draft) => {
-      const list = draft.routing.rules;
-      [list[index], list[index + by]] = [list[index + by], list[index]];
-    });
+  // Only the user's own rules are ordered; the built-in ones follow them.
+  const reorder = useReorder({
+    count: own,
+    onMove: (from, to) =>
+      update((draft) => {
+        const list = draft.routing.rules;
+        list.splice(to, 0, ...list.splice(from, 1));
+      }),
+  });
   const enable = (rule: Rule, index: number, enabled: boolean) => {
     if (enabled && rule.providers.length === 0) {
       onEdit({ ...rule, enabled: true });
@@ -86,85 +91,168 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
     });
   };
 
+  // grip · number · rule · [domains] · providers · state · switch · edit
+  const head = own > 1 ? ["1rem", "1.25rem"] : ["1.25rem"];
+  const tail = ["minmax(0,13rem)", "6.5rem", "2.25rem", "1.75rem"];
+  const grid = {
+    "--cols": [...head, "minmax(9rem,1fr)", ...tail].join(" "),
+    "--cols-lg": [...head, "minmax(9rem,0.8fr)", "minmax(0,1fr)", ...tail].join(" "),
+    "--cols-sm": [...head, "minmax(0,1fr)", "auto", "auto"].join(" "),
+  } as CSSProperties;
+  const columns = "grid-cols-(--cols-sm) sm:grid-cols-(--cols) lg:grid-cols-(--cols-lg)";
+  // Below sm the cells after the rule sit on a second line, under the name.
+  const start = own > 1 ? "col-start-3" : "col-start-2";
+
   return (
     <Panel
       title="匹配顺序"
       info="自上而下匹配，命中即停。命中的 URL 只由规则的提供商抓取，调用方用 fetch_engine 指定时除外。"
       flush
     >
-      <div className="hidden h-9 items-center gap-3 border-b border-line px-4 lg:flex">
-        <span className={cx("tag shrink-0", own > 1 ? "w-16" : "w-6")}>#</span>
-        <span className="tag w-56 shrink-0">规则</span>
-        <span className="tag flex-1">匹配域名</span>
-        <span className="tag w-52 shrink-0">提供商</span>
-        <span className="tag w-24 shrink-0 text-right">操作</span>
-      </div>
-      <ol>
-        {rules.map((rule, index) => {
-          const ready = rule.providers.some(usable);
-          const patterns = rule.match.join(" · ");
-          return (
-            <li
-              key={rule.id}
-              className={cx(
-                "flex min-h-13 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-4 py-2.5 transition-colors last:border-b-0 hover:bg-fill lg:flex-nowrap",
-                !rule.enabled && "opacity-60",
-              )}
-            >
-              <span className={cx("num w-6 shrink-0 text-xs", rule.enabled && ready ? "text-ink-2" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
-              {own > 1 && (
-                <span className={cx("flex w-7 shrink-0 flex-col", rule.builtin && "max-sm:hidden")}>
-                  {!rule.builtin && (
-                    <>
-                      <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
-                      <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === own - 1} onClick={() => move(index, 1)} />
-                    </>
-                  )}
-                </span>
-              )}
-              <div className="flex min-w-44 shrink-0 flex-wrap items-center gap-1.5 text-sm font-medium max-lg:flex-1 lg:w-56">
-                {rule.builtin && <BrandIcon id={rule.id} className="size-4 shrink-0" />}
-                <span className="truncate">{rule.name}</span>
-                {(rule.builtin || !rule.enabled) && (
-                  <span className="text-xs font-normal text-ink-3">{[rule.builtin && "内置", !rule.enabled && "已停用"].filter(Boolean).join(" · ")}</span>
-                )}
-                {!rule.enabled ? null : ready ? (
-                  <Status tone="ok" className="font-normal">
-                    生效
-                  </Status>
+      <div style={grid}>
+        <div className={cx("hidden h-9 items-center gap-x-3 border-b border-line px-4 sm:grid", columns)}>
+          <span className={cx("tag", own > 1 && "col-start-2")}>#</span>
+          <span className="tag">规则</span>
+          <span className="tag hidden lg:block">匹配域名</span>
+          <span className="tag">提供商</span>
+          <span className="tag">状态</span>
+          <span className="tag text-center">启用</span>
+        </div>
+        <ol>
+          {rules.map((rule, index) => {
+            const ready = rule.providers.some(usable);
+            const sortable = !rule.builtin && own > 1;
+            const row = sortable ? reorder.row(index) : undefined;
+            const dragged = sortable && reorder.dragging === index;
+            const dim = !rule.enabled && "opacity-60";
+            return (
+              <li
+                key={rule.id}
+                ref={row?.ref}
+                style={row?.style}
+                className={cx("grid min-h-11 items-center gap-x-3 gap-y-1 border-b border-line px-4 py-1.5 last:border-b-0", columns, dragged && lifted)}
+              >
+                {sortable ? (
+                  <DragHandle label={`拖动排序 ${rule.name}`} active={dragged} {...reorder.handle(index)} />
                 ) : (
-                  <Link href={missing(provider(rule.providers[0] ?? "")).href}>
-                    <Badge tone="warn" dot>
-                      {rule.providers.length > 0 && rule.providers.every((id) => provider(id).fetcher) ? "未启用 Worker" : "缺少密钥"}
-                    </Badge>
-                  </Link>
+                  own > 1 && <span />
                 )}
-              </div>
-              <div className="num min-w-0 flex-1 truncate text-xs text-ink-3 max-lg:order-3 max-lg:basis-full max-lg:pl-9" title={patterns}>
-                {patterns}
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-1.5 text-xs text-ink-2 max-lg:order-4 max-lg:mr-auto max-lg:pl-9 lg:w-52">
-                {rule.providers.length === 0 && <span className="text-ink-3">未配置</span>}
-                {rule.providers.map((id, i) => (
-                  <Fragment key={id}>
-                    {i > 0 && <span className="text-ink-3">→</span>}
-                    <ProviderIcon id={id} className="size-3.5 shrink-0" />
-                    <span className="truncate">{provider(id).name}</span>
-                  </Fragment>
-                ))}
-              </div>
-              <div className="ml-auto flex shrink-0 items-center justify-end gap-2 lg:ml-0 lg:w-24">
-                <Button size="sm" variant="ghost" icon={<Pencil />} onClick={() => onEdit(rule)}>
-                  编辑
-                </Button>
-                <Switch checked={rule.enabled} onCheckedChange={(enabled) => enable(rule, index, enabled)} aria-label={`启用规则 ${rule.name}`} />
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+                <span className={cx("num text-xs", rule.enabled && ready ? "text-ink-2" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
+                <div className={cx("flex min-w-0 items-center gap-2", dim)}>
+                  <RuleIcon rule={rule} />
+                  <span className="truncate text-sm font-medium">{rule.name}</span>
+                  {rule.builtin && <span className="shrink-0 text-xs text-ink-3">内置</span>}
+                </div>
+
+                <div className={cx(start, "col-span-3 row-start-2 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 sm:contents")}>
+                  <Patterns match={rule.match} className={cx("max-sm:basis-full sm:max-lg:hidden", dim)} />
+                  <Chain providers={rule.providers} className={cx(dim)} />
+                  <span className="flex min-w-0">
+                    {!rule.enabled ? (
+                      <Status>已停用</Status>
+                    ) : ready ? (
+                      <Status tone="ok">生效</Status>
+                    ) : (
+                      <Link href={missing(provider(rule.providers[0] ?? "")).href} className="min-w-0">
+                        <Badge tone="warn" dot>
+                          {rule.providers.length > 0 && rule.providers.every((id) => provider(id).fetcher) ? "未启用 Worker" : "缺少密钥"}
+                        </Badge>
+                      </Link>
+                    )}
+                  </span>
+                </div>
+
+                <span className="flex justify-center max-sm:col-start-[-3] max-sm:row-start-1">
+                  <Switch checked={rule.enabled} onCheckedChange={(enabled) => enable(rule, index, enabled)} aria-label={`启用规则 ${rule.name}`} />
+                </span>
+                <span className="flex justify-end max-sm:col-start-[-2] max-sm:row-start-1">
+                  <IconButton size="sm" icon={<Pencil />} label={`编辑 ${rule.name}`} onClick={() => onEdit(rule)} />
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </Panel>
   );
+}
+
+/**
+ * The domains of a rule on one line: as many as read at a glance, then how
+ * many more. The full list is on hover.
+ */
+function Patterns({ match, className }: { match: string[]; className?: string }) {
+  // About what the column shows at its usual width, in characters.
+  const budget = 34;
+  let used = 0;
+  const shown = match.filter((pattern, i) => {
+    used += pattern.length + (i > 0 ? 3 : 0);
+    return i === 0 || used <= budget;
+  });
+  const rest = match.length - shown.length;
+  const line = (
+    <span className={cx("num flex min-w-0 items-center gap-2 text-xs text-ink-3", className)}>
+      <span className="truncate">{shown.join(" · ")}</span>
+      {rest > 0 && (
+        <Badge mono className="shrink-0">
+          +{rest}
+        </Badge>
+      )}
+    </span>
+  );
+  if (rest === 0) return line;
+  return (
+    <Tooltip
+      content={
+        <span className="num flex flex-col text-xs">
+          {match.map((pattern) => (
+            <span key={pattern}>{pattern}</span>
+          ))}
+        </span>
+      }
+    >
+      {line}
+    </Tooltip>
+  );
+}
+
+/**
+ * The providers of a rule in the order they are tried. Two read as names;
+ * a longer chain names the first and shows the fallbacks as their marks,
+ * named on hover.
+ */
+function Chain({ providers, className }: { providers: string[]; className?: string }) {
+  const { provider } = useConfig();
+  if (providers.length === 0) return <span className={cx("text-xs text-ink-3", className)}>未配置</span>;
+  const named = providers.length <= 2 ? providers : providers.slice(0, 1);
+  const marks = providers.slice(named.length, named.length + 4);
+  const rest = providers.length - named.length - marks.length;
+  const line = (
+    <span className={cx("flex min-w-0 items-center gap-1.5 text-xs text-ink-2", className)}>
+      {named.map((id, i) => (
+        <Fragment key={id}>
+          {i > 0 && <span className="text-ink-3">→</span>}
+          <ProviderIcon id={id} className="size-3.5 shrink-0" />
+          <span className="truncate">{provider(id).name}</span>
+        </Fragment>
+      ))}
+      {marks.length > 0 && (
+        <>
+          <span className="text-ink-3">→</span>
+          {marks.map((id) => (
+            <ProviderIcon key={id} id={id} className="size-3.5 shrink-0" />
+          ))}
+        </>
+      )}
+      {rest > 0 && (
+        <Badge mono className="shrink-0">
+          +{rest}
+        </Badge>
+      )}
+    </span>
+  );
+  if (providers.length <= 2) return line;
+  return <Tooltip content={providers.map((id) => provider(id).name).join(" → ")}>{line}</Tooltip>;
 }
 
 function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
@@ -182,11 +270,15 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
   const invalid = match.filter((pattern) => !validPattern(pattern));
   const ready = (builtin || name.trim()) && match.length > 0 && invalid.length === 0 && chosen.length > 0;
 
-  const move = (index: number, by: number) => {
-    const next = [...chosen];
-    [next[index], next[index + by]] = [next[index + by], next[index]];
-    setChosen(next);
-  };
+  // Only the chosen providers are ordered; the others follow them, switched off.
+  const reorder = useReorder({
+    count: chosen.length,
+    onMove: (from, to) => {
+      const next = [...chosen];
+      next.splice(to, 0, ...next.splice(from, 1));
+      setChosen(next);
+    },
+  });
   const save = () => {
     update((draft) => {
       if (builtin) {
@@ -252,19 +344,22 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
           <ol className="rounded-ctl border border-line">
             {lanes.map((id, index) => {
               const on = index < chosen.length;
+              const sortable = on && chosen.length > 1;
+              const row = sortable ? reorder.row(index) : undefined;
+              const dragged = sortable && reorder.dragging === index;
               return (
-                <li key={id} className={cx("flex min-h-11 items-center gap-3 border-b border-line px-3 py-2 last:border-b-0", !on && "opacity-60")}>
-                  <span className={cx("num w-5 text-xs", on ? "text-ink-2" : "text-ink-3")}>{on ? String(index + 1).padStart(2, "0") : "—"}</span>
-                  {chosen.length > 1 && (
-                    <span className="flex w-7 flex-col">
-                      {on && (
-                        <>
-                          <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
-                          <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === chosen.length - 1} onClick={() => move(index, 1)} />
-                        </>
-                      )}
-                    </span>
+                <li
+                  key={id}
+                  ref={row?.ref}
+                  style={row?.style}
+                  className={cx("flex min-h-11 items-center gap-3 border-b border-line px-3 py-2 last:border-b-0", dragged && lifted, !on && "opacity-60")}
+                >
+                  {sortable ? (
+                    <DragHandle label={`拖动排序 ${provider(id).name}`} active={dragged} {...reorder.handle(index)} />
+                  ) : (
+                    chosen.length > 1 && <span className="w-4 shrink-0" />
                   )}
+                  <span className={cx("num w-5 text-xs", on ? "text-ink-2" : "text-ink-3")}>{on ? String(index + 1).padStart(2, "0") : "—"}</span>
                   <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                     <ProviderIcon id={id} className="size-4" />
                     {provider(id).name}

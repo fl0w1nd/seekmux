@@ -203,6 +203,10 @@ under `prefers-reduced-motion`.
   become links.
 - `components/` — `ProviderName` (use it wherever a provider is named),
   `RouteList` (numbered priority lanes), `ProviderPicker`, `ModelPicker`.
+- `lib/reorder.ts` — `useReorder`: an ordered list is reordered by dragging a
+  grip handle (mouse or finger); the other rows step aside, the dragged one
+  lifts with `shadow-raise`, and the arrow keys on a focused handle move it
+  too. Not up and down buttons.
 - `components/flow/` — one call drawn from its trace (`lib/trace.ts`), the
   same for a stored call, a call in flight and a playground call. A pill is a
   decision that took no time; a card is something called and timed. Parallel

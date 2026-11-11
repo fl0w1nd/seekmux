@@ -1,8 +1,9 @@
-import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { Link } from "wouter";
 import type { Config, Model } from "../lib/api";
 import { useConfig } from "../lib/config";
-import { Badge, Button, Choice, ChoiceList, ChoiceStatus, Notice, Select, type SelectGroup } from "../ui/primitives";
+import { lifted, useReorder } from "../lib/reorder";
+import { Badge, Button, Choice, ChoiceList, ChoiceStatus, cx, DragHandle, Notice, Select, type SelectGroup } from "../ui/primitives";
 import { healthLabel, useStatus } from "./Health";
 
 /** Every configured model with the name of the provider it belongs to. */
@@ -107,14 +108,17 @@ export function ModelOverride({ assigned, value, onChange }: { assigned: string[
 export function ModelChain({ value, onChange }: { value: string[]; onChange: (ids: string[]) => void }) {
   const { config } = useConfig();
   const models = allModels(config);
+  const reorder = useReorder({
+    count: value.length,
+    onMove: (from, to) => {
+      const next = [...value];
+      next.splice(to, 0, ...next.splice(from, 1));
+      onChange(next);
+    },
+  });
   if (models.length === 0) return <NoModels />;
 
   const unused = models.filter((m) => !value.includes(m.id));
-  const move = (index: number, by: number) => {
-    const next = [...value];
-    [next[index], next[index + by]] = [next[index + by], next[index]];
-    onChange(next);
-  };
 
   return (
     <div className="rounded-ctl border border-line">
@@ -122,13 +126,17 @@ export function ModelChain({ value, onChange }: { value: string[]; onChange: (id
       <ol>
         {value.map((id, index) => {
           const model = models.find((m) => m.id === id);
+          const row = reorder.row(index);
+          const dragged = reorder.dragging === index;
           return (
-            <li key={id} className="flex min-h-11 items-center gap-3 border-b border-line px-3 py-1.5">
-              <span className="num w-6 text-xs text-ink-3">{String(index + 1).padStart(2, "0")}</span>
-              <span className="flex flex-col">
-                <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
-                <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === value.length - 1} onClick={() => move(index, 1)} />
-              </span>
+            <li
+              key={id}
+              ref={row.ref}
+              style={row.style}
+              className={cx("flex min-h-11 items-center gap-3 border-b border-line px-3 py-1.5", dragged && lifted)}
+            >
+              <DragHandle label={`拖动排序 ${id}`} active={dragged} {...reorder.handle(index)} />
+              <span className="num w-5 text-xs text-ink-3">{String(index + 1).padStart(2, "0")}</span>
               <div className="flex min-w-0 flex-1 items-baseline gap-2">
                 <span className="num truncate text-sm font-medium">{id}</span>
                 <span className="shrink-0 text-xs text-ink-3">{model ? model.provider : "模型已不存在"}</span>

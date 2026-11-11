@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type Health } from "../lib/api";
-import { Badge, Button } from "../ui/primitives";
+import { Badge, Button, Info } from "../ui/primitives";
 
 /** The limits and health of every provider and model, refreshed while a page shows them. */
 export function useStatus() {
@@ -55,5 +55,30 @@ export function Tripped({ id, health }: { id: string; health: Health }) {
       <HealthBadge health={health} />
       <Reenable id={id} />
     </>
+  );
+}
+
+/**
+ * A tripped breaker in a narrow column: the reason as a badge, and on it
+ * when it comes back and the switch to bring it back now.
+ */
+export function TrippedState({ id, health }: { id: string; health: Health }) {
+  const tone = health.disabled_reason === "auth" || health.disabled_reason === "quota" ? "err" : "warn";
+  return (
+    <Info
+      label={healthLabel(health)}
+      trigger={
+        <button type="button" className="press rounded-tag">
+          <Badge tone={tone} dot>
+            {reasonLabel[health.disabled_reason ?? "provider"]}
+          </Badge>
+        </button>
+      }
+    >
+      <div className="flex items-center gap-3">
+        <span>{healthLabel(health)}</span>
+        <Reenable id={id} />
+      </div>
+    </Info>
   );
 }

@@ -9,14 +9,15 @@ import { Button, cx, field, NumberInput, PasswordInput, Select, Textarea } from 
 const units = { s: "秒", m: "分钟", h: "小时" } as const;
 type Unit = keyof typeof units;
 
-function parse(value: string): { requests: number; every: number; unit: Unit } | null {
+/** Reads a rate limit such as "15/m" or "30/2h"; null when it is empty (unlimited) or malformed. */
+export function parseRateLimit(value: string): { requests: number; every: number; unit: Unit } | null {
   const m = /^(\d+)\/(\d*)(s|m|h)$/.exec(value);
   return m ? { requests: Number(m[1]), every: m[2] ? Number(m[2]) : 1, unit: m[3] as Unit } : null;
 }
 
 /** Edits a rate limit such as "15/m" as "15 requests every 1 minute". Empty means unlimited. */
 export function RateLimitInput({ value, onChange, fallback = "5/m" }: { value: string; onChange: (value: string) => void; fallback?: string }) {
-  const limit = parse(value);
+  const limit = parseRateLimit(value);
   if (!limit) {
     return (
       <div className="flex items-center gap-2">

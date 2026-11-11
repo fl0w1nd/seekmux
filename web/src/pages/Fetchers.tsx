@@ -1,15 +1,16 @@
-import { ArrowDown, ArrowUp, BookOpen, Check, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { BookOpen, Check, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { CardRow, ProviderRoutes } from "../components/CardRow";
 import { Tripped, useStatus } from "../components/Health";
 import { type api, type Config, type Fetcher, type FetcherWorker, type Meta, type RouteStatus, type WorkerProfile, type WorkerStatus } from "../lib/api";
 import { useConfig } from "../lib/config";
+import { lifted, useReorder, type Reorder } from "../lib/reorder";
 import { routingRules } from "../lib/routing";
 import { BrandIcon } from "../ui/brand";
 import { RateLimitInput } from "../ui/inputs";
 import { Dialog, Drawer, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, Choice, ChoiceList, CodeBlock, cx, Field, Info, Input, NumberInput, Select, State, Switch, TabList, TabPanel, Tabs, type Tone } from "../ui/primitives";
+import { Badge, Button, Choice, ChoiceList, CodeBlock, cx, DragHandle, Field, Info, Input, NumberInput, Select, State, Switch, TabList, TabPanel, Tabs, type Tone } from "../ui/primitives";
 
 /** A token a worker can present: 32 random bytes, URL-safe. */
 function newToken(): string {
@@ -184,6 +185,10 @@ export function FetcherDetail({
       const f = d.fetchers.find((x) => x.id === fetcher.id);
       if (f) change(f);
     });
+  const reorder = useReorder({
+    count: fetcher.workers.length,
+    onMove: (from, to) => set((f) => void f.workers.splice(to, 0, ...f.workers.splice(from, 1))),
+  });
   const state = fetcherState(fetcher, status);
   const route = config.fetch.routes.find((r) => r.provider === fetcher.id);
   const rules = routingRules(config, meta).filter((r) => r.enabled && r.providers.includes(fetcher.id));
@@ -335,11 +340,7 @@ export function FetcherDetail({
                 status={status?.workers[worker.id]}
                 token={worker.token || current(worker, fresh[worker.id])}
                 set={(change) => set((f) => change(f.workers[i]))}
-                move={(by) =>
-                  set((f) => {
-                    [f.workers[i], f.workers[i + by]] = [f.workers[i + by], f.workers[i]];
-                  })
-                }
+                reorder={reorder}
                 regenerate={() => regenerate(i)}
                 remove={() => set((f) => f.workers.splice(i, 1))}
                 guide={guided ? () => setGuide(worker.id) : undefined}
@@ -380,7 +381,7 @@ function WorkerItem({
   status,
   token,
   set,
-  move,
+  reorder,
   regenerate,
   remove,
   guide,
@@ -392,7 +393,7 @@ function WorkerItem({
   /** The token in full, while it is known: set here and not yet left. */
   token?: string;
   set: (change: (w: FetcherWorker) => void) => void;
-  move: (by: -1 | 1) => void;
+  reorder: Reorder;
   regenerate: () => void;
   remove: () => void;
   /** Opens the setup guide for this worker. */
@@ -406,17 +407,14 @@ function WorkerItem({
   const chosen = worker.profile ?? "";
   const problem = connected?.state?.ready ? profileProblem(profiles, chosen) : undefined;
   const command = workerCommand(config, token);
+  const row = reorder.row(index);
+  const dragged = reorder.dragging === index;
 
   return (
-    <li className="border-b border-line last:border-b-0">
+    <li ref={row.ref} style={row.style} className={cx("border-b border-line last:border-b-0", dragged && lifted)}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
+        {count > 1 && <DragHandle label={`拖动排序 ${worker.name}`} active={dragged} {...reorder.handle(index)} />}
         <span className={state.usable ? "num w-5 text-xs text-ink-2" : "num w-5 text-xs text-ink-3"}>{String(index + 1).padStart(2, "0")}</span>
-        {count > 1 && (
-          <span className="flex flex-col">
-            <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(-1)} />
-            <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === count - 1} onClick={() => move(1)} />
-          </span>
-        )}
         <Input className="w-44" value={worker.name} maxLength={64} aria-label="Worker 名称" onChange={(e) => set((w) => (w.name = e.target.value))} />
         <State tone={state.tone}>{state.label}</State>
         {connected && (
