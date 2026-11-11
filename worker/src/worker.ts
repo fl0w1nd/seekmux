@@ -15,6 +15,8 @@ export interface Options {
   slots: number;
   version: string;
   log: (line: string) => void;
+  /** Called each time the gateway accepts the worker. */
+  onWelcome?: () => void;
 }
 
 /** How often the browser's state is checked and sent, which also keeps the connection in use. */
@@ -118,6 +120,7 @@ function session(opts: Options, initial: State, setState: (s: State) => void): P
       switch (m.type) {
         case "welcome":
           welcomed = true;
+          opts.onWelcome?.();
           opts.log(`connected to ${opts.url} · ${opts.slots} slot${opts.slots > 1 ? "s" : ""}`);
           return;
         case "cancel":

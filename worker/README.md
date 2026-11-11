@@ -20,6 +20,15 @@ gateway's `x_search` tool: X's own search, in that Chrome.
    npx seekmux --server https://your-gateway --token <worker token>
    ```
 
+Once the gateway accepts them, the server and token are saved to
+`~/.config/seekmux/worker.json` (`%APPDATA%\seekmux\worker.json` on Windows,
+`$SEEKMUX_CONFIG_DIR` when set), readable by you alone. After that, run it
+with no options:
+
+```bash
+npx seekmux
+```
+
 The worker connects to the gateway's `/worker` endpoint over a WebSocket and
 reconnects when the connection drops, so the machine needs no open port. It
 stops when the gateway refuses its token (the token was changed or the worker
@@ -30,6 +39,7 @@ removed), or when another worker connects with the same token.
 | `--server` | `SEEKMUX_SERVER` | The gateway's address |
 | `--token` | `SEEKMUX_WORKER_TOKEN` | The worker's token |
 | `--slots` | | Pages read at once, 1 or 2 (default 1) |
+| `--forget` | | Delete the saved server and token, then exit |
 
 OpenCLI is a dependency of this package, so nothing else needs installing.
 

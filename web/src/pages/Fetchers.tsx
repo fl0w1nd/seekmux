@@ -473,6 +473,7 @@ function WorkerItem({
                 {command}
               </CodeBlock>
               <span className="flex flex-wrap items-center gap-x-3 text-2xs text-ink-3">
+                <span>首次连接后令牌保存在该电脑上，之后运行 npx seekmux 即可</span>
                 {!token && <span>令牌已隐藏，忘记时重新生成</span>}
                 {guide && (
                   <button type="button" onClick={guide} className="inline-flex items-center gap-1 text-ink-2 underline underline-offset-2 hover:text-ink">
@@ -605,7 +606,7 @@ function SetupGuide({
             </p>
           ) : (
             <>
-              <p>在终端中运行，保持终端打开；断线后会自动重连。</p>
+              <p>在终端中运行，保持终端打开；断线后会自动重连。首次连接后服务器地址和令牌保存在该电脑上，之后运行 npx seekmux 即可。</p>
               <CodeBlock copy wrap>
                 {workerCommand(config, token)}
               </CodeBlock>

@@ -125,7 +125,10 @@ they render.
    The console's **安装指南** (setup guide) on the fetcher shows the command
    with the token filled in and checks each step as the worker reports in.
    The worker connects to the gateway on its own, so the machine needs no
-   open port.
+   open port. Once the gateway accepts it, the worker saves the address and
+   the token on that machine (`~/.config/seekmux/worker.json`, readable by
+   you alone), so later a bare `npx seekmux` starts it; `--forget` removes
+   them.
 3. Once the worker is online, choose the Chrome profile it reads with. This
    is needed when several profiles are connected and none is OpenCLI's
    default; otherwise OpenCLI picks one.
