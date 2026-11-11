@@ -2,7 +2,7 @@ import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import { Link } from "wouter";
 import type { Config, Model } from "../lib/api";
 import { useConfig } from "../lib/config";
-import { Badge, Button, Choice, ChoiceList, ChoiceStatus, Notice, Select } from "../ui/primitives";
+import { Badge, Button, Choice, ChoiceList, ChoiceStatus, Notice, Select, type SelectGroup } from "../ui/primitives";
 import { healthLabel, useStatus } from "./Health";
 
 /** Every configured model with the name of the provider it belongs to. */
@@ -21,19 +21,12 @@ function NoModels() {
   );
 }
 
-function Options({ models }: { models: (Model & { provider: string })[] }) {
-  const providers = [...new Set(models.map((m) => m.provider))];
-  return providers.map((provider) => (
-    <optgroup key={provider} label={provider}>
-      {models
-        .filter((m) => m.provider === provider)
-        .map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.id}
-          </option>
-        ))}
-    </optgroup>
-  ));
+/** The models grouped by the provider they belong to, as options of a select. */
+function grouped(models: (Model & { provider: string })[]): SelectGroup[] {
+  return [...new Set(models.map((m) => m.provider))].map((provider) => ({
+    group: provider,
+    options: models.filter((m) => m.provider === provider).map((m) => ({ value: m.id, label: m.id })),
+  }));
 }
 
 /** Picks the one model a feature runs on; `empty` words the choice of none. */
@@ -42,12 +35,19 @@ export function ModelSelect({ value, onChange, empty = "未选择" }: { value: s
   const models = allModels(config);
   if (models.length === 0) return <NoModels />;
   return (
-    <Select className="w-72 max-w-full" value={value} onChange={(e) => onChange(e.target.value)} aria-label="模型">
-      <option value="">{empty}</option>
-      {/* A model that was removed since it was chosen. */}
-      {value && !models.some((m) => m.id === value) && <option value={value}>{value}（已不存在）</option>}
-      <Options models={models} />
-    </Select>
+    <Select
+      mono
+      className="w-72 max-w-full"
+      value={value}
+      onChange={onChange}
+      aria-label="模型"
+      options={[
+        { value: "", label: empty },
+        // A model that was removed since it was chosen.
+        ...(value && !models.some((m) => m.id === value) ? [{ value, label: `${value}（已不存在）` }] : []),
+        ...grouped(models),
+      ]}
+    />
   );
 }
 
@@ -123,8 +123,8 @@ export function ModelChain({ value, onChange }: { value: string[]; onChange: (id
         {value.map((id, index) => {
           const model = models.find((m) => m.id === id);
           return (
-            <li key={id} className="flex items-center gap-3 border-b border-line px-3 py-1.5">
-              <span className="num w-6 text-sm text-signal-text">{String(index + 1).padStart(2, "0")}</span>
+            <li key={id} className="flex min-h-11 items-center gap-3 border-b border-line px-3 py-1.5">
+              <span className="num w-6 text-xs text-ink-3">{String(index + 1).padStart(2, "0")}</span>
               <span className="flex flex-col">
                 <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
                 <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === value.length - 1} onClick={() => move(index, 1)} />
@@ -133,7 +133,7 @@ export function ModelChain({ value, onChange }: { value: string[]; onChange: (id
                 <span className="num truncate text-sm font-medium">{id}</span>
                 <span className="shrink-0 text-xs text-ink-3">{model ? model.provider : "模型已不存在"}</span>
               </div>
-              {index === 0 ? <Badge tone="signal">首选</Badge> : <Badge>备用</Badge>}
+              {index === 0 ? <Badge>首选</Badge> : <span className="px-1.5 text-xs text-ink-3">备用</span>}
               <span className="num hidden w-24 text-right text-xs text-ink-3 sm:block">{model?.rate_limit || "不限流"}</span>
               <Button size="sm" variant="ghost" icon={<X />} aria-label={`移除 ${id}`} onClick={() => onChange(value.filter((v) => v !== id))} />
             </li>
@@ -143,15 +143,15 @@ export function ModelChain({ value, onChange }: { value: string[]; onChange: (id
       <div className="flex items-center gap-2 px-3 py-2">
         <Plus className="size-3.5 text-ink-3" />
         <Select
+          mono
           className="w-64"
           value=""
           disabled={unused.length === 0}
           aria-label="添加模型"
-          onChange={(e) => e.target.value && onChange([...value, e.target.value])}
-        >
-          <option value="">{unused.length === 0 ? "所有模型均已在链中" : value.length === 0 ? "选择模型" : "添加备用模型"}</option>
-          <Options models={unused} />
-        </Select>
+          placeholder={unused.length === 0 ? "所有模型均已在链中" : value.length === 0 ? "选择模型" : "添加备用模型"}
+          onChange={(id) => id && onChange([...value, id])}
+          options={grouped(unused)}
+        />
       </div>
     </div>
   );

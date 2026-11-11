@@ -9,7 +9,7 @@ import { routingRules } from "../lib/routing";
 import { BrandIcon } from "../ui/brand";
 import { RateLimitInput } from "../ui/inputs";
 import { Dialog, Drawer, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, Choice, ChoiceList, CodeBlock, cx, Field, Info, Input, NumberInput, Select, Switch, TabList, TabPanel, Tabs, type Tone } from "../ui/primitives";
+import { Badge, Button, Choice, ChoiceList, CodeBlock, cx, Field, Info, Input, NumberInput, Select, State, Switch, TabList, TabPanel, Tabs, type Tone } from "../ui/primitives";
 
 /** A token a worker can present: 32 random bytes, URL-safe. */
 function newToken(): string {
@@ -71,10 +71,10 @@ function workerState(worker: FetcherWorker, status?: WorkerStatus): { tone: Tone
   return { tone: "ok", label: "在线", usable: true };
 }
 
-type Status = Awaited<ReturnType<typeof api.status>>;
+type GatewayStatus = Awaited<ReturnType<typeof api.status>>;
 
 /** How a fetcher stands as a whole: tripped, or how many of its enabled workers take fetches now. */
-export function fetcherState(fetcher: Fetcher, status?: Status): { tone: Tone; label: string; health?: RouteStatus } {
+export function fetcherState(fetcher: Fetcher, status?: GatewayStatus): { tone: Tone; label: string; health?: RouteStatus } {
   const health = status?.routes.find((r) => r.key === `${fetcher.id}:fetch`);
   if (health?.disabled) return { tone: "warn", label: "已熔断", health };
   const enabled = fetcher.workers.filter((w) => w.enabled).length;
@@ -253,17 +253,11 @@ export function FetcherDetail({
 
   return (
     <section className="flex flex-col">
-      <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
-        <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
-          <BrandIcon id={fetcher.type} className="size-4" />
-          <span className="truncate">{fetcher.name}</span>
-          {state.health ? (
-            <Tripped id={state.health.key} health={state.health} />
-          ) : (
-            <Badge tone={state.tone} dot={state.tone !== "neutral"}>
-              {state.label}
-            </Badge>
-          )}
+      <header className="flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3">
+        <span className="flex min-w-0 items-center gap-2.5">
+          <BrandIcon id={fetcher.type} className="size-5" />
+          <span className="t-heading truncate">{fetcher.name}</span>
+          {state.health ? <Tripped id={state.health.key} health={state.health} /> : <State tone={state.tone}>{state.label}</State>}
         </span>
         <span className="flex items-center gap-2">
           {customName && <Badge>{type?.name ?? fetcher.type}</Badge>}
@@ -416,7 +410,7 @@ function WorkerItem({
   return (
     <li className="border-b border-line last:border-b-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
-        <span className={state.usable ? "num w-5 text-sm text-signal-text" : "num w-5 text-sm text-ink-3"}>{String(index + 1).padStart(2, "0")}</span>
+        <span className={state.usable ? "num w-5 text-xs text-ink-2" : "num w-5 text-xs text-ink-3"}>{String(index + 1).padStart(2, "0")}</span>
         {count > 1 && (
           <span className="flex flex-col">
             <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(-1)} />
@@ -424,9 +418,7 @@ function WorkerItem({
           </span>
         )}
         <Input className="w-44" value={worker.name} maxLength={64} aria-label="Worker 名称" onChange={(e) => set((w) => (w.name = e.target.value))} />
-        <Badge tone={state.tone} dot>
-          {state.label}
-        </Badge>
+        <State tone={state.tone}>{state.label}</State>
         {connected && (
           <span className="flex flex-wrap items-center gap-x-3 text-xs text-ink-3">
             <span className="num text-ink-2">{connected.addr}</span>
@@ -451,10 +443,10 @@ function WorkerItem({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-x-4 gap-y-2 border-t border-line/60 bg-bg/30 px-4 py-3 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-2.5 border-t border-line bg-sunken px-4 py-3.5 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
         <span className="self-center text-sm text-ink">令牌</span>
         <div className="flex max-w-md min-w-0 items-center gap-2">
-          <span className="num flex h-8 min-w-0 flex-1 items-center truncate rounded-ctl border border-line bg-sunken px-2.5 text-sm text-ink-2">
+          <span className="num flex h-8 min-w-0 flex-1 items-center truncate rounded-ctl bg-fill px-2.5 text-sm text-ink-2">
             {token ?? worker.token_hint ?? "未生成"}
           </span>
           <Button
@@ -494,22 +486,19 @@ function WorkerItem({
 
         <span className="self-center text-sm text-ink">Profile</span>
         <div className="flex max-w-xs min-w-0 flex-col gap-1.5">
-          <Select value={chosen} onChange={(e) => set((w) => (w.profile = e.target.value || undefined))} aria-label={`${worker.name} 的 Chrome Profile`}>
-            <option value="">OpenCLI 默认</option>
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.alias ? `${p.alias}（${p.id}）` : p.id}
-                {p.connected ? "" : " · 未打开"}
-                {p.default ? " · 默认" : ""}
-              </option>
-            ))}
-            {chosen && !profiles.some((p) => p.id === chosen) && (
-              <option value={chosen}>
-                {chosen}
-                {connected ? " · Worker 上不存在" : ""}
-              </option>
-            )}
-          </Select>
+          <Select
+            value={chosen}
+            onChange={(profile) => set((w) => (w.profile = profile || undefined))}
+            aria-label={`${worker.name} 的 Chrome Profile`}
+            options={[
+              { value: "", label: "OpenCLI 默认" },
+              ...profiles.map((p) => ({
+                value: p.id,
+                label: `${p.alias ? `${p.alias}（${p.id}）` : p.id}${p.connected ? "" : " · 未打开"}${p.default ? " · 默认" : ""}`,
+              })),
+              ...(chosen && !profiles.some((p) => p.id === chosen) ? [{ value: chosen, label: `${chosen}${connected ? " · Worker 上不存在" : ""}` }] : []),
+            ]}
+          />
           {problem ? (
             <span className={problem.tone === "err" ? "text-xs text-err" : "text-xs text-warn"}>{problem.detail}</span>
           ) : connected && !connected.state?.ready ? (
@@ -575,7 +564,7 @@ function SetupGuide({
         <Step n={1} title="安装 OpenCLI 浏览器扩展" state={extension}>
           <p>装进要使用其登录状态的 Chrome Profile，之后保持 Chrome 打开。支持 Chrome 与 Chromium。</p>
           <div>
-            <a href={extensionStore} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-ctl border border-line-strong px-2.5 py-1 text-sm text-ink transition-colors hover:bg-raised">
+            <a href={extensionStore} target="_blank" rel="noreferrer" className="press inline-flex h-8 items-center gap-1.5 rounded-ctl bg-fill px-3 text-sm text-ink hover:bg-fill-strong">
               Chrome 应用商店 <ExternalLink className="size-3.5" />
             </a>
           </div>
@@ -644,16 +633,18 @@ function SetupGuide({
           ) : (
             <>
               <p>读取页面时使用所选 Profile 的登录状态。只打开了一个 Profile 时可保持默认。</p>
-              <Select value={chosen} onChange={(e) => setProfile(e.target.value || undefined)} aria-label={`${worker.name} 的 Chrome Profile`}>
-                <option value="">OpenCLI 默认</option>
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.alias ? `${p.alias}（${p.id}）` : p.id}
-                    {p.connected ? "" : " · 未打开"}
-                    {p.default ? " · 默认" : ""}
-                  </option>
-                ))}
-              </Select>
+              <Select
+                value={chosen}
+                onChange={(profile) => setProfile(profile || undefined)}
+                aria-label={`${worker.name} 的 Chrome Profile`}
+                options={[
+              { value: "", label: "OpenCLI 默认" },
+              ...profiles.map((p) => ({
+                value: p.id,
+                label: `${p.alias ? `${p.alias}（${p.id}）` : p.id}${p.connected ? "" : " · 未打开"}${p.default ? " · 默认" : ""}`,
+              })),
+                ]}
+              />
               {problem && <p className={problem.tone === "err" ? "text-err" : "text-warn"}>{problem.detail}</p>}
             </>
           )}
@@ -681,8 +672,8 @@ function Step({ n, title, state, last, children }: { n: number; title: string; s
       <div className="flex flex-col items-center">
         <span
           className={cx(
-            "num grid size-7 shrink-0 place-items-center rounded-full border text-xs",
-            state.done ? "border-ok/40 bg-ok/10 text-ok" : "border-line-strong text-ink-2",
+            "num grid size-7 shrink-0 place-items-center rounded-full text-xs",
+            state.done ? "bg-ok/12 text-ok" : "bg-fill text-ink-2",
           )}
         >
           {state.done ? <Check className="size-3.5" /> : n}
@@ -692,9 +683,7 @@ function Step({ n, title, state, last, children }: { n: number; title: string; s
       <div className={cx("flex min-w-0 flex-col gap-2.5 text-xs leading-relaxed text-ink-3", !last && "pb-6")}>
         <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
           <span className="text-sm font-medium text-ink">{title}</span>
-          <Badge tone={state.tone} dot={state.tone !== "neutral"}>
-            {state.label}
-          </Badge>
+          <State tone={state.tone}>{state.label}</State>
         </div>
         {children}
       </div>
@@ -714,13 +703,11 @@ function Adapters({ fetcher, ids }: { fetcher: string; ids: string[] }) {
         const on = Boolean(chosen?.enabled && chosen.providers.includes(fetcher));
         return (
           <li key={id} className="border-b border-line last:border-b-0">
-            <Link href="/routing/rules" className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink-2 transition-colors hover:bg-raised/60 hover:text-ink">
+            <Link href="/routing/rules" className="flex min-h-11 items-center gap-2.5 px-4 py-2.5 text-sm text-ink-2 transition-colors hover:bg-fill hover:text-ink">
               <BrandIcon id={id} className="size-4" />
               <span>{rule?.name ?? id}</span>
               <span className="num min-w-0 flex-1 truncate text-2xs text-ink-3">{rule?.match.join(" ")}</span>
-              <Badge tone={on ? "ok" : "neutral"} dot={on}>
-                {on ? "已选用" : "未选用"}
-              </Badge>
+              <State tone={on ? "ok" : "neutral"}>{on ? "已选用" : "未选用"}</State>
             </Link>
           </li>
         );

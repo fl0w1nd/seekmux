@@ -61,24 +61,24 @@ export function AuthorizePage() {
         <div className="mb-6 flex items-center gap-2.5">
           <Logo />
           <div>
-            <div className="text-lg font-medium">SeekMux</div>
+            <div className="text-lg font-semibold">SeekMux</div>
             <div className="tag">授权 MCP 客户端</div>
           </div>
         </div>
-        <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-5">
+        <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-6 shadow-raise">
           <div>
-            <div className="text-base font-medium break-words">{prompt.data.client_name}</div>
+            <div className="t-heading text-base break-words">{prompt.data.client_name}</div>
             <div className="mt-1 text-sm text-ink-2">请求通过 MCP 调用本网关的工具。</div>
           </div>
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-ink-2">回调地址</span>
-            <div className="num rounded-ctl border border-line bg-sunken px-2.5 py-1.5 text-xs break-all text-ink-2">{prompt.data.redirect_uri}</div>
+            <div className="num rounded-ctl bg-sunken px-2.5 py-2 text-xs break-all text-ink-2">{prompt.data.redirect_uri}</div>
           </div>
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-ink-2">可用工具</span>
             <ul className="rounded-ctl border border-line">
               {tools.map((tool) => (
-                <li key={tool} className="flex items-center justify-between gap-3 border-b border-line px-3 py-2 text-sm last:border-b-0">
+                <li key={tool} className="flex min-h-11 items-center justify-between gap-3 border-b border-line px-3 py-2 text-sm last:border-b-0">
                   <span>
                     {toolLabel[tool]} <span className="num text-xs text-ink-3">{tool}</span>
                   </span>

@@ -22,7 +22,7 @@ import { useNow, useTween } from "../../lib/motion";
 import { useLiveCall } from "../../lib/trace";
 import { Markdown } from "../../ui/markdown";
 import { Drawer, Popover, useConfirm, useToast } from "../../ui/overlays";
-import { Button, CodeBlock, CopyButton, cx, Dot, Empty, Notice, NumberInput, Segmented, Spinner, TabList, Tabs, Tooltip, type Tone } from "../../ui/primitives";
+import { Button, CodeBlock, CopyButton, cx, Dot, Empty, iconButton, Loading, Notice, NumberInput, Segmented, Skeleton, TabList, Tabs, Tooltip, type Tone } from "../../ui/primitives";
 import { budgetInfo, readingText } from "../../lib/research";
 import { Chip, CodeButton, Composer, Examples, Group, host, LocalNotice, LocalTag, onModEnter, OptionGroup, ResetButton, RunButton, Stage, TabPanel } from "./kit";
 
@@ -154,12 +154,16 @@ export function ResearchPlay() {
             // The clock of the server, so a run is timed the same wherever the console is opened.
             <Run key={data.id} task={data} skew={data.now - task.dataUpdatedAt} onStop={() => void stop()} onReuse={() => reuse(data)} onClose={() => show(null)} />
           ) : (
-            <section className="grid min-h-[26rem] place-items-center rounded-panel border border-line bg-surface">
-              {task.error ? <Notice tone="err">{task.error.message}</Notice> : <Spinner />}
-            </section>
+            task.error ? (
+              <section className="grid min-h-56 place-items-center rounded-panel border border-line bg-surface p-4 shadow-panel">
+                <Notice tone="err">{task.error.message}</Notice>
+              </section>
+            ) : (
+              <Skeleton panel className="h-[26rem]" />
+            )
           )
         ) : (
-          <section className="grid min-h-[26rem] place-items-center rounded-panel border border-line bg-surface">
+          <section className="grid min-h-56 place-items-center rounded-panel border border-line bg-surface shadow-panel">
             <Empty icon={<Workflow />} title="运行后显示研究过程" />
           </section>
         )
@@ -391,7 +395,7 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
 
   return (
     // No overflow clipping here: the panes inside clip themselves.
-    <section ref={ref} className="@container flex min-h-[32rem] min-w-0 scroll-mt-6 flex-col rounded-panel border border-line bg-surface">
+    <section ref={ref} className="@container flex min-h-[32rem] min-w-0 scroll-mt-6 flex-col rounded-panel border border-line bg-surface shadow-panel">
       <header className="flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-line px-4 py-3">
         <div className="min-w-0 flex-1 basis-72">
           <div className="flex items-center gap-2 text-xs">
@@ -473,7 +477,7 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
                           href={task.report_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex h-7 items-center gap-1 rounded-ctl px-2.5 text-xs text-ink-2 transition-colors hover:bg-raised hover:text-ink"
+                          className="press inline-flex h-7 items-center gap-1 rounded-ctl px-2.5 text-xs text-ink-2 hover:bg-fill hover:text-ink"
                         >
                           <ExternalLink className="size-3.5 text-ink-3" />
                           报告页
@@ -496,8 +500,8 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
               )}
               {record && (
                 <Tooltip content="在请求日志里打开这次研究的完整记录">
-                  <Link href={`/logs/${record}`} className="grid size-7 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-raised hover:text-ink" aria-label="完整记录">
-                    <ScrollText className="size-3.5" />
+                  <Link href={`/logs/${record}`} className={iconButton("sm")} aria-label="完整记录">
+                    <ScrollText />
                   </Link>
                 </Tooltip>
               )}
@@ -516,9 +520,7 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
               className="flex-1 overflow-hidden rounded-b-panel"
             />
           ) : loading ? (
-            <div className="grid flex-1 place-items-center py-16">
-              <Spinner />
-            </div>
+            <Loading rows={6} />
           ) : (
             // A run from before flows were recorded, or one whose log entry is gone: what it left is its steps.
             <StepList rows={rows} live={live} phase={phase} elapsed={elapsed} />
@@ -536,7 +538,7 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
               className="flex-1 overflow-hidden rounded-b-panel"
             />
           ) : (
-            <div className="grid place-items-center px-6 py-16 text-center text-xs text-ink-3">{loading ? <Spinner /> : "没有流程记录"}</div>
+            loading ? <Loading rows={6} /> : <div className="grid place-items-center px-6 py-16 text-center text-xs text-ink-3">没有流程记录</div>
           )}
         </TabPanel>
         <TabPanel value="report">
@@ -663,8 +665,8 @@ function Gauge({
             <span
               key={i}
               className={cx(
-                "flex-1 rounded-[1px] transition-colors duration-500 ease-settle",
-                i < value ? fill : "bg-sunken",
+                "flex-1 rounded-full transition-colors duration-500 ease-settle",
+                i < value ? fill : "bg-fill-strong",
                 // The step under way.
                 live && !spent && i === value - 1 && "animate-pulse-dot",
               )}
@@ -672,7 +674,7 @@ function Gauge({
           ))}
         </div>
       ) : (
-        <div className="relative h-1.5 rounded-full bg-sunken" role="meter" aria-label={label} aria-valuenow={Math.round(value)} aria-valuemax={limit}>
+        <div className="relative h-1.5 rounded-full bg-fill-strong" role="meter" aria-label={label} aria-valuenow={Math.round(value)} aria-valuemax={limit}>
           <span
             className={cx("absolute inset-y-0 left-0 rounded-full transition-[width,background-color]", steady ? "duration-300 ease-linear" : "duration-700 ease-settle", fill)}
             style={{ width: `${ratio * 100}%` }}
@@ -722,7 +724,7 @@ function StepList({ rows, live, phase, elapsed }: { rows: Row[]; live: boolean; 
         {groups.map((group, i) => (
           <li key={i} className={cx("flex gap-3 border-b border-line px-4 py-3", live && "animate-in")}>
             <div className="w-10 shrink-0">
-              {group.step !== undefined && <div className="num text-sm text-signal-text">{String(group.step).padStart(2, "0")}</div>}
+              {group.step !== undefined && <div className="num text-sm text-ink-2">{String(group.step).padStart(2, "0")}</div>}
               <div className="num text-2xs text-ink-3">{stopwatch(group.rows[0].at)}</div>
             </div>
             <ol className="flex min-w-0 flex-1 flex-col gap-2">
@@ -756,7 +758,7 @@ function RowBody({ row }: { row: Row }) {
       return (
         <div className="flex min-w-0 flex-wrap gap-1.5">
           {row.text.split(" | ").map((query, i) => (
-            <span key={i} className="num max-w-full truncate rounded-[3px] border border-line bg-sunken px-1.5 py-px text-xs text-ink">
+            <span key={i} className="num max-w-full truncate rounded-tag bg-fill px-1.5 py-px text-xs text-ink">
               {query}
             </span>
           ))}
@@ -905,9 +907,8 @@ function Tasks({
                         pick();
                       }
                     }}
-                    className={cx("relative flex w-full cursor-pointer items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-raised/60", isCurrent && "bg-raised")}
+                    className={cx("relative flex w-full cursor-pointer items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-fill", isCurrent && "bg-fill-strong")}
                   >
-                    {isCurrent && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-signal-text" />}
                     <Dot tone={meta.tone} live={task.status === "running"} className="mt-1.5" />
                     <div className="min-w-0 flex-1">
                       <div className="line-clamp-2 text-sm text-ink">{task.question}</div>

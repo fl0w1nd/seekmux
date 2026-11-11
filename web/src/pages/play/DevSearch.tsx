@@ -224,10 +224,8 @@ export function DevSearchPlay() {
                     aria-pressed={on}
                     onClick={() => setTypes(on ? types.filter((t) => t !== type.value) : [...types, type.value])}
                     className={cx(
-                      "flex h-7 items-center rounded-ctl border px-2 text-xs transition-colors",
-                      on
-                        ? "border-signal-text bg-signal/12 font-medium text-ink"
-                        : "border-line bg-surface text-ink-3 hover:border-line-strong hover:text-ink",
+                      "press flex h-7 items-center rounded-ctl px-2.5 text-xs",
+                      on ? "bg-signal/25 text-ink hover:bg-signal/35" : "bg-fill text-ink-2 hover:bg-fill-strong hover:text-ink",
                     )}
                   >
                     {type.label}
@@ -313,7 +311,7 @@ function DevResults({ items }: { items: DevSearchItem[] }) {
               <ExternalLink className="size-3 shrink-0 text-ink-3 opacity-0 group-hover:opacity-100" />
             </a>
             {item.passages?.map((passage, n) => (
-              <div key={n} className="mt-2 max-h-72 overflow-y-auto rounded-ctl border border-line bg-sunken px-3 py-2 text-xs">
+              <div key={n} className="mt-2 max-h-72 overflow-y-auto rounded-ctl bg-sunken px-3 py-2 text-xs">
                 <Markdown>{passage}</Markdown>
               </div>
             )) ?? <p className="mt-1 text-xs text-ink-3">提供商未返回匹配段落</p>}

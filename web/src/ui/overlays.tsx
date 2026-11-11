@@ -15,11 +15,11 @@ interface OverlayProps {
   footer?: ReactNode;
 }
 
-function Header({ title, description }: Pick<OverlayProps, "title" | "description">) {
+function Header({ title, description, divided }: Pick<OverlayProps, "title" | "description"> & { divided?: boolean }) {
   return (
-    <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-3.5">
+    <header className={cx("flex items-start justify-between gap-4 px-5", divided ? "border-b border-line py-3.5" : "pt-4.5 pb-1")}>
       <div className="min-w-0">
-        <RadixDialog.Title className="text-base font-medium">{title}</RadixDialog.Title>
+        <RadixDialog.Title className="t-heading text-base">{title}</RadixDialog.Title>
         {description ? (
           <RadixDialog.Description className="mt-0.5 text-xs text-ink-3">{description}</RadixDialog.Description>
         ) : (
@@ -41,13 +41,13 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
         <RadixDialog.Content
           className={cx(
             "fixed top-[12dvh] left-1/2 z-50 flex max-h-[76dvh] max-sm:top-[6dvh] max-sm:max-h-[88dvh] w-[calc(100vw-2rem)] -translate-x-1/2 animate-in flex-col",
-            "rounded-panel border border-line-strong bg-overlay shadow-overlay",
+            "rounded-panel bg-overlay shadow-overlay",
             width,
           )}
         >
           <Header title={title} description={description} />
-          <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
-          {footer && <footer className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</footer>}
+          <div className={cx("min-h-0 flex-1 overflow-y-auto px-5 pt-3", footer ? "pb-4" : "pb-5")}>{children}</div>
+          {footer && <footer className="flex justify-end gap-2 px-5 pt-1 pb-5">{footer}</footer>}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>
@@ -79,11 +79,11 @@ export function Drawer({
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-scrim" />
         <RadixDialog.Content
           className={cx(
-            "fixed inset-y-0 z-50 flex animate-slide flex-col border-line-strong bg-overlay pb-[env(safe-area-inset-bottom)] shadow-overlay",
+            "fixed inset-y-0 z-50 flex animate-slide flex-col border-line bg-overlay pb-[env(safe-area-inset-bottom)] shadow-overlay",
             side === "right" ? cx("right-0 border-l", width ?? "w-[min(44rem,100vw)]") : cx("left-0 border-r", width ?? "w-[min(18rem,85vw)]"),
           )}
         >
-          <Header title={title} description={description} />
+          <Header title={title} description={description} divided />
           <div className={cx("min-h-0 flex-1 overflow-y-auto", bodyClassName)}>{children}</div>
         </RadixDialog.Content>
       </RadixDialog.Portal>
@@ -110,7 +110,7 @@ export function SidePanel({ label, onClose, className, children }: { label: stri
     <section
       aria-label={label}
       className={cx(
-        "fixed inset-y-0 right-0 z-30 flex w-full animate-slide flex-col border-l border-line-strong bg-overlay pb-[env(safe-area-inset-bottom)] shadow-overlay",
+        "fixed inset-y-0 right-0 z-30 flex w-full animate-slide flex-col border-l border-line bg-overlay pb-[env(safe-area-inset-bottom)] shadow-overlay",
         className,
       )}
     >
@@ -124,7 +124,7 @@ export function SidePanel({ label, onClose, className, children }: { label: stri
 export const tooltipOpen = () => !!document.querySelector('[data-state="delayed-open"], [data-state="instant-open"]');
 
 /** Whether a dialog, a drawer or a menu has the page; keys then belong to it. */
-export const modalOpen = () => !!document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [role="menu"][data-state="open"]');
+export const modalOpen = () => !!document.querySelector('[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"], [role="menu"][data-state="open"], [role="listbox"][data-state="open"]');
 
 /* ---------- Popover ---------- */
 
@@ -157,7 +157,7 @@ export function Popover({
           collisionPadding={12}
           className={cx(
             "z-50 max-h-(--radix-popover-content-available-height) max-w-[calc(100vw-1.5rem)] animate-in overflow-y-auto",
-            "rounded-panel border border-line-strong bg-overlay shadow-overlay focus-visible:outline-none",
+            "rounded-panel bg-overlay shadow-overlay focus-visible:outline-none",
             className,
           )}
         >
@@ -236,7 +236,7 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
         </Dialog>
         <div className="pointer-events-none fixed right-4 bottom-4 z-[60] flex w-80 flex-col gap-2" role="status" aria-live="polite">
           {toasts.map((t) => (
-            <div key={t.id} className="pointer-events-auto flex animate-in items-start gap-2.5 rounded-ctl border border-line-strong bg-overlay px-3 py-2.5 text-sm shadow-overlay">
+            <div key={t.id} className="pointer-events-auto flex animate-in items-start gap-2.5 rounded-panel bg-overlay px-3.5 py-3 text-sm shadow-overlay">
               <Dot tone={t.tone} className="mt-2" />
               <span className="min-w-0 flex-1 break-words">{t.message}</span>
             </div>

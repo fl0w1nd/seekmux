@@ -350,8 +350,8 @@ function SearchResults({ results }: { results: SearchResult[] }) {
               aria-pressed={i === index}
               onClick={() => setIndex(i)}
               className={cx(
-                "inline-flex h-7 max-w-72 shrink-0 items-center gap-1.5 rounded-ctl border px-2.5 text-xs transition-colors",
-                i === index ? "border-line-strong bg-raised text-ink" : "border-line text-ink-3 hover:text-ink",
+                "press inline-flex h-7 max-w-72 shrink-0 items-center gap-1.5 rounded-ctl px-2.5 text-xs",
+                i === index ? "bg-fill-strong text-ink" : "bg-fill text-ink-2 hover:text-ink",
               )}
             >
               <span className="truncate">{r.query}</span>

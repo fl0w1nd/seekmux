@@ -22,7 +22,7 @@ export function RouteOptions({ tool, index }: { tool: RoutedTool; index: number 
   const { config, update } = useConfig();
   const route = config[tool].routes[index];
   return (
-    <div className="-mx-4 -mb-2 mt-1 basis-full border-t border-line bg-sunken/35 px-4 py-3.5">
+    <div className="-mx-4 -mb-2 mt-1 basis-full border-t border-line bg-sunken px-4 py-4">
       <OptionFields
         tool={tool}
         provider={route.provider}
@@ -117,13 +117,12 @@ function Control({
       return <Switch checked={value === true} onCheckedChange={onChange} aria-label={label} />;
     case "enum":
       return (
-        <Select value={String(value)} onChange={(e) => onChange(e.target.value)}>
-          {option.values?.map((v) => (
-            <option key={v} value={v}>
-              {v === option.default ? `${v}（默认）` : v}
-            </option>
-          ))}
-        </Select>
+        <Select
+          value={String(value)}
+          onChange={onChange}
+          aria-label={label}
+          options={(option.values ?? []).map((v) => ({ value: v, label: v === option.default ? `${v}（默认）` : v }))}
+        />
       );
     case "int":
       return <IntInput option={option} value={typeof value === "number" ? value : undefined} unit={unit} onChange={onChange} />;
@@ -170,7 +169,7 @@ function IntInput({ option, value, unit, onChange }: { option: ProviderOption; v
         }}
         onBlur={() => setText(null)}
       />
-      {unit && <span className="tag pointer-events-none absolute inset-y-0 right-2.5 flex h-8 items-center normal-case">{unit}</span>}
+      {unit && <span className="pointer-events-none absolute inset-y-0 right-2.5 flex h-8 items-center text-xs text-ink-3">{unit}</span>}
       {invalid && (
         <div className="mt-1 text-xs text-err">
           {min} – {max} 的整数

@@ -247,12 +247,12 @@ function Status({ node }: { node: TraceNode }) {
 
 const frame = (node: TraceNode, selected: boolean) =>
   cx(
-    "border bg-surface text-left transition-colors focus-visible:outline-offset-1",
+    "border bg-surface text-left shadow-panel transition-[border-color,box-shadow] focus-visible:outline-offset-1",
     selected
-      ? "border-signal-text shadow-[0_0_0_1px_var(--signal-text)]"
+      ? "border-signal-text ring-1 ring-signal-text"
       : node.status === "running"
         ? "border-signal-text/55 hover:border-signal-text"
-        : "border-line hover:border-line-strong",
+        : "border-line hover:border-line-strong hover:shadow-raise",
     (node.status === "skipped" || node.status === "limited" || node.status === "canceled") && !selected && "border-dashed",
   );
 
@@ -365,7 +365,7 @@ function Inner({ node }: { node: TreeNode }) {
       {...props}
       className={cx(
         "flex h-7 items-center gap-2 border-b border-line px-2.5 text-xs last:border-b-0",
-        selected ? "bg-raised" : props.role && "cursor-pointer hover:bg-raised/60",
+        selected ? "bg-fill-strong" : props.role && "cursor-pointer hover:bg-fill",
       )}
     >
       <Dot tone={statusTone[node.status]} live={node.status === "running"} />
@@ -399,8 +399,8 @@ function RouteCard({ node, fill }: { node: TreeNode; fill?: boolean }) {
             <li
               key={c.provider}
               className={cx(
-                "inline-flex h-5 max-w-full items-center gap-1 rounded-[3px] border px-1.5 text-2xs",
-                c.eligible ? "border-line text-ink-2" : "border-dashed border-line text-ink-3",
+                "inline-flex h-5 max-w-full items-center gap-1 rounded-tag px-1.5 text-2xs",
+                c.eligible ? "bg-fill text-ink-2" : "border border-dashed border-line-strong text-ink-3",
               )}
             >
               {c.eligible && <span className="num text-ink-3">{++order}</span>}
@@ -472,7 +472,7 @@ function Step({ node }: { node: TreeNode }) {
         <span aria-hidden className={cx("mt-1.5 w-0 flex-1 border-l", running ? "border-signal-text" : "border-line")} />
       </div>
       <div className="min-w-0 flex-1 py-2 pr-2.5">
-        <div {...props} className={cx("-ml-1.5 flex min-h-7 items-center gap-2 rounded-ctl px-1.5 text-xs", selected ? "bg-raised" : props.role && "cursor-pointer hover:bg-raised/60")}>
+        <div {...props} className={cx("-ml-1.5 flex min-h-7 items-center gap-2 rounded-ctl px-1.5 text-xs", selected ? "bg-fill-strong" : props.role && "cursor-pointer hover:bg-fill/60")}>
           <Dot tone={statusTone[node.status]} live={running} />
           <span className="shrink-0 text-ink-2">{running && tools.length === 0 ? "模型在想下一步" : attr<boolean>(node, "final") ? "模型写报告" : "模型决定"}</span>
           <span className="num min-w-0 flex-1 truncate text-ink-3">{conclusion(node).replace(/^写报告( · )?/, "")}</span>
@@ -529,7 +529,7 @@ function ToolCard({ node, open, onToggle }: { node: TreeNode; open: boolean; onT
                 e.stopPropagation();
                 onToggle();
               }}
-              className="-my-1 -mr-1 inline-flex h-6 shrink-0 items-center gap-0.5 rounded-ctl px-1.5 text-2xs text-ink-3 transition-colors hover:bg-raised hover:text-ink"
+              className="-my-1 -mr-1 inline-flex h-6 shrink-0 items-center gap-0.5 rounded-ctl px-1.5 text-2xs text-ink-3 transition-colors hover:bg-fill hover:text-ink"
             >
               <span>流程</span>
               <ChevronRight className={cx("size-3.5 transition-transform", open && "rotate-90")} />
@@ -652,7 +652,7 @@ export const Flow = memo(function Flow({ nodes, live = false, origin = 0, select
               e.stopPropagation();
               pan(-1);
             }}
-            className="absolute top-1/2 left-2 z-[2] grid size-7 -translate-y-1/2 place-items-center rounded-full border border-line-strong bg-surface/95 text-ink-2 shadow-overlay transition-colors hover:text-ink"
+            className="absolute top-1/2 left-2 z-[2] grid size-7 -translate-y-1/2 place-items-center rounded-full bg-overlay text-ink-2 shadow-overlay transition-colors hover:text-ink"
           >
             <ChevronLeft className="size-3.5" />
           </button>
@@ -668,7 +668,7 @@ export const Flow = memo(function Flow({ nodes, live = false, origin = 0, select
               e.stopPropagation();
               pan(1);
             }}
-            className="absolute top-1/2 right-2 z-[2] grid size-7 -translate-y-1/2 place-items-center rounded-full border border-line-strong bg-surface/95 text-ink-2 shadow-overlay transition-colors hover:text-ink"
+            className="absolute top-1/2 right-2 z-[2] grid size-7 -translate-y-1/2 place-items-center rounded-full bg-overlay text-ink-2 shadow-overlay transition-colors hover:text-ink"
           >
             <ChevronRight className="size-3.5" />
           </button>

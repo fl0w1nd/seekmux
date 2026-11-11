@@ -6,14 +6,14 @@ import { useConfig } from "../lib/config";
 import { toolPage } from "../lib/format";
 import { routingRules } from "../lib/routing";
 import { BrandIcon } from "../ui/brand";
-import { Badge } from "../ui/primitives";
+import { Badge, Status } from "../ui/primitives";
 import { HealthBadge, useStatus } from "./Health";
 import { customized } from "./RouteOptions";
 
 /** One setting of a provider: its name on a fixed left column, the control on the right. */
 export function CardRow({ label, aside, children }: { label: ReactNode; aside?: ReactNode; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-1 items-center gap-x-4 gap-y-1.5 border-b border-line px-4 py-2.5 last:border-b-0 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
+    <div className="grid min-h-14 grid-cols-1 items-center gap-x-4 gap-y-1.5 border-b border-line px-4 py-3 last:border-b-0 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
       <div className="flex items-center justify-between gap-2 sm:flex-col sm:items-start sm:justify-center sm:gap-0.5">
         <div className="text-sm text-ink">{label}</div>
         {typeof aside === "string" ? <div className="text-2xs text-ink-3">{aside}</div> : aside}
@@ -39,7 +39,7 @@ export function ProviderRoutes({ id, tools }: { id: string; tools: RoutedTool[] 
 
   return (
     <div className="border-t border-line">
-      <div className="tag px-4 pt-3.5 pb-1">服务归属</div>
+      <div className="tag px-4 pt-4 pb-1.5">服务归属</div>
       <ul className="divide-y divide-line">
         {tools.map((tool) => {
           const routes = config[tool].routes;
@@ -51,12 +51,12 @@ export function ProviderRoutes({ id, tools }: { id: string; tools: RoutedTool[] 
             <li key={tool}>
               <Link
                 href={toolPage(tool)}
-                className="grid grid-cols-[8.5rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-2.5 text-sm transition-colors hover:bg-raised/60"
+                className="grid min-h-12 grid-cols-[8.5rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-2.5 text-sm transition-colors hover:bg-fill"
               >
                 <span className="text-sm text-ink">{routedTitle[tool]}</span>
                 <span className="flex min-w-0 flex-wrap items-center gap-2">
                   {!route?.enabled ? (
-                    <Badge>已停用</Badge>
+                    <span className="text-xs text-ink-3">已停用</span>
                   ) : (
                     <>
                       <span className="num text-xs text-ink-2">第 {index + 1} 顺位</span>
@@ -67,9 +67,7 @@ export function ProviderRoutes({ id, tools }: { id: string; tools: RoutedTool[] 
                       ) : health?.disabled ? (
                         <HealthBadge health={health} />
                       ) : (
-                        <Badge tone="ok" dot>
-                          可用
-                        </Badge>
+                        <Status tone="ok">可用</Status>
                       )}
                       {changed > 0 && <span className="num text-xs text-ink-3">已调参 {changed} 项</span>}
                       {tool === "fetch" && config.fetch.smart_fallback && route.no_hedge && <span className="text-xs text-ink-3">不对冲</span>}
@@ -86,7 +84,7 @@ export function ProviderRoutes({ id, tools }: { id: string; tools: RoutedTool[] 
           <li>
             <Link
               href="/routing/rules"
-              className="grid grid-cols-[8.5rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-2.5 text-sm transition-colors hover:bg-raised/60"
+              className="grid min-h-12 grid-cols-[8.5rem_minmax(0,1fr)_auto] items-center gap-x-4 px-4 py-2.5 text-sm transition-colors hover:bg-fill"
             >
               <span className="text-sm text-ink">{`路由规则`}</span>
               <span className="flex min-w-0 flex-wrap items-center gap-1.5">

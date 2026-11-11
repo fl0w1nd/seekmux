@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
+import { BarChart3, Check, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { KeyUsageDrawer } from "../components/KeyUsage";
 import { ModelChain, ModelSelect } from "../components/ModelPicker";
@@ -9,7 +9,7 @@ import { ago, compact, dateTime, toolLabel } from "../lib/format";
 import { PageHeader } from "../Shell";
 import { RateLimitInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, CodeBlock, cx, Empty, Field, Info, Input, Notice, NumberInput, Panel, Section, Segmented, Switch, Table, Td, Th } from "../ui/primitives";
+import { Badge, Button, CodeBlock, cx, Empty, Field, Info, Input, Loading, Notice, NumberInput, Panel, Section, Segmented, Switch, Table, Td, Th } from "../ui/primitives";
 
 /** The days the list sums the usage of each key over. */
 const usageDays = 30;
@@ -55,8 +55,14 @@ export function KeysPage() {
       />
       <div className="flex flex-col gap-3">
         <Panel flush>
-          {keys.data?.length === 0 ? (
-            <Empty icon={<KeyRound />} title="尚无访问密钥" />
+          {!keys.data ? (
+            <Loading rows={3} />
+          ) : keys.data.length === 0 ? (
+            <Empty size="page" icon={<KeyRound />} title="尚无访问密钥">
+              <Button variant="primary" icon={<Plus />} onClick={() => setForm("new")}>
+                创建密钥
+              </Button>
+            </Empty>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -78,19 +84,13 @@ export function KeysPage() {
                   const used = usage.data?.keys[key.id];
                   const notes = policyNotes(key);
                   return (
-                    <tr key={key.id} className={cx("last:[&>td]:border-b-0", revoked && "text-ink-3")}>
+                    <tr key={key.id} className={cx("transition-colors hover:bg-fill", revoked && "text-ink-3")}>
                       <Td>
                         <div className="font-medium">{key.name}</div>
-                        {notes.length > 0 && <div className="tag mt-0.5 normal-case">{notes.join(" · ")}</div>}
+                        {notes.length > 0 && <div className="mt-0.5 text-xs text-ink-3">{notes.join(" · ")}</div>}
                       </Td>
                       <Td className="num text-xs">{key.oauth_client ? <Badge tone="info">OAuth</Badge> : `${key.prefix}…`}</Td>
-                      <Td>
-                        <span className="flex gap-1">
-                          {key.scopes.map((scope) => (
-                            <Badge key={scope}>{toolLabel[scope]}</Badge>
-                          ))}
-                        </span>
-                      </Td>
+                      <Td className="text-xs whitespace-nowrap text-ink-2">{key.scopes.map((scope) => toolLabel[scope]).join(" · ")}</Td>
                       <Td className="num text-xs">{key.rate_limit || "不限"}</Td>
                       <Td className="num text-xs whitespace-nowrap">
                         {used?.calls ? (
@@ -137,7 +137,7 @@ export function KeysPage() {
           )}
         </Panel>
 
-        <Panel index="MCP" title="连接方式">
+        <Panel title="连接方式">
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="flex min-w-0 flex-col gap-3">
               {!config.oauth.disabled && (
@@ -289,12 +289,13 @@ function KeyDialog({
                   aria-pressed={on}
                   onClick={() => setScopes(on ? scopes.filter((s) => s !== tool) : [...scopes, tool])}
                   className={cx(
-                    "flex h-8 items-center gap-2 rounded-ctl border px-3 text-sm transition-colors",
-                    on ? "border-signal-text bg-signal/12 text-ink" : "border-line text-ink-3 hover:border-line-strong",
+                    "press flex h-8 items-center gap-1.5 rounded-ctl px-3 text-sm",
+                    on ? "bg-signal/25 text-ink hover:bg-signal/35" : "bg-fill text-ink-2 hover:bg-fill-strong hover:text-ink",
                   )}
                 >
+                  {on && <Check className="-ml-0.5 size-3.5 text-signal-ink" />}
                   {toolLabel[tool]}
-                  <span className="tag normal-case">{tool}</span>
+                  <span className="num text-2xs text-ink-3">{tool}</span>
                 </button>
               );
             })}
@@ -322,7 +323,7 @@ function KeyDialog({
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <span className="tag normal-case">永不过期</span>
+              <span className="text-xs text-ink-3">永不过期</span>
               <Button size="sm" onClick={() => setExpiresAt(Date.now() + 30 * 86_400_000)}>
                 设置有效期
               </Button>

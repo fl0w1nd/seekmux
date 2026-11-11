@@ -14,7 +14,7 @@ import { useNow } from "../../lib/motion";
 import { activeOf, legacyTrace } from "../../lib/trace";
 import { Markdown } from "../../ui/markdown";
 import { Dialog, Drawer, Popover, useToast } from "../../ui/overlays";
-import { Badge, Button, CodeBlock, cx, Dot, Empty, Info, Notice, Segmented, Spinner, TabList, TabPanel, Tabs, Tooltip } from "../../ui/primitives";
+import { Badge, Button, CodeBlock, cx, Dot, Empty, iconButton, Info, Notice, Segmented, Spinner, Status, TabList, TabPanel, Tabs, Tooltip } from "../../ui/primitives";
 
 const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
@@ -46,14 +46,13 @@ export function Stage({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3">
-      <header className="flex flex-wrap items-end justify-between gap-4">
+    <div className="flex flex-col gap-4">
+      <header className="flex min-h-8 flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="tag text-signal-text">调试台</span>
-            {tool && <span className="tag">· {tool}</span>}
+          <div className="flex items-baseline gap-2.5">
+            <h1 className="t-title">{title}</h1>
+            {tool && <span className="num text-xs text-ink-3">{tool.toLowerCase()}</span>}
           </div>
-          <h1 className="mt-0.5 text-xl font-medium tracking-tight">{title}</h1>
           {description && <p className="mt-1 max-w-2xl text-sm text-ink-3">{description}</p>}
         </div>
         {(actions || history) && (
@@ -106,8 +105,8 @@ export function Composer({
   splitPanel?: boolean;
 }) {
   return (
-    <div className="@container overflow-hidden rounded-panel border border-line-strong bg-surface">
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line bg-sunken/45 px-3 py-2">
+    <div className="@container overflow-hidden rounded-panel border border-line bg-surface shadow-raise transition-[border-color,box-shadow] focus-within:border-line-strong">
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-line px-3 py-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{tools}</div>
         {toolbarRight && <div className="ml-auto flex shrink-0 items-center gap-1.5">{toolbarRight}</div>}
       </div>
@@ -117,7 +116,7 @@ export function Composer({
           <Collapsible.Content className="overflow-hidden data-[state=closed]:animate-fold-up data-[state=open]:animate-fold-down">
             <div
               className={cx(
-                "border-b border-line bg-sunken/20 [&>*]:border-line",
+                "border-b border-line bg-sunken [&>*]:border-line",
                 splitPanel ? "grid divide-y @3xl:grid-cols-2 @3xl:divide-x @3xl:divide-y-0" : "flex flex-col divide-y",
               )}
             >
@@ -129,7 +128,7 @@ export function Composer({
 
       <div className="bg-surface">{children}</div>
 
-      <div className="flex flex-wrap items-end justify-between gap-3 border-t border-line bg-sunken/25 px-3.5 py-2">
+      <div className="flex flex-wrap items-end justify-between gap-3 px-3.5 pt-1 pb-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">{footer}</div>
         <div className="ml-auto flex shrink-0 items-center gap-2">{actions}</div>
       </div>
@@ -156,9 +155,9 @@ export function Chip({
     <button
       type="button"
       className={cx(
-        "inline-flex h-7 max-w-64 shrink-0 items-center gap-1.5 rounded-ctl border border-line bg-surface px-2.5 text-xs text-ink-2 transition-colors",
-        "hover:border-line-strong hover:text-ink aria-expanded:border-line-strong aria-expanded:bg-raised aria-expanded:text-ink",
-        "aria-pressed:border-line-strong aria-pressed:bg-raised aria-pressed:text-ink [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3",
+        "press inline-flex h-7 max-w-64 shrink-0 items-center gap-1.5 rounded-ctl bg-fill px-2.5 text-xs text-ink-2",
+        "hover:bg-fill-strong hover:text-ink aria-expanded:bg-fill-strong aria-expanded:text-ink",
+        "aria-pressed:bg-fill-strong aria-pressed:text-ink [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3",
         className,
       )}
       {...rest}
@@ -166,7 +165,7 @@ export function Chip({
       {icon}
       {label && <span className={value !== undefined ? "text-ink-3" : undefined}>{label}</span>}
       {value !== undefined && <span className="truncate font-medium text-ink">{value}</span>}
-      {changed && <Dot tone="signal" />}
+      {changed && <Dot tone="signal" halo={false} />}
     </button>
   );
 }
@@ -240,10 +239,8 @@ export function Examples({
             type="button"
             onClick={() => onPick(item)}
             className={cx(
-              "max-w-64 truncate rounded-ctl border px-2 py-0.5 text-xs transition-colors",
-              active
-                ? "border-line-strong bg-raised text-ink"
-                : "border-line bg-surface text-ink-3 hover:border-line-strong hover:text-ink",
+              "press max-w-64 truncate rounded-thumb px-2 py-0.5 text-xs",
+              active ? "bg-fill-strong text-ink" : "bg-fill text-ink-3 hover:bg-fill-strong hover:text-ink",
               mono && "num",
             )}
             title={item}
@@ -256,7 +253,7 @@ export function Examples({
         <button
           type="button"
           onClick={onClear}
-          className="inline-flex items-center gap-1 rounded-ctl px-1.5 py-0.5 text-xs text-ink-3 transition-colors hover:bg-raised hover:text-ink"
+          className="press inline-flex items-center gap-1 rounded-thumb px-1.5 py-0.5 text-xs text-ink-3 hover:bg-fill hover:text-ink"
         >
           <X className="size-3" />
           清空
@@ -272,7 +269,7 @@ export function Examples({
 export function LocalTag() {
   return (
     <Tooltip content="只随调试台的调用发出，不修改配置">
-      <span className="tag cursor-help rounded-[3px] border border-line px-1 normal-case">仅调试台</span>
+      <span className="inline-flex h-4.5 cursor-help items-center rounded-tag bg-fill px-1.5 text-2xs font-medium text-ink-3">仅调试台</span>
     </Tooltip>
   );
 }
@@ -396,7 +393,7 @@ export function ProviderParams({ tool, engine, tuning, note }: { tool: RoutedToo
   const page = toolPage(tool);
   if (engine === "auto") {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-sunken/35 px-4 py-2.5 text-xs text-ink-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-xs text-ink-3">
         <span>固定一个提供商后可调整它的参数</span>
         <LocalTag />
       </div>
@@ -464,7 +461,7 @@ function Progress({ nodes, since }: { nodes: TraceNode[]; since: number }) {
   const now = useNow(true, 100);
   const active = useMemo(() => activeOf(nodes), [nodes]);
   return (
-    <div className="flex items-center gap-2.5 border-b border-line bg-sunken/25 px-4 py-2 text-xs text-ink-2">
+    <div className="flex items-center gap-2.5 border-b border-line bg-sunken px-4 py-2 text-xs text-ink-2">
       <Dot tone="signal" live />
       <LivePhase call={{ active }} className="inline-flex min-w-0 flex-1 items-center gap-1.5" />
       <span className="num shrink-0 text-ink">{duration(Math.max(0, now - since))}</span>
@@ -532,11 +529,11 @@ export function Output({
     <section
       ref={ref}
       className={cx(
-        "flex min-w-0 scroll-mt-6 flex-col rounded-panel border border-line bg-surface",
-        idle ? "min-h-48" : "min-h-[24rem]",
+        "flex min-w-0 scroll-mt-6 flex-col rounded-panel border border-line bg-surface shadow-panel",
+        idle ? "min-h-56" : "min-h-[24rem]",
       )}
     >
-      {banner && <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-panel border-b border-line bg-raised/60 px-4 py-2 text-xs">{banner}</div>}
+      {banner && <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-panel border-b border-line bg-sunken px-4 py-2 text-xs">{banner}</div>}
       <Tabs value={view} onChange={onView} className="flex-1">
         <TabList
           tabs={[
@@ -565,8 +562,8 @@ export function Output({
               {actions}
               {record && !live && (
                 <Tooltip content="在请求日志里打开这次调用的完整记录">
-                  <Link href={`/logs/${record}`} className="grid size-7 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-raised hover:text-ink" aria-label="完整记录">
-                    <ScrollText className="size-3.5" />
+                  <Link href={`/logs/${record}`} className={iconButton("sm")} aria-label="完整记录">
+                    <ScrollText />
                   </Link>
                 </Tooltip>
               )}
@@ -576,7 +573,7 @@ export function Output({
         {live ? (
           <Progress nodes={nodes} since={run.submittedAt} />
         ) : (
-          strip && <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-sunken/25 px-4 py-2 text-xs text-ink-3">{strip}</div>
+          strip && <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-2 text-xs text-ink-3">{strip}</div>
         )}
         <TabPanel value="result" className="flex flex-col">
           {idle ? (
@@ -719,10 +716,10 @@ export function HistoricalFallback({
       ) : entry.error ? (
         <Notice tone="err">{entry.error}</Notice>
       ) : (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-ctl border border-line bg-sunken/50 px-3.5 py-2.5 text-xs text-ink-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-ctl bg-sunken px-3.5 py-2.5 text-xs text-ink-2">
           <span>
             未记录返回内容 ·{" "}
-            <Link href="/system" className="text-ink underline underline-offset-2 hover:text-signal-text">
+            <Link href="/system" className="text-ink underline underline-offset-2 hover:text-ink-2">
               开启记录
             </Link>
           </span>
@@ -834,12 +831,7 @@ export function parseJSON<T>(raw: string | undefined): T | null {
 /** How a past run ended, as a dot and a word. */
 function RunStatus({ entry }: { entry: LogEntry }) {
   const stopped = entry.error === stoppedHere;
-  return (
-    <span className={cx("inline-flex items-center gap-1.5", stopped ? "text-ink-3" : entry.status === "ok" ? "text-ok" : "text-err")}>
-      <Dot tone={stopped ? "neutral" : entry.status === "ok" ? "ok" : "err"} />
-      {stopped ? "已中止" : entry.status === "ok" ? "成功" : "失败"}
-    </span>
-  );
+  return <Status tone={stopped ? "neutral" : entry.status === "ok" ? "ok" : "err"}>{stopped ? "已中止" : entry.status === "ok" ? "成功" : "失败"}</Status>;
 }
 
 /**
@@ -945,9 +937,8 @@ export function Recent<R = unknown>({
                         void select(entry);
                       }
                     }}
-                    className={cx("relative flex w-full cursor-pointer items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-raised/60", active && "bg-raised")}
+                    className={cx("relative flex w-full cursor-pointer items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-fill", active && "bg-fill-strong")}
                   >
-                    {active && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-signal-text" />}
                     <Dot tone={stopped ? "neutral" : entry.status === "ok" ? "ok" : "err"} className="mt-1.5" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm text-ink">{entry.summary || "—"}</div>
@@ -974,7 +965,7 @@ export function Recent<R = unknown>({
                           e.stopPropagation();
                           void select(entry, true);
                         }}
-                        className="-mr-1.5 grid size-7 shrink-0 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-surface hover:text-ink"
+                        className="-mr-1.5 grid size-7 shrink-0 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-fill-strong hover:text-ink"
                       >
                         <RotateCcw className="size-3.5" />
                       </button>

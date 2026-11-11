@@ -1,4 +1,4 @@
-import { Play, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Inbox, Pencil, Play, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { fetchText, fetchTrace, replay, researchTrace, searchTrace } from "../components/flow/fixtures";
 import { FlowView } from "../components/flow/FlowView";
@@ -15,8 +15,12 @@ import {
   CodeBlock,
   cx,
   Dot,
+  Empty,
   Field,
+  IconButton,
   Input,
+  Kbd,
+  Loading,
   Meter,
   Notice,
   NumberInput,
@@ -25,6 +29,11 @@ import {
   Section,
   Segmented,
   Select,
+  Skeleton,
+  Stat,
+  StatGrid,
+  State,
+  Status,
   Switch,
   TabList,
   TabPanel,
@@ -46,11 +55,18 @@ const sampleMarkdown = `## Streamable HTTP
 `;
 
 const surfaces = [
-  ["bg", "bg-bg", "页面与导航栏底色"],
-  ["surface", "bg-surface", "面板与主内容区"],
-  ["raised", "bg-raised", "悬停、选中"],
-  ["sunken", "bg-sunken", "输入框、代码"],
+  ["bg", "bg-bg", "画布、侧栏、目录"],
+  ["surface", "bg-surface", "面板、输入框"],
+  ["sunken", "bg-sunken", "代码、凹陷区"],
   ["overlay", "bg-overlay", "弹层"],
+  ["thumb", "bg-thumb shadow-thumb", "滑块、开关钮"],
+] as const;
+
+const washes = [
+  ["fill", "bg-fill", "悬停、次要按钮、轨道"],
+  ["fill-strong", "bg-fill-strong", "按下、选中、骨架"],
+  ["line", "border border-line", "分隔、容器边"],
+  ["line-strong", "border border-line-strong", "输入框边"],
 ] as const;
 
 const inks = [
@@ -67,14 +83,34 @@ const accents = [
   ["info", "bg-info", "中性提示、缓存"],
 ] as const;
 
-const scale = [
-  ["text-2xl", "28 / 34", "关键数字"],
-  ["text-xl", "20 / 28", "页面标题"],
-  ["text-lg", "16 / 24", "强调段落"],
-  ["text-base", "14 / 22", "正文"],
-  ["text-sm", "13 / 20", "面板标题、控件、表格"],
-  ["text-xs", "12 / 18", "说明文字"],
-  ["text-2xs", "11 / 16", "标签（tag）"],
+const charts = [
+  ["chart-1", "bg-chart-1", "第一个系列"],
+  ["chart-2", "bg-chart-2", "第二个系列"],
+  ["chart-3", "bg-chart-3", "第三个系列"],
+  ["chart-4", "bg-chart-4", "其余"],
+] as const;
+
+const roles = [
+  ["t-title", "t-title", "22 / 30 · 600", "页面标题"],
+  ["t-heading", "t-heading", "14 / 20 · 600", "面板、抽屉、对话框标题"],
+  ["text-base", "text-base", "14 / 22", "正文"],
+  ["text-sm", "text-sm", "13 / 20", "控件、表格、行"],
+  ["text-xs", "text-xs text-ink-2", "12 / 18", "说明文字"],
+  ["tag", "tag", "12 / 18 · 500", "分组名、列名、指标名"],
+] as const;
+
+const elevations = [
+  ["shadow-panel", "shadow-panel", "面板、指标条"],
+  ["shadow-raise", "shadow-raise", "可点击卡片悬停"],
+  ["shadow-thumb", "shadow-thumb", "滑块、侧栏选中项"],
+  ["shadow-overlay", "shadow-overlay", "弹层、对话框"],
+] as const;
+
+const radii = [
+  ["rounded-tag", "rounded-tag", "4", "徽章、键帽、骨架"],
+  ["rounded-thumb", "rounded-thumb", "5", "控件里的选项"],
+  ["rounded-ctl", "rounded-ctl", "7", "控件、行组"],
+  ["rounded-panel", "rounded-panel", "12", "面板、弹层"],
 ] as const;
 
 const tones: Tone[] = ["neutral", "signal", "ok", "warn", "err", "info"];
@@ -82,7 +118,7 @@ const tones: Tone[] = ["neutral", "signal", "ok", "warn", "err", "info"];
 function Swatch({ name, className, use }: { name: string; className: string; use: string }) {
   return (
     <div className="min-w-0">
-      <div className={cx("h-12 rounded-ctl border border-line", className)} />
+      <div className={cx("h-12 rounded-ctl", className)} />
       <div className="num mt-1.5 text-xs">{name}</div>
       <div className="text-xs text-ink-3">{use}</div>
     </div>
@@ -97,7 +133,6 @@ function Specimen({ label, children }: { label: string; children: ReactNode }) {
     </div>
   );
 }
-
 const flows = {
   fetch: { label: "抓取", nodes: fetchTrace, text: fetchText, speed: 2 },
   search: { label: "搜索", nodes: searchTrace, text: {}, speed: 0.5 },
@@ -130,7 +165,6 @@ function FlowSpecimen() {
   }, [run, scaled, store]);
   return (
     <Panel
-      index="08"
       title="流程"
       description="一次调用怎么被判断和执行：顺序往下走，同时发生的并排；判断是一枚写着结论的药丸，耗时的调用是一张带状态、耗时和时间位置的卡片。虚线是没走通的分支。"
       flush
@@ -170,34 +204,34 @@ export function DesignPage() {
   const [limit, setLimit] = useState("15/m");
   const [domains, setDomains] = useState(["github.com", "docs.python.org"]);
   const [tab, setTab] = useState("result");
+  const [choice, setChoice] = useState("b");
+  const [model, setModel] = useState("");
 
   return (
     <>
       <PageHeader title="设计规范" description="Signal 的全部 token 与控件，规则见 web/DESIGN.md。" />
       <div className="flex flex-col gap-3">
-        <Panel index="01" title="表面与线" description="层级靠明度差和 1px 线表达，不用阴影；阴影只留给真正浮起的弹层。">
+        <Panel title="表面、线与填充" description="画布和侧栏在 bg 上，面板和输入框是最亮的 surface。线和填充是半透明的墨色，放在哪一层上都一样。">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
             {surfaces.map(([name, className, use]) => (
+              <Swatch key={name} name={name} className={cx(className, name !== "thumb" && "border border-line")} use={use} />
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-5">
+            {washes.map(([name, className, use]) => (
+              <Swatch key={name} name={name} className={className} use={use} />
+            ))}
+          </div>
+        </Panel>
+
+        <Panel title="颜色" description="只有一个品牌色。状态色刻意避开它的色相，“成功”不会被读成“品牌”。">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+            {accents.map(([name, className, use]) => (
               <Swatch key={name} name={name} className={className} use={use} />
             ))}
           </div>
           <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-5">
-            <div>
-              <div className="h-12 rounded-ctl border border-line" />
-              <div className="num mt-1.5 text-xs">line</div>
-              <div className="text-xs text-ink-3">分隔、容器边</div>
-            </div>
-            <div>
-              <div className="h-12 rounded-ctl border border-line-strong" />
-              <div className="num mt-1.5 text-xs">line-strong</div>
-              <div className="text-xs text-ink-3">控件边、弹层边</div>
-            </div>
-          </div>
-        </Panel>
-
-        <Panel index="02" title="颜色" description="只有一个品牌色。状态色刻意避开它的色相，“成功”不会被读成“品牌”。">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
-            {accents.map(([name, className, use]) => (
+            {charts.map(([name, className, use]) => (
               <Swatch key={name} name={name} className={className} use={use} />
             ))}
           </div>
@@ -211,28 +245,52 @@ export function DesignPage() {
           </div>
         </Panel>
 
-        <Panel index="03" title="字体" description="IBM Plex Sans 负责阅读，IBM Plex Mono 负责一切机器产生的内容：数字、ID、URL、密钥、模型名。" flush>
-          {scale.map(([className, size, use]) => (
-            <div key={className} className="flex items-baseline gap-6 border-b border-line px-4 py-2.5 last:border-b-0">
-              <span className="num w-20 shrink-0 text-xs text-ink-3">{className.slice(5)}</span>
-              <span className="num w-16 shrink-0 text-xs text-ink-3">{size}</span>
+        <Panel title="字体" description="IBM Plex Sans 负责阅读，IBM Plex Mono 负责一切机器产生的内容：数字、ID、URL、密钥、模型名。强调靠字重，不靠加框。" flush>
+          {roles.map(([name, className, size, use]) => (
+            <div key={name} className="flex items-baseline gap-6 border-b border-line px-4 py-2.5">
+              <span className="num w-20 shrink-0 text-xs text-ink-3">{name}</span>
+              <span className="num hidden w-24 shrink-0 text-xs text-ink-3 sm:block">{size}</span>
               <span className={cx("min-w-0 flex-1 truncate", className)}>聚合搜索网关 Search gateway</span>
-              <span className="hidden shrink-0 text-xs text-ink-3 sm:block">{use}</span>
+              <span className="hidden shrink-0 text-xs text-ink-3 md:block">{use}</span>
             </div>
           ))}
-          <div className="flex items-baseline gap-6 px-4 py-2.5">
+          <div className="flex items-baseline gap-6 border-b border-line px-4 py-2.5">
             <span className="num w-20 shrink-0 text-xs text-ink-3">num</span>
-            <span className="num w-16 shrink-0 text-xs text-ink-3">mono</span>
-            <span className="num flex-1">1,284 · 2.31s · 98.4% · smx_4f1a… · exa/claude-haiku</span>
+            <span className="num hidden w-24 shrink-0 text-xs text-ink-3 sm:block">mono</span>
+            <span className="num min-w-0 flex-1 truncate">1,284 · 2.31s · 98.4% · smx_4f1a… · exa/claude-haiku</span>
           </div>
-          <div className="flex items-baseline gap-6 border-t border-line px-4 py-2.5">
-            <span className="num w-20 shrink-0 text-xs text-ink-3">tag</span>
-            <span className="num w-16 shrink-0 text-xs text-ink-3">mono caps</span>
-            <span className="tag flex-1">P95 latency · 01 · 上游调用</span>
+          <div className="flex items-baseline gap-6 px-4 py-2.5">
+            <span className="num w-20 shrink-0 text-xs text-ink-3">caps</span>
+            <span className="num hidden w-24 shrink-0 text-xs text-ink-3 sm:block">11 · mono</span>
+            <span className="caps min-w-0 flex-1 truncate">POST · zh-CN · p95</span>
+            <span className="hidden shrink-0 text-xs text-ink-3 md:block">只给拉丁字母的机器微标</span>
           </div>
         </Panel>
 
-        <Panel index="04" title="控件" description="所有控件 32px 高（紧凑处 28px），圆角 5px；容器圆角 10px。只有这两个圆角。" flush>
+        <Panel title="形状与高度" description="四个圆角，四档阴影。阴影只有两层、很淡，用来把一张面板从画布上托起，不用来装饰。">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {radii.map(([name, className, px, use]) => (
+              <div key={name} className="min-w-0">
+                <div className={cx("h-12 bg-fill-strong", className)} />
+                <div className="num mt-1.5 text-xs">
+                  {name} <span className="text-ink-3">{px}px</span>
+                </div>
+                <div className="text-xs text-ink-3">{use}</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-4 rounded-ctl bg-bg p-4 sm:grid-cols-4">
+            {elevations.map(([name, className, use]) => (
+              <div key={name} className="min-w-0">
+                <div className={cx("h-14 rounded-panel bg-surface", className)} />
+                <div className="num mt-2 text-xs">{name}</div>
+                <div className="text-xs text-ink-3">{use}</div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        <Panel title="控件" description="控件 32px 高（紧凑处 28px）。按钮是填充的，不画边框；输入框白底细线，聚焦时一圈信号色光晕。" flush>
           <Specimen label="Button">
             <Button variant="primary" icon={<Play />}>
               主操作
@@ -243,19 +301,35 @@ export function DesignPage() {
               危险
             </Button>
             <Button loading>进行中</Button>
-            <Button disabled>不可用</Button>
+            <Button variant="primary" disabled>
+              不可用
+            </Button>
             <Button size="sm">紧凑</Button>
-            <Button icon={<Plus />} aria-label="添加" />
+          </Specimen>
+          <Specimen label="IconButton">
+            <IconButton icon={<Pencil />} label="编辑" />
+            <IconButton icon={<Trash2 />} label="删除" />
+            <IconButton icon={<RotateCcw />} label="重试" size="sm" />
           </Specimen>
           <Specimen label="Input">
             <Input className="w-48" placeholder="占位文字" />
             <Input className="w-48" mono defaultValue="https://api.exa.ai" />
             <Input className="w-40" aria-invalid defaultValue="无效的值" />
-            <Select className="w-36" defaultValue="b">
-              <option value="a">自动</option>
-              <option value="b">仅 Exa</option>
-            </Select>
             <NumberInput className="w-24" suffix="秒" value={count} onChange={setCount} />
+          </Specimen>
+          <Specimen label="Select">
+            <Select className="w-36" value={choice} onChange={setChoice} options={[{ value: "a", label: "自动" }, { value: "b", label: "仅 Exa" }]} />
+            <Select
+              className="w-56"
+              mono
+              value={model}
+              onChange={setModel}
+              placeholder="选择模型"
+              options={[
+                { group: "anthropic", options: [{ value: "claude-haiku", label: "claude-haiku" }, { value: "claude-sonnet", label: "claude-sonnet" }] },
+                { group: "openai", options: [{ value: "gpt-mini", label: "gpt-mini" }] },
+              ]}
+            />
           </Specimen>
           <Specimen label="Choice">
             <Switch checked={on} onCheckedChange={setOn} aria-label="示例开关" />
@@ -288,32 +362,57 @@ export function DesignPage() {
               <Input aria-invalid defaultValue="abc" />
             </Field>
           </Specimen>
+          <Specimen label="Kbd">
+            <span className="flex items-center gap-1.5 text-xs text-ink-3">
+              <Kbd>Esc</Kbd> 关闭
+            </span>
+            <span className="flex items-center gap-1.5 text-xs text-ink-3">
+              <Kbd>↑</Kbd>
+              <Kbd>↓</Kbd> 切换
+            </span>
+            <span className="flex items-center gap-1.5 text-xs text-ink-3">
+              <Kbd>⌘</Kbd>
+              <Kbd>↵</Kbd> 运行
+            </span>
+          </Specimen>
         </Panel>
 
-        <Panel index="05" title="状态" description="状态永远是“点 + 字”，不单靠颜色。会呼吸的点只表示此刻正在发生的事。" flush>
-          <Specimen label="Dot">
+        <Panel title="状态" description="状态永远是“点 + 字”，不单靠颜色。正常或中性的状态是 Status，没有底；Badge 留给分类和需要注意的问题。会呼吸的点只表示此刻正在发生的事。" flush>
+          <Specimen label="Status">
             {tones.map((tone) => (
-              <span key={tone} className="flex items-center gap-2 text-xs text-ink-2">
-                <Dot tone={tone} />
+              <Status key={tone} tone={tone}>
                 {tone}
-              </span>
+              </Status>
             ))}
-            <span className="flex items-center gap-2 text-xs text-ink-2">
-              <Dot tone="signal" live />
+            <Status tone="signal" live>
               live
-            </span>
+            </Status>
           </Specimen>
           <Specimen label="Badge">
             {tones.map((tone) => (
-              <Badge key={tone} tone={tone} dot={tone !== "neutral"}>
+              <Badge key={tone} tone={tone}>
                 {tone}
               </Badge>
+            ))}
+            <Badge mono>v1.4.2</Badge>
+          </Specimen>
+          <Specimen label="State">
+            <State tone="ok">可用</State>
+            <State tone="signal" live>
+              进行中
+            </State>
+            <State tone="warn">限流</State>
+            <State tone="err">密钥被拒</State>
+          </Specimen>
+          <Specimen label="Dot">
+            {tones.map((tone) => (
+              <Dot key={tone} tone={tone} />
             ))}
           </Specimen>
           <Specimen label="Meter">
             <Meter used={4} limit={15} />
             <Meter used={15} limit={15} />
-            <Meter used={130} limit={500} />
+            <Meter used={130} limit={500} tone="ok" />
             <Meter used={0} limit={0} />
           </Specimen>
           <Specimen label="Notice">
@@ -332,8 +431,35 @@ export function DesignPage() {
           </Specimen>
         </Panel>
 
-        <Panel index="06" title="数据" description="设置用行，数据用表；一次调用里每一段的耗时排在同一条时间轴上。">
+        <Panel title="加载与空状态" description="加载中显示内容将占的形状，不在空白中间转圈；空状态只有一句标题，有事可做时加一个操作。">
           <div className="grid gap-4 lg:grid-cols-2">
+            <div className="overflow-hidden rounded-ctl border border-line">
+              <Loading rows={3} />
+            </div>
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-6 w-1/3" />
+              <Skeleton className="w-full" />
+              <Skeleton className="w-4/5" />
+              <Skeleton panel className="h-16" />
+            </div>
+          </div>
+          <div className="mt-4 rounded-ctl bg-fill">
+            <Empty icon={<Inbox />} title="还没有 API Key">
+              <Button variant="primary" size="sm" icon={<Plus />}>
+                新建
+              </Button>
+            </Empty>
+          </div>
+        </Panel>
+
+        <Panel title="数据" description="关键数字用 Stat；设置用行，数据用表；一次调用里每一段的耗时排在同一条时间轴上。">
+          <StatGrid className="grid-cols-2 lg:grid-cols-4">
+            <Stat label="调用" value="1,284" detail="比昨天多 12%" />
+            <Stat label="成功率" value="98.4" unit="%" tone="ok" />
+            <Stat label="P95 耗时" value="2.31" unit="s" />
+            <Stat label="失败" value="21" tone="err" detail="多数是 exa 限流" />
+          </StatGrid>
+          <div className="mt-4 flex flex-col gap-4">
             <div className="rounded-ctl border border-line">
               <Row label="设置项">
                 <Switch defaultChecked aria-label="示例" />
@@ -350,8 +476,7 @@ export function DesignPage() {
             {'{\n  "queries": ["mcp streamable http"],\n  "search_engine": "auto"\n}'}
           </CodeBlock>
         </Panel>
-
-        <Panel index="07" title="结构与内容" description="折叠组在标题行给出当前取值，收起也能读；标签页切换同一份数据的不同视图；Markdown 用于提供商和模型返回的长文本。">
+        <Panel title="结构与内容" description="折叠组在标题行给出当前取值，收起也能读；标签页切换同一份数据的不同视图；Markdown 用于提供商和模型返回的长文本。">
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="overflow-hidden rounded-ctl border border-line [&>*:first-child]:border-t-0">
               <Section title="数量与时间" summary="每条 5 个 · 不限" defaultOpen>

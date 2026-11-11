@@ -12,7 +12,7 @@ import { useNow } from "../lib/motion";
 import { useLiveCalls } from "../lib/trace";
 import { PageHeader } from "../Shell";
 import { modalOpen, SidePanel, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, cx, Dot, Empty, Input, Panel, Segmented, Select, Spinner, Table, Td, Th, Tooltip } from "../ui/primitives";
+import { Badge, Button, cx, Dot, Empty, iconButton, Input, Kbd, Loading, Panel, Segmented, Select, Status, Table, Td, Th, Tooltip } from "../ui/primitives";
 import { CallInspector } from "./Log";
 
 const pageSize = 50;
@@ -236,30 +236,34 @@ export function LogsPage() {
             { value: "fallback", label: "触发回退" },
           ]}
         />
-        <Select className="w-36" value={provider} onChange={(e) => setProvider(e.target.value)} aria-label="按提供商筛选">
-          <option value="">全部提供商</option>
-          {[...meta.catalog, ...config.fetchers].map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-          {provider && ![...meta.catalog, ...config.fetchers].some((p) => p.id === provider) && <option value={provider}>{provider}</option>}
-        </Select>
-        <Select className="w-36" value={caller} onChange={(e) => setCaller(e.target.value)} aria-label="按调用方筛选">
-          <option value="">全部调用方</option>
-          <option value="webui">调试台</option>
-          {keys.data?.map((key) => (
-            <option key={key.id} value={key.id}>
-              {key.name}
-            </option>
-          ))}
-          {caller && caller !== "webui" && keys.data && !keys.data.some((key) => String(key.id) === caller) && <option value={caller}>已删除的 Key</option>}
-        </Select>
+        <Select
+          className="w-36"
+          value={provider}
+          onChange={setProvider}
+          aria-label="按提供商筛选"
+          options={[
+            { value: "", label: "全部提供商" },
+            ...[...meta.catalog, ...config.fetchers].map((p) => ({ value: p.id, label: p.name })),
+            ...(provider && ![...meta.catalog, ...config.fetchers].some((p) => p.id === provider) ? [{ value: provider, label: provider }] : []),
+          ]}
+        />
+        <Select
+          className="w-36"
+          value={caller}
+          onChange={setCaller}
+          aria-label="按调用方筛选"
+          options={[
+            { value: "", label: "全部调用方" },
+            { value: "webui", label: "调试台" },
+            ...(keys.data ?? []).map((key) => ({ value: String(key.id), label: key.name })),
+            ...(caller && caller !== "webui" && keys.data && !keys.data.some((key) => String(key.id) === caller) ? [{ value: caller, label: "已删除的 Key" }] : []),
+          ]}
+        />
         {range && (
           <button
             type="button"
             onClick={() => setRange(null)}
-            className="num inline-flex h-8 items-center gap-1.5 rounded-ctl border border-line-strong bg-raised px-2.5 text-xs text-ink-2 transition-colors hover:text-ink"
+            className="num press inline-flex h-8 items-center gap-1.5 rounded-ctl bg-fill-strong px-2.5 text-xs text-ink hover:bg-ink-3/20"
             aria-label="清除时间范围"
           >
             时间：{rangeLabel(range.since, range.until)}
@@ -267,7 +271,7 @@ export function LogsPage() {
           </button>
         )}
         <div className="relative min-w-48 flex-1">
-          <Search className="pointer-events-none absolute top-2 left-2.5 size-4 text-ink-3" />
+          <Search className="pointer-events-none absolute top-2 left-2.5 z-10 size-4 text-ink-3" />
           <Input className="pl-8" value={search} placeholder="搜索查询词、URL、错误信息、IP 或 UA" onChange={(e) => setSearch(e.target.value)} />
         </div>
       </div>
@@ -290,11 +294,9 @@ export function LogsPage() {
 
       <Panel flush>
         {logs.isPending ? (
-          <div className="grid place-items-center py-16">
-            <Spinner />
-          </div>
+          <Loading rows={10} />
         ) : entries.length === 0 ? (
-          <Empty icon={<ScrollText />} title="没有符合条件的日志" />
+          <Empty size="page" icon={<ScrollText />} title="没有符合条件的日志" />
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -319,15 +321,13 @@ export function LogsPage() {
                     onClick={(e) => open(e, entry.id)}
                     onKeyDown={(e) => e.key === "Enter" && open(e, entry.id)}
                     className={cx(
-                      "cursor-pointer scroll-my-12 transition-colors hover:bg-raised/60 focus-visible:bg-raised",
-                      "aria-current:bg-raised aria-current:shadow-[inset_2px_0_0_var(--color-signal-text)]",
+                      "cursor-pointer scroll-my-12 transition-colors hover:bg-fill focus-visible:bg-fill-strong focus-visible:outline-none",
+                      "aria-current:bg-fill-strong",
                       fresh.has(entry.id) && "animate-arrive",
                     )}
                   >
                     <Td className="num text-xs whitespace-nowrap text-ink-3">{logTime(entry.ts)}</Td>
-                    <Td>
-                      <Badge>{toolLabel[entry.tool] ?? entry.tool}</Badge>
-                    </Td>
+                    <Td className="text-xs whitespace-nowrap text-ink-2">{toolLabel[entry.tool] ?? entry.tool}</Td>
                     <Td className="max-w-0 min-w-48">
                       <div className="truncate">{entry.summary}</div>
                       {entry.error === stoppedHere ? (
@@ -338,7 +338,7 @@ export function LogsPage() {
                     </Td>
                     <Td className="whitespace-nowrap">
                       <span className="flex items-center gap-2">
-                        {entry.error === stoppedHere ? <Badge dot>已中止</Badge> : <StatusBadge status={entry.status} />}
+                        {entry.error === stoppedHere ? <Status>已中止</Status> : <StatusBadge status={entry.status} />}
                         {entry.hops && entry.hops.length > 0 && (
                           <Tooltip content={<Route hops={entry.hops} />}>
                             <span className="cursor-help text-xs text-warn">回退</span>
@@ -375,17 +375,23 @@ export function LogsPage() {
             tools={
               <span className="-mr-1.5 flex items-center">
                 <Tooltip content="整页打开">
-                  <Link
-                    href={`/logs/${inspect}`}
-                    state={{ from: "logs" }}
-                    aria-label="整页打开"
-                    className="grid size-8 place-items-center rounded-ctl text-ink-3 transition-colors hover:bg-raised hover:text-ink"
-                  >
-                    <Maximize2 className="size-4" />
+                  <Link href={`/logs/${inspect}`} state={{ from: "logs" }} aria-label="整页打开" className={iconButton()}>
+                    <Maximize2 />
                   </Link>
                 </Tooltip>
-                <Tooltip content="关闭 · Esc；↑ ↓ 切换上下条">
-                  <Button variant="ghost" size="sm" icon={<X />} aria-label="关闭" onClick={close} />
+                <Tooltip
+                  content={
+                    <span className="flex items-center gap-1.5">
+                      关闭 <Kbd>Esc</Kbd>
+                      <span className="text-ink-3">·</span>
+                      上下条 <Kbd>↑</Kbd>
+                      <Kbd>↓</Kbd>
+                    </span>
+                  }
+                >
+                  <button type="button" aria-label="关闭" onClick={close} className={iconButton()}>
+                    <X />
+                  </button>
                 </Tooltip>
               </span>
             }
@@ -429,9 +435,7 @@ function Route({ hops }: { hops: Hop[] }) {
 
 function StatusBadge({ status }: { status: LogEntry["status"] }) {
   return status === "ok" ? (
-    <Badge tone="ok" dot>
-      成功
-    </Badge>
+    <Status tone="ok">成功</Status>
   ) : (
     <Badge tone="err" dot>
       失败
@@ -446,10 +450,10 @@ function StatusBadge({ status }: { status: LogEntry["status"] }) {
 function InFlight({ calls, origin, onOpen }: { calls: LiveCall[]; origin: (call: LiveCall) => number; onOpen: (e: MouseEvent | KeyboardEvent, id: string) => void }) {
   const now = useNow(true, 500);
   return (
-    <section className="mb-3 overflow-hidden rounded-panel border border-signal-text/40 bg-surface">
-      <header className="flex h-9 items-center gap-2 border-b border-line px-4">
+    <section className="mb-3 overflow-hidden rounded-panel border border-signal-text/40 bg-surface shadow-panel">
+      <header className="flex h-10 items-center gap-2 border-b border-line px-4">
         <Dot tone="signal" live />
-        <h2 className="text-sm font-medium">进行中</h2>
+        <h2 className="t-heading text-sm">进行中</h2>
         <span className="num text-xs text-ink-3">{calls.length}</span>
       </header>
       <ul>
@@ -460,9 +464,9 @@ function InFlight({ calls, origin, onOpen }: { calls: LiveCall[]; origin: (call:
             role="link"
             onClick={(e) => onOpen(e, call.call_id)}
             onKeyDown={(e) => e.key === "Enter" && onOpen(e, call.call_id)}
-            className="flex min-h-10 animate-in cursor-pointer items-center gap-3 border-b border-line px-4 py-1.5 text-sm transition-colors last:border-b-0 hover:bg-raised/60 focus-visible:bg-raised max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-0.5"
+            className="flex min-h-11 animate-in cursor-pointer items-center gap-3 border-b border-line px-4 py-1.5 text-sm transition-colors last:border-b-0 hover:bg-fill focus-visible:bg-fill-strong focus-visible:outline-none max-md:flex-wrap max-md:gap-x-3 max-md:gap-y-0.5"
           >
-            <Badge>{toolLabel[call.tool] ?? call.tool}</Badge>
+            <span className="w-12 shrink-0 text-xs text-ink-2">{toolLabel[call.tool] ?? call.tool}</span>
             <span className="min-w-0 flex-1 basis-48 truncate">{call.summary || "—"}</span>
             <LivePhase call={call} className="inline-flex min-w-0 shrink items-center gap-1.5 text-xs text-ink-2 md:max-w-[40%]" />
             <span className="w-24 shrink-0 truncate text-xs text-ink-3 max-md:hidden">{call.source === "webui" ? "调试台" : call.api_key_name || "—"}</span>

@@ -142,11 +142,11 @@ function Gate({ setup, onDone }: { setup: boolean; onDone: () => unknown }) {
         <div className="mb-6 flex items-center gap-2.5">
           <Logo />
           <div>
-            <div className="text-lg font-medium">SeekMux</div>
-            <div className="tag">search · fetch · research gateway</div>
+            <div className="text-lg font-semibold">SeekMux</div>
+            <div className="text-xs text-ink-3">search · fetch · research gateway</div>
           </div>
         </div>
-        <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-5">
+        <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-6 shadow-raise">
           {setup && (
             <>
               <Field label="设置令牌" hint="见服务端启动日志中的 setup_token">

@@ -7,7 +7,7 @@ import { compact, duration } from "../lib/format";
 import { PageHeader } from "../Shell";
 import { JSONInput, RateLimitInput, SecretInput } from "../ui/inputs";
 import { Dialog, useConfirm } from "../ui/overlays";
-import { Badge, Button, Empty, Field, Info, Input, Notice, NumberInput, Panel, Segmented, Select, Table, Td, Th, Tooltip } from "../ui/primitives";
+import { Badge, Button, Empty, Field, Info, Input, Notice, NumberInput, Panel, Segmented, Select, Status, Table, Td, Th, Tooltip } from "../ui/primitives";
 
 const typeLabel: Record<LLMType, string> = { "openai-compatible": "OpenAI 兼容", anthropic: "Anthropic" };
 
@@ -65,8 +65,10 @@ export function ModelsPage() {
 
       {providers.length === 0 ? (
         <Panel>
-          <Empty icon={<Bot />} title="尚无模型接口">
-            用于网页提取与深度研究
+          <Empty size="page" icon={<Bot />} title="尚无模型接口">
+            <Button variant="primary" icon={<Plus />} onClick={() => setEditing({ kind: "provider", index: -1 })}>
+              添加接口
+            </Button>
           </Empty>
         </Panel>
       ) : (
@@ -79,16 +81,15 @@ export function ModelsPage() {
               <Panel
                 key={p.id}
                 flush
-                index={String(pi + 1).padStart(2, "0")}
                 title={
                   <span className="flex flex-wrap items-center gap-2 self-center">
                     <span>{p.name || p.id}</span>
                     {p.name && p.name !== p.id && <span className="num text-xs font-normal text-ink-3">{p.id}</span>}
                     <Badge>{typeLabel[p.type]}</Badge>
                     {hasKey ? (
-                      <Badge tone="ok" dot>
+                      <Status tone="ok" className="font-normal">
                         已配置
-                      </Badge>
+                      </Status>
                     ) : (
                       <Badge tone="warn" dot>
                         未设置密钥
@@ -127,7 +128,11 @@ export function ModelsPage() {
                 }
               >
                 {p.models.length === 0 ? (
-                  <div className="px-4 py-5 text-xs text-ink-3">尚无模型</div>
+                  <Empty title="尚无模型">
+                    <Button size="sm" icon={<Plus />} onClick={() => setEditing({ kind: "model", provider: pi, index: -1 })}>
+                      添加模型
+                    </Button>
+                  </Empty>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
@@ -147,7 +152,7 @@ export function ModelsPage() {
                           const health = status?.models.find((s) => s.id === m.id);
                           const extraKeys = m.extra_body ? Object.keys(m.extra_body) : [];
                           return (
-                            <tr key={m.id} className="last:[&>td]:border-b-0">
+                            <tr key={m.id} className="transition-colors hover:bg-fill">
                               <Td className="num font-medium whitespace-nowrap">
                                 <span className="flex items-center gap-2">
                                   {m.id}
@@ -181,11 +186,7 @@ export function ModelsPage() {
                                   {roles.length === 0 ? (
                                     <span className="text-xs text-ink-3">未关联</span>
                                   ) : (
-                                    roles.map((role) => (
-                                      <Badge key={role} tone="signal">
-                                        {role}
-                                      </Badge>
-                                    ))
+                                    roles.map((role) => <Badge key={role}>{role}</Badge>)
                                   )}
                                 </span>
                               </Td>
@@ -320,7 +321,7 @@ function ProviderDialog({
           <SecretInput value={form} onChange={setForm} />
         </Field>
         <details className="group">
-          <summary className="tag list-none normal-case hover:text-ink-2">
+          <summary className="tag list-none hover:text-ink-2">
             <span className="group-open:hidden">+ 自定义请求头</span>
             <span className="hidden group-open:inline">− 自定义请求头</span>
           </summary>
@@ -415,7 +416,7 @@ function ModelDialog({
           </Field>
         </div>
 
-        <div className="rounded-ctl border border-line">
+        <div className="rounded-ctl bg-sunken">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-line px-3 py-2.5">
             <div className="text-sm">限流</div>
             <RateLimitInput value={form.rate_limit} fallback="60/m" onChange={(rate_limit) => set({ rate_limit })} />
@@ -452,7 +453,7 @@ function ReasoningEditor({ type, value, onChange }: { type: LLMType; value: Reas
     budget: "只支持自适应思考的模型会改用自适应",
   };
   return (
-    <div className="rounded-ctl border border-line px-3 py-2.5">
+    <div className="rounded-ctl bg-sunken px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
         <div className="text-sm">推理</div>
         <div className="flex flex-wrap items-center gap-2">
@@ -470,13 +471,14 @@ function ReasoningEditor({ type, value, onChange }: { type: LLMType; value: Reas
             ]}
           />
           {value.mode === "effort" && (
-            <Select className="w-24" value={value.effort} onChange={(e) => onChange({ mode: "effort", effort: e.target.value })} aria-label="推理强度">
-              {efforts.map((effort) => (
-                <option key={effort} value={effort}>
-                  {effort}
-                </option>
-              ))}
-            </Select>
+            <Select
+              size="sm"
+              className="w-28"
+              value={value.effort ?? ""}
+              onChange={(effort) => onChange({ mode: "effort", effort })}
+              options={efforts.map((effort) => ({ value: effort, label: effort }))}
+              aria-label="推理强度"
+            />
           )}
           {value.mode === "budget" && <NumberInput className="w-32" min={1024} suffix="Token" value={value.budget_tokens ?? 4096} onChange={(n) => onChange({ mode: "budget", budget_tokens: Math.round(n) })} aria-label="思考预算" />}
         </div>

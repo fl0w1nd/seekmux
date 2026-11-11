@@ -15,86 +15,117 @@
 :root {
   color-scheme: light;
 
-  /* Surfaces, from the page up. */
-  --bg: oklch(0.966 0.006 112);
-  --surface: oklch(0.997 0.002 112);
-  --raised: oklch(0.952 0.008 116);
-  --sunken: oklch(0.958 0.007 115);
-  --overlay: oklch(0.997 0.002 112);
+  /* Surfaces, from the page up. Fields sit on `surface`, the brightest layer. */
+  --bg: oklch(0.974 0.002 106);
+  --surface: oklch(1 0 0);
+  --sunken: oklch(0.968 0.002 106);
+  --overlay: oklch(1 0 0);
+  /* The knob of a switch and the chosen option of a segmented control. */
+  --thumb: oklch(1 0 0);
 
-  /* Lines. */
-  --line: oklch(0.895 0.01 122);
-  --line-strong: oklch(0.79 0.014 128);
+  /* Lines and fills are ink at a low alpha, so one value reads the same on every surface. */
+  --line: oklch(0.22 0.006 106 / 0.1);
+  --line-strong: oklch(0.22 0.006 106 / 0.18);
+  --fill: oklch(0.22 0.006 106 / 0.045);
+  --fill-strong: oklch(0.22 0.006 106 / 0.085);
 
   /* Text. */
-  --ink: oklch(0.225 0.02 148);
-  --ink-2: oklch(0.42 0.018 148);
-  --ink-3: oklch(0.565 0.014 148);
+  --ink: oklch(0.21 0.006 106);
+  --ink-2: oklch(0.42 0.006 106);
+  --ink-3: oklch(0.53 0.006 106);
 
   /* Signal: the one brand color, for the primary action and "this is live". */
   --signal: oklch(0.87 0.2 128);
-  --signal-hover: oklch(0.83 0.2 128);
+  --signal-hover: oklch(0.835 0.2 128);
   --signal-ink: oklch(0.24 0.06 136);
-  --signal-text: oklch(0.47 0.135 136);
+  --signal-text: oklch(0.5 0.14 140);
 
   /* Status. Kept clear of the signal hue so "success" never reads as "brand". */
-  --ok: oklch(0.5 0.105 178);
-  --warn: oklch(0.57 0.125 68);
-  --err: oklch(0.545 0.19 27);
-  --info: oklch(0.5 0.125 246);
+  --ok: oklch(0.52 0.1 172);
+  --warn: oklch(0.59 0.13 66);
+  --err: oklch(0.55 0.19 27);
+  --info: oklch(0.52 0.13 250);
 
-  --overlay-shadow: 0 1px 2px oklch(0.2 0.02 148 / 0.06), 0 12px 32px oklch(0.2 0.02 148 / 0.14);
-  --scrim: oklch(0.2 0.02 148 / 0.32);
+  /* Series of a chart, in the order they stack. */
+  --chart-1: oklch(0.6 0.15 140);
+  --chart-2: oklch(0.82 0.13 128);
+  --chart-3: oklch(0.64 0.12 245);
+  --chart-4: oklch(0.74 0.006 106);
+
+  --panel-shadow: 0 1px 2px oklch(0.22 0.006 106 / 0.04), 0 2px 6px -2px oklch(0.22 0.006 106 / 0.05);
+  --raise-shadow: 0 2px 4px oklch(0.22 0.006 106 / 0.05), 0 8px 20px -4px oklch(0.22 0.006 106 / 0.1);
+  --thumb-shadow: 0 0 0 0.5px oklch(0.22 0.006 106 / 0.1), 0 1px 2px oklch(0.22 0.006 106 / 0.1), 0 1px 3px oklch(0.22 0.006 106 / 0.06);
+  --overlay-shadow: 0 0 0 1px oklch(0.22 0.006 106 / 0.06), 0 4px 10px oklch(0.22 0.006 106 / 0.06), 0 16px 36px -6px oklch(0.22 0.006 106 / 0.16);
+  --ring: 0 0 0 3px color-mix(in oklch, var(--signal-text) 22%, transparent);
+  --scrim: oklch(0.2 0.006 106 / 0.28);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: oklch(0.158 0.007 150);
-    --surface: oklch(0.192 0.008 150);
-    --raised: oklch(0.232 0.01 150);
-    --sunken: oklch(0.135 0.007 150);
-    --overlay: oklch(0.215 0.009 150);
-    --line: oklch(0.275 0.01 150);
-    --line-strong: oklch(0.37 0.013 150);
-    --ink: oklch(0.945 0.008 125);
-    --ink-2: oklch(0.755 0.012 140);
-    --ink-3: oklch(0.585 0.012 148);
+    --bg: oklch(0.162 0.003 106);
+    --surface: oklch(0.198 0.003 106);
+    --sunken: oklch(0.15 0.003 106);
+    --overlay: oklch(0.228 0.004 106);
+    --thumb: oklch(0.3 0.004 106);
+    --line: oklch(1 0 0 / 0.085);
+    --line-strong: oklch(1 0 0 / 0.15);
+    --fill: oklch(1 0 0 / 0.045);
+    --fill-strong: oklch(1 0 0 / 0.085);
+    --ink: oklch(0.95 0.004 106);
+    --ink-2: oklch(0.78 0.004 106);
+    --ink-3: oklch(0.64 0.004 106);
     --signal: oklch(0.885 0.205 128);
     --signal-hover: oklch(0.925 0.19 128);
     --signal-ink: oklch(0.2 0.05 136);
-    --signal-text: oklch(0.885 0.205 128);
-    --ok: oklch(0.79 0.125 178);
-    --warn: oklch(0.83 0.145 80);
-    --err: oklch(0.735 0.165 25);
-    --info: oklch(0.785 0.105 238);
-    --overlay-shadow: 0 1px 2px oklch(0 0 0 / 0.4), 0 16px 40px oklch(0 0 0 / 0.5);
-    --scrim: oklch(0.08 0.005 150 / 0.62);
+    --signal-text: oklch(0.86 0.19 130);
+    --ok: oklch(0.79 0.12 172);
+    --warn: oklch(0.83 0.14 78);
+    --err: oklch(0.73 0.16 25);
+    --info: oklch(0.78 0.1 245);
+    --chart-1: oklch(0.78 0.17 135);
+    --chart-2: oklch(0.6 0.12 135);
+    --chart-3: oklch(0.72 0.11 245);
+    --chart-4: oklch(0.5 0.006 106);
+    --panel-shadow: 0 1px 2px oklch(0 0 0 / 0.3);
+    --raise-shadow: 0 2px 4px oklch(0 0 0 / 0.35), 0 8px 20px -4px oklch(0 0 0 / 0.45);
+    --thumb-shadow: inset 0 0.5px 0 oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4);
+    --overlay-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.06), 0 4px 10px oklch(0 0 0 / 0.35), 0 16px 40px oklch(0 0 0 / 0.5);
+    --scrim: oklch(0.08 0.003 106 / 0.62);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: oklch(0.158 0.007 150);
-  --surface: oklch(0.192 0.008 150);
-  --raised: oklch(0.232 0.01 150);
-  --sunken: oklch(0.135 0.007 150);
-  --overlay: oklch(0.215 0.009 150);
-  --line: oklch(0.275 0.01 150);
-  --line-strong: oklch(0.37 0.013 150);
-  --ink: oklch(0.945 0.008 125);
-  --ink-2: oklch(0.755 0.012 140);
-  --ink-3: oklch(0.585 0.012 148);
+  --bg: oklch(0.162 0.003 106);
+  --surface: oklch(0.198 0.003 106);
+  --sunken: oklch(0.15 0.003 106);
+  --overlay: oklch(0.228 0.004 106);
+  --thumb: oklch(0.3 0.004 106);
+  --line: oklch(1 0 0 / 0.085);
+  --line-strong: oklch(1 0 0 / 0.15);
+  --fill: oklch(1 0 0 / 0.045);
+  --fill-strong: oklch(1 0 0 / 0.085);
+  --ink: oklch(0.95 0.004 106);
+  --ink-2: oklch(0.78 0.004 106);
+  --ink-3: oklch(0.64 0.004 106);
   --signal: oklch(0.885 0.205 128);
   --signal-hover: oklch(0.925 0.19 128);
   --signal-ink: oklch(0.2 0.05 136);
-  --signal-text: oklch(0.885 0.205 128);
-  --ok: oklch(0.79 0.125 178);
-  --warn: oklch(0.83 0.145 80);
-  --err: oklch(0.735 0.165 25);
-  --info: oklch(0.785 0.105 238);
-  --overlay-shadow: 0 1px 2px oklch(0 0 0 / 0.4), 0 16px 40px oklch(0 0 0 / 0.5);
-  --scrim: oklch(0.08 0.005 150 / 0.62);
+  --signal-text: oklch(0.86 0.19 130);
+  --ok: oklch(0.79 0.12 172);
+  --warn: oklch(0.83 0.14 78);
+  --err: oklch(0.73 0.16 25);
+  --info: oklch(0.78 0.1 245);
+  --chart-1: oklch(0.78 0.17 135);
+  --chart-2: oklch(0.6 0.12 135);
+  --chart-3: oklch(0.72 0.11 245);
+  --chart-4: oklch(0.5 0.006 106);
+  --panel-shadow: 0 1px 2px oklch(0 0 0 / 0.3);
+  --raise-shadow: 0 2px 4px oklch(0 0 0 / 0.35), 0 8px 20px -4px oklch(0 0 0 / 0.45);
+  --thumb-shadow: inset 0 0.5px 0 oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.4);
+  --overlay-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.06), 0 4px 10px oklch(0 0 0 / 0.35), 0 16px 40px oklch(0 0 0 / 0.5);
+  --scrim: oklch(0.08 0.003 106 / 0.62);
 }
 
 @theme inline {
@@ -103,11 +134,13 @@
   --color-current: currentColor;
   --color-bg: var(--bg);
   --color-surface: var(--surface);
-  --color-raised: var(--raised);
   --color-sunken: var(--sunken);
   --color-overlay: var(--overlay);
+  --color-thumb: var(--thumb);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
+  --color-fill: var(--fill);
+  --color-fill-strong: var(--fill-strong);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
@@ -119,13 +152,17 @@
   --color-warn: var(--warn);
   --color-err: var(--err);
   --color-info: var(--info);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
   --color-scrim: var(--scrim);
 
   --font-sans: "IBM Plex Sans Variable", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", monospace;
 
-  /* Type scale: seven sizes for the console, each with its line height, and
-     two display sizes for the title and the figures of a report page. */
+  /* Type scale: seven sizes for the console, the page title, and two display
+     sizes for the title and the figures of a report page. */
   --text-*: initial;
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
@@ -139,6 +176,8 @@
   --text-lg--line-height: 1.5rem;
   --text-xl: 1.25rem;
   --text-xl--line-height: 1.75rem;
+  --text-title: 1.375rem;
+  --text-title--line-height: 1.875rem;
   --text-2xl: 1.75rem;
   --text-2xl--line-height: 2.125rem;
   --text-3xl: 2.25rem;
@@ -146,15 +185,20 @@
   --text-4xl: 3.25rem;
   --text-4xl--line-height: 3.75rem;
 
-  /* Two radii: controls and containers. */
+  /* Radii: a tag, the option inside a control, a control, a container. */
   --radius-*: initial;
-  --radius-ctl: 5px;
-  --radius-panel: 10px;
+  --radius-tag: 4px;
+  --radius-thumb: 5px;
+  --radius-ctl: 7px;
+  --radius-panel: 12px;
   --radius-full: 999px;
 
   --shadow-*: initial;
+  --shadow-panel: var(--panel-shadow);
+  --shadow-raise: var(--raise-shadow);
+  --shadow-thumb: var(--thumb-shadow);
   --shadow-overlay: var(--overlay-shadow);
-
+  --shadow-ring: var(--ring);
   --animate-in: enter 140ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --animate-slide: slide 200ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --animate-pulse-dot: pulse-dot 1.6s ease-in-out infinite;
@@ -186,6 +230,11 @@
 @keyframes pulse-dot {
   50% {
     opacity: 0.35;
+  }
+}
+@keyframes sweep {
+  to {
+    transform: translateX(100%);
   }
 }
 @keyframes spin {
@@ -303,8 +352,18 @@
   letter-spacing: -0.01em;
 }
 
-/* Micro label: the small mono caption that tags panels, columns and lanes. */
+/* Micro label: the caption over a group, a column or a figure. Set in the
+   sans, since most of them are Chinese, where capitals and tracking mean nothing. */
 @utility tag {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  line-height: var(--text-xs--line-height);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* A Latin machine label in capitals (a language tag, a method): mono, tracked. */
+@utility caps {
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   line-height: var(--text-2xs--line-height);
@@ -313,6 +372,46 @@
   color: var(--ink-3);
 }
 
+/* Type roles. The page title, and the title of a panel, a sheet or a dialog. */
+@utility t-title {
+  font-size: var(--text-title);
+  line-height: var(--text-title--line-height);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+@utility t-heading {
+  font-size: var(--text-base);
+  line-height: 1.25rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* A control gives under the finger. */
+@utility press {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 140ms;
+  transition-timing-function: var(--ease-settle);
+  &:active:not(:disabled, [aria-disabled="true"]) {
+    transform: scale(0.98);
+  }
+}
+
+/* Content that is on its way: a block of the size it will take, swept by a sheen. */
+@utility skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--fill-strong);
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 30%, color-mix(in oklch, var(--surface) 55%, transparent) 50%, transparent 70%);
+    animation: sweep 1.6s linear infinite;
+    transform: translateX(-100%);
+  }
+}
 /* Rendered Markdown (ui/markdown.tsx): reading text, on the same scale and tokens. */
 @layer components {
   .md {
@@ -390,7 +489,7 @@
     font-family: var(--font-mono);
     font-size: 0.86em;
     padding: 0.1em 0.35em;
-    border-radius: 3px;
+    border-radius: var(--radius-tag);
     background: var(--sunken);
     color: var(--ink);
   }
@@ -425,7 +524,7 @@
   .md th {
     color: var(--ink);
     font-weight: 500;
-    background: var(--raised);
+    background: var(--fill);
   }
 }
 
@@ -497,7 +596,7 @@
     line-height: 1.5;
     padding: 0.15em 0.5em;
     border: 1px solid var(--line);
-    border-radius: 3px;
+    border-radius: var(--radius-tag);
     background: var(--sunken);
     color: var(--ink-2);
     text-decoration: none;

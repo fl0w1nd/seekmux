@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Secret } from "../lib/api";
 import { codeGroups, codeText, type CodeKind } from "../lib/codes";
 import { useConfirm } from "./overlays";
-import { Button, cx, NumberInput, PasswordInput, Select, Textarea } from "./primitives";
+import { Button, cx, field, NumberInput, PasswordInput, Select, Textarea } from "./primitives";
 
 /* ---------- Rate limit ---------- */
 
@@ -20,7 +20,7 @@ export function RateLimitInput({ value, onChange, fallback = "5/m" }: { value: s
   if (!limit) {
     return (
       <div className="flex items-center gap-2">
-        <span className="tag normal-case">不限</span>
+        <span className="text-xs text-ink-3">不限</span>
         <Button size="sm" onClick={() => onChange(fallback)}>
           设置限流
         </Button>
@@ -36,13 +36,13 @@ export function RateLimitInput({ value, onChange, fallback = "5/m" }: { value: s
       <NumberInput className="w-14" min={1} value={limit.requests} onChange={(requests) => emit({ requests })} aria-label="请求数" />
       <span className="shrink-0">次 /</span>
       <NumberInput className="w-12" min={1} value={limit.every} onChange={(every) => emit({ every })} aria-label="时间窗口" />
-      <Select className="w-18" value={limit.unit} onChange={(e) => emit({ unit: e.target.value as Unit })} aria-label="时间单位">
-        {Object.entries(units).map(([unit, label]) => (
-          <option key={unit} value={unit}>
-            {label}
-          </option>
-        ))}
-      </Select>
+      <Select
+        className="w-20"
+        value={limit.unit}
+        onChange={(unit) => emit({ unit: unit as Unit })}
+        options={Object.entries(units).map(([value, label]) => ({ value, label }))}
+        aria-label="时间单位"
+      />
       <Button size="sm" variant="ghost" onClick={() => onChange("")}>
         不限
       </Button>
@@ -67,7 +67,7 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
   if (stored && !editing && !value.api_key) {
     return (
       <div className="flex items-center gap-2">
-        <span className="num flex h-8 flex-1 items-center rounded-ctl border border-line bg-sunken px-2.5 text-sm text-ink-2">{value.api_key_hint}</span>
+        <span className="num flex h-8 min-w-0 flex-1 items-center rounded-ctl bg-fill px-2.5 text-sm text-ink-2">{value.api_key_hint}</span>
         <Button onClick={() => setEditing(true)}>更换</Button>
         <Button
           variant="ghost"
@@ -146,17 +146,18 @@ export function ChipInput({
   return (
     <div
       className={cx(
-        "flex min-h-8 w-full flex-wrap items-center gap-1 rounded-ctl border border-line bg-sunken px-1 py-1 transition-colors",
-        "focus-within:border-signal-text hover:border-line-strong",
+        field,
+        "flex min-h-8 w-full flex-wrap items-center gap-1 px-1 py-1",
+        "focus-within:border-signal-text focus-within:shadow-ring",
       )}
     >
       {value.map((item) => (
-        <span key={item} className="num inline-flex h-6 items-center gap-1 rounded-[3px] border border-line-strong bg-surface pr-0.5 pl-1.5 text-xs text-ink">
+        <span key={item} className="num inline-flex h-6 items-center gap-1 rounded-tag bg-fill-strong pr-0.5 pl-1.5 text-xs text-ink">
           {item}
           <button
             type="button"
             aria-label={`移除 ${item}`}
-            className="grid size-4 place-items-center rounded-[2px] text-ink-3 hover:bg-raised hover:text-ink"
+            className="grid size-4 place-items-center rounded-tag text-ink-3 hover:bg-fill-strong hover:text-ink"
             onClick={() => onChange(value.filter((v) => v !== item))}
           >
             ×
@@ -260,23 +261,19 @@ export function CodeSelect({
   const groups = codeGroups(kind, allowed);
   const listed = value === "" || groups.common.includes(value) || groups.rest.includes(value);
   return (
-    <Select className={className} value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
-      <option value="">{empty}</option>
-      {!listed && <option value={value}>{value}（不支持）</option>}
-      <optgroup label="常用">
-        {groups.common.map((code) => (
-          <option key={code} value={code}>
-            {codeText(kind, code)}
-          </option>
-        ))}
-      </optgroup>
-      <optgroup label="全部">
-        {groups.rest.map((code) => (
-          <option key={code} value={code}>
-            {codeText(kind, code)}
-          </option>
-        ))}
-      </optgroup>
-    </Select>
+    <Select
+      className={className}
+      value={value}
+      onChange={onChange}
+      aria-label={label}
+      options={[
+        { value: "", label: empty },
+        ...(listed ? [] : [{ value, label: `${value}（不支持）` }]),
+        ...[
+          { group: "常用", options: groups.common.map((code) => ({ value: code, label: codeText(kind, code) })) },
+          { group: "全部", options: groups.rest.map((code) => ({ value: code, label: codeText(kind, code) })) },
+        ].filter((g) => g.options.length > 0),
+      ]}
+    />
   );
 }

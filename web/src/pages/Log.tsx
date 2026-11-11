@@ -11,7 +11,7 @@ import { clientName, dateTime, duration, percent, toolLabel } from "../lib/forma
 import { useNow } from "../lib/motion";
 import { attr, legacyTrace, useLiveCall } from "../lib/trace";
 import { useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, CodeBlock, cx, Dot, Empty, Notice, Panel, Spinner, TabList, TabPanel, Tabs } from "../ui/primitives";
+import { Badge, Button, CodeBlock, cx, Dot, Empty, Notice, Panel, Skeleton, Status, TabList, TabPanel, Tabs } from "../ui/primitives";
 
 function pretty(json: string | undefined): string {
   if (!json) return "";
@@ -27,7 +27,7 @@ function Fact({ label, children, className, wrap }: { label: string; children: R
   return (
     <div className={cx("min-w-0", className)}>
       <div className="tag">{label}</div>
-      <div className={cx("mt-0.5 text-sm", wrap ? "break-words" : "truncate")}>{children}</div>
+      <div className={cx("mt-1 text-sm text-ink", wrap ? "break-words" : "truncate")}>{children}</div>
     </div>
   );
 }
@@ -144,7 +144,7 @@ export function CallInspector({
           href={`/report/${taskId}`}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex h-8 items-center gap-1.5 rounded-ctl border border-line-strong bg-surface px-3 text-sm transition-colors hover:bg-raised"
+          className="press inline-flex h-8 items-center gap-1.5 rounded-ctl bg-fill px-3 text-sm text-ink hover:bg-fill-strong"
         >
           <ExternalLink className="size-3.5" />
           研究报告
@@ -160,13 +160,13 @@ export function CallInspector({
   );
 
   const head = (
-    <header className={inPanel ? "shrink-0 border-b border-line px-5 py-3" : "mb-4"}>
+    <header className={inPanel ? "shrink-0 border-b border-line px-5 py-3.5" : "mb-5"}>
       {lead}
       <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <Badge>{toolLabel[tool] ?? (tool || "调用")}</Badge>
-            <h1 className={cx("num font-medium tracking-tight", inPanel ? "text-base" : "text-xl")}>{entry ? `#${entry.id}` : inFlight ? "进行中的调用" : `#${id}`}</h1>
+            <h1 className={cx("num", inPanel ? "t-heading text-base" : "t-title")}>{entry ? `#${entry.id}` : inFlight ? "进行中的调用" : `#${id}`}</h1>
             <StatusBadge status={status} />
             <span className="num text-xs text-ink-3">{entry ? dateTime(entry.ts) : live.call ? dateTime(live.call.started_at) : ""}</span>
           </div>
@@ -182,14 +182,15 @@ export function CallInspector({
           <Empty title={inFlight ? "调用已结束，找不到它的记录" : "没有这条日志"} />
         </Panel>
       ) : loading ? (
-        <div className="grid place-items-center py-24">
-          <Spinner />
+        <div className="flex flex-col gap-4" role="status" aria-label="加载中">
+          <Skeleton panel className="h-16" />
+          <Skeleton panel className="h-[28rem]" />
         </div>
       ) : (
         <div className="@container flex flex-col gap-4">
           <div
             className={cx(
-              "grid grid-cols-2 gap-x-5 gap-y-3 rounded-panel border border-line bg-surface px-4 py-3 @xl:grid-cols-4",
+              "grid grid-cols-2 gap-x-5 gap-y-3 rounded-panel border border-line bg-surface px-4 py-3.5 shadow-panel @xl:grid-cols-4",
               entry && entry.input_tokens > 0
                 ? "@5xl:grid-cols-[minmax(4.5rem,0.75fr)_minmax(12.5rem,1.85fr)_minmax(5rem,0.9fr)_minmax(5.5rem,0.9fr)_minmax(5.5rem,0.9fr)_minmax(7.5rem,1.1fr)_minmax(6rem,0.95fr)_minmax(4.5rem,0.75fr)]"
                 : "@5xl:grid-cols-6",
@@ -348,16 +349,13 @@ export function CallInspector({
 
 function StatusBadge({ status }: { status: string }) {
   return status === "running" ? (
-    <Badge tone="signal">
-      <Dot tone="signal" live />
+    <Status tone="signal" live>
       进行中
-    </Badge>
+    </Status>
   ) : status === "ok" ? (
-    <Badge tone="ok" dot>
-      成功
-    </Badge>
+    <Status tone="ok">成功</Status>
   ) : status === "canceled" ? (
-    <Badge dot>已中止</Badge>
+    <Status>已中止</Status>
   ) : (
     <Badge tone="err" dot>
       失败

@@ -11,7 +11,7 @@ import { PageHeader } from "../Shell";
 import { BrandIcon } from "../ui/brand";
 import { ChipInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, cx, Empty, Field, Input, Panel, Segmented, Spinner, Switch, Table, TabList, TabPanel, Tabs, Td, Th, Tooltip } from "../ui/primitives";
+import { Badge, Button, cx, Empty, Field, Input, Loading, Panel, Segmented, Status, Switch, Table, TabList, TabPanel, Tabs, Td, Th, Tooltip } from "../ui/primitives";
 
 const tabs = [
   { value: "rules", label: "规则" },
@@ -95,12 +95,11 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
 
   return (
     <Panel
-      index="01"
       title="路由规则"
       info="自上而下匹配，命中即停。命中的 URL 只由规则的提供商抓取，调用方用 fetch_engine 指定时除外。"
       flush
     >
-      <div className="hidden h-8 items-center gap-3 border-b border-line px-4 lg:flex">
+      <div className="hidden h-9 items-center gap-3 border-b border-line px-4 lg:flex">
         <span className={cx("tag shrink-0", own > 1 ? "w-16" : "w-6")}>#</span>
         <span className="tag w-56 shrink-0">规则</span>
         <span className="tag flex-1">匹配域名</span>
@@ -115,11 +114,11 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
             <li
               key={rule.id}
               className={cx(
-                "flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-4 py-2.5 last:border-b-0 lg:flex-nowrap",
+                "flex min-h-13 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-4 py-2.5 transition-colors last:border-b-0 hover:bg-fill lg:flex-nowrap",
                 !rule.enabled && "opacity-60",
               )}
             >
-              <span className={cx("num w-6 shrink-0 text-sm", rule.enabled && ready ? "text-signal-text" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
+              <span className={cx("num w-6 shrink-0 text-xs", rule.enabled && ready ? "text-ink-2" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
               {own > 1 && (
                 <span className={cx("flex w-7 shrink-0 flex-col", rule.builtin && "max-sm:hidden")}>
                   {!rule.builtin && (
@@ -133,13 +132,13 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
               <div className="flex min-w-44 shrink-0 flex-wrap items-center gap-1.5 text-sm font-medium max-lg:flex-1 lg:w-56">
                 {rule.builtin && <BrandIcon id={rule.id} className="size-4 shrink-0" />}
                 <span className="truncate">{rule.name}</span>
-                {rule.builtin && <Badge>内置</Badge>}
-                {!rule.enabled ? (
-                  <Badge>已停用</Badge>
-                ) : ready ? (
-                  <Badge tone="ok" dot>
+                {(rule.builtin || !rule.enabled) && (
+                  <span className="text-xs font-normal text-ink-3">{[rule.builtin && "内置", !rule.enabled && "已停用"].filter(Boolean).join(" · ")}</span>
+                )}
+                {!rule.enabled ? null : ready ? (
+                  <Status tone="ok" className="font-normal">
                     生效
-                  </Badge>
+                  </Status>
                 ) : (
                   <Link href={missing(provider(rule.providers[0] ?? "")).href}>
                     <Badge tone="warn" dot>
@@ -245,7 +244,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-ink-2">匹配</span>
           {builtin ? (
-            <div className="num rounded-ctl border border-line bg-sunken px-2.5 py-1.5 text-xs break-all text-ink-2">{match.join(" · ")}</div>
+            <div className="num rounded-ctl bg-sunken px-2.5 py-2 text-xs break-all text-ink-2">{match.join(" · ")}</div>
           ) : (
             <ChipInput value={match} onChange={setMatch} normalize={cleanPattern} placeholder="example.com 或 example.com/docs/" aria-label="匹配的域名" />
           )}
@@ -261,8 +260,8 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
             {lanes.map((id, index) => {
               const on = index < chosen.length;
               return (
-                <li key={id} className={cx("flex items-center gap-3 border-b border-line px-3 py-2 last:border-b-0", !on && "opacity-60")}>
-                  <span className={cx("num w-5 text-xs", on ? "text-signal-text" : "text-ink-3")}>{on ? String(index + 1).padStart(2, "0") : "—"}</span>
+                <li key={id} className={cx("flex min-h-11 items-center gap-3 border-b border-line px-3 py-2 last:border-b-0", !on && "opacity-60")}>
+                  <span className={cx("num w-5 text-xs", on ? "text-ink-2" : "text-ink-3")}>{on ? String(index + 1).padStart(2, "0") : "—"}</span>
                   {chosen.length > 1 && (
                     <span className="flex w-7 flex-col">
                       {on && (
@@ -358,7 +357,6 @@ function Domains({ onRoute }: { onRoute: (rule: Rule) => void }) {
 
   return (
     <Panel
-      index="01"
       title="域名统计"
       info={`保留 ${query.data?.retention_days ?? 90} 天，不含缓存命中与取消的请求`}
       actions={
@@ -397,7 +395,7 @@ function Domains({ onRoute }: { onRoute: (rule: Rule) => void }) {
       flush
     >
       {!query.data ? (
-        <div className="grid place-items-center py-16">{query.error ? <span className="text-sm text-err">{query.error.message}</span> : <Spinner />}</div>
+        query.error ? <div className="grid place-items-center py-16 text-sm text-err">{query.error.message}</div> : <Loading rows={6} />
       ) : rows.length === 0 ? (
         <Empty icon={<Radar />} title={all.length === 0 ? "尚无统计" : "所选时间内没有抓取失败的域名"} />
       ) : (
@@ -425,7 +423,7 @@ function Domains({ onRoute }: { onRoute: (rule: Rule) => void }) {
                 const longest = Math.max(0, ...d.providers.filter((p) => p.outcomes.ok).map((p) => p.avg_bytes));
                 return (
                   <Fragment key={d.domain}>
-                    <tr className="cursor-pointer hover:bg-raised/60" onClick={() => setOpen(expanded ? null : d.domain)}>
+                    <tr className="cursor-pointer transition-colors hover:bg-fill" onClick={() => setOpen(expanded ? null : d.domain)}>
                       <Td>
                         <button type="button" aria-expanded={expanded} className="num flex items-center gap-1.5 text-sm">
                           {expanded ? <ChevronDown className="size-3.5 text-ink-3" /> : <ChevronRight className="size-3.5 text-ink-3" />}
@@ -467,7 +465,7 @@ function ProviderRow({ stats, name, longest }: { stats: DomainProviderStats; nam
   // Far less text than another provider gets from the same site.
   const short = read && stats.avg_bytes < longest * 0.3;
   return (
-    <tr className="bg-sunken/60">
+    <tr className="bg-sunken">
       <Td className="pl-9! text-xs text-ink-2">
         <span className="flex items-center gap-1.5">
           <ProviderIcon id={stats.provider} className="size-3.5" />

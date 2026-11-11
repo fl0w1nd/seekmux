@@ -76,7 +76,7 @@ depends = ["worker:install"]
 run = "node worker/src/cli.ts --server http://127.0.0.1:8787"
 
 [tasks.lint]
-description = "gofmt, go mod tidy, go vet, the TypeScript checks and the workflows"
+description = "gofmt, go mod tidy, go vet, the TypeScript checks, the console tokens and the workflows"
 depends = ["web:install", "worker:install"]
 run = [
   'test -z "$(gofmt -l .)" || { gofmt -l .; echo "gofmt: the files above need formatting" >&2; exit 1; }',
@@ -85,6 +85,7 @@ run = [
   "pnpm --dir web typecheck",
   "pnpm --dir worker typecheck",
   { task = "lint:versions" },
+  { task = "lint:design" },
   "actionlint",
 ]
 
@@ -95,6 +96,14 @@ grep -q "golang:$(mise current go)-alpine" Dockerfile &&
 grep -q "node:$(mise current node | cut -d. -f1)-alpine" Dockerfile &&
 grep -q "pnpm@$(mise current pnpm) " Dockerfile ||
 { echo "Dockerfile: Go, Node.js or pnpm differ from mise.toml" >&2; exit 1; }
+'''
+
+[tasks."lint:design"]
+description = "Check that the console uses the radii, shadows, sizes and colors of its tokens"
+run = '''
+! grep -rnE --include='*.ts' --include='*.tsx' --exclude=brand.tsx \
+  'rounded-\[|shadow-\[|text-\[[0-9]|#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})([^0-9a-zA-Z_-]|$)' web/src ||
+{ echo "web/src: use a token from src/styles/index.css instead (see web/DESIGN.md)" >&2; exit 1; }
 '''
 
 [tasks.test]

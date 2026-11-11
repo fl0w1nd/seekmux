@@ -11,7 +11,7 @@ import { routingRules } from "../lib/routing";
 import { PageHeader } from "../Shell";
 import { BrandIcon } from "../ui/brand";
 import { RateLimitInput, SecretInput } from "../ui/inputs";
-import { Badge, Button, cx, Dot, Info, Input, Notice, NumberInput, type Tone } from "../ui/primitives";
+import { Button, cx, Dot, Info, Input, Notice, NumberInput, State, type Tone } from "../ui/primitives";
 import { addFetcher, CreateFetcherDialog, FetcherDetail, fetcherState } from "./Fetchers";
 
 type Status = ReturnType<typeof useStatus>;
@@ -104,8 +104,8 @@ export function ProvidersPage() {
           全部提供商
         </Link>
       )}
-      <div className="overflow-hidden rounded-panel border border-line bg-surface lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
-        <nav aria-label="提供商" className={cx("flex flex-col border-line bg-bg/55 lg:border-r", id && "max-lg:hidden")}>
+      <div className="overflow-hidden rounded-panel border border-line bg-surface shadow-panel lg:grid lg:min-h-[calc(100dvh-9.5rem)] lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <nav aria-label="提供商" className={cx("flex flex-col border-line bg-bg/60 lg:border-r", id && "max-lg:hidden")}>
           <ProviderList
             groups={groups}
             selected={id ? selected?.id : undefined}
@@ -165,7 +165,7 @@ function ProviderList({
         {groups.cloud.map((e) => (
           <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} />
         ))}
-        {groups.cloud.length === 0 && <p className="px-3 pb-2 text-xs text-ink-3">尚未配置</p>}
+        {groups.cloud.length === 0 && <p className="px-2 pb-2 text-xs text-ink-3">尚未配置</p>}
       </Group>
       <Group
         label="自托管"
@@ -173,7 +173,7 @@ function ProviderList({
           <button
             type="button"
             onClick={onCreate}
-            className="-mr-1 inline-flex items-center gap-0.5 rounded-ctl px-1.5 py-0.5 text-xs text-ink-2 transition-colors hover:bg-raised hover:text-ink"
+            className="press -mr-1 inline-flex h-6 items-center gap-0.5 rounded-thumb px-1.5 text-xs text-ink-2 hover:bg-fill hover:text-ink"
           >
             <Plus className="size-3" />
             新建
@@ -183,11 +183,11 @@ function ProviderList({
         {groups.self.map((e) => (
           <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} />
         ))}
-        {groups.self.length === 0 && <p className="px-3 pb-2 text-xs text-ink-3">用已登录的浏览器读取页面</p>}
+        {groups.self.length === 0 && <p className="px-2 pb-2 text-xs text-ink-3">用已登录的浏览器读取页面</p>}
       </Group>
       {groups.idle.length > 0 && (
         <RadixCollapsible.Root open={idleOpen} onOpenChange={setOpen} className="group/idle border-t border-line">
-          <RadixCollapsible.Trigger className="flex h-8.5 w-full items-center gap-1.5 px-3 text-left transition-colors hover:bg-raised/60">
+          <RadixCollapsible.Trigger className="flex h-10 w-full items-center gap-1.5 px-3.5 text-left transition-colors hover:bg-fill">
             <ChevronRight className="size-3.5 text-ink-3 transition-transform group-data-[state=open]/idle:rotate-90" />
             <span className="tag">未配置</span>
             <span className="num ml-auto text-2xs text-ink-3">{groups.idle.length}</span>
@@ -205,12 +205,12 @@ function ProviderList({
 
 function Group({ label, action, children }: { label: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <div className="border-b border-line pb-1.5 last:border-b-0">
-      <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+    <div className="border-b border-line pb-2 last:border-b-0">
+      <div className="flex h-9 items-center justify-between px-3.5 pt-1">
         <span className="tag">{label}</span>
         {action}
       </div>
-      <div className="flex flex-col gap-0.5 px-1.5">{children}</div>
+      <div className="flex flex-col gap-px px-1.5">{children}</div>
     </div>
   );
 }
@@ -226,17 +226,15 @@ function EntryRow({ entry, active, soft, quiet }: { entry: Entry; active: boolea
       href={`/providers/${entry.id}`}
       aria-current={active && !soft ? "page" : undefined}
       className={cx(
-        "flex h-8.5 items-center gap-2 rounded-ctl px-2 transition-colors max-lg:h-10",
-        active
-          ? "lg:bg-surface lg:font-medium lg:text-ink lg:shadow-[inset_0_0_0_1px_var(--line)]"
-          : "hover:bg-raised/65",
+        "flex h-9 items-center gap-2.5 rounded-ctl px-2 transition-colors max-lg:h-11",
+        active ? "lg:bg-surface lg:font-medium lg:text-ink lg:shadow-thumb" : "hover:bg-fill",
       )}
     >
       <BrandIcon id={entry.icon} className="size-4 shrink-0" />
       <span className={cx("min-w-0 flex-1 truncate text-sm", quiet && !active ? "text-ink-2" : "text-ink")}>{entry.name}</span>
       {!quiet && (
-        <span className="flex shrink-0 items-center gap-1.5 text-2xs text-ink-3">
-          <Dot tone={entry.state.tone} />
+        <span className="flex shrink-0 items-center gap-1.5 text-2xs font-normal text-ink-3">
+          <Dot tone={entry.state.tone} halo={false} />
           <span>{entry.state.short ?? entry.state.label}</span>
         </span>
       )}
@@ -258,13 +256,11 @@ function BuiltinDetail({ id }: { id: string }) {
 
   return (
     <section className="flex flex-col">
-      <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
-        <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
-          <BrandIcon id={info.id} className="size-4" />
-          <span className="truncate">{info.name}</span>
-          <Badge tone={state.tone} dot={state.tone !== "neutral"}>
-            {state.label}
-          </Badge>
+      <header className="flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3">
+        <span className="flex min-w-0 items-center gap-2.5">
+          <BrandIcon id={info.id} className="size-5" />
+          <span className="t-heading truncate">{info.name}</span>
+          <State tone={state.tone}>{state.label}</State>
         </span>
         <a
           href={info.website}
@@ -344,7 +340,7 @@ function BuiltinDetail({ id }: { id: string }) {
           </div>
         </CardRow>
 
-        <CardRow label="接口地址" aside={creds.base_url && <div className="text-2xs text-signal-text">已自定义</div>}>
+        <CardRow label="接口地址" aside={creds.base_url && <div className="text-2xs text-ink-3">已自定义</div>}>
           <div className="flex max-w-md items-center gap-2">
             <Input
               mono

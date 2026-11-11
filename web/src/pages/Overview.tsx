@@ -8,7 +8,7 @@ import { ProviderName } from "../components/ProviderName";
 import { ago, bytes, compact, dateTime, duration, percent, toolLabel } from "../lib/format";
 import { useTween } from "../lib/motion";
 import { PageHeader } from "../Shell";
-import { Badge, cx, Dot, Empty, Meter, Notice, Panel, Segmented, Spinner, Table, Td, Th, Tooltip } from "../ui/primitives";
+import { Badge, cx, Dot, Empty, Meter, Notice, Panel, Segmented, Skeleton, Stat, StatGrid, Table, Td, Th, Tooltip } from "../ui/primitives";
 
 type Window = "1h" | "24h" | "7d";
 
@@ -26,10 +26,6 @@ export function OverviewPage() {
   const overview = useQuery({ queryKey: ["overview", window], queryFn: () => api.overview(window), refetchInterval: 5000, placeholderData: (previous) => previous });
   const data = overview.data;
 
-  // Panels are numbered in reading order, and some only show when they have something to say.
-  let panel = 0;
-  const next = () => String(++panel).padStart(2, "0");
-
   return (
     <>
       <PageHeader
@@ -37,23 +33,34 @@ export function OverviewPage() {
         actions={<Segmented value={window} onChange={setWindow} options={(Object.keys(windows) as Window[]).map((w) => ({ value: w, label: windows[w].label }))} />}
       />
       {!data ? (
-        <div className="grid place-items-center py-24">{overview.error ? <span className="text-sm text-err">{overview.error.message}</span> : <Spinner />}</div>
+        overview.error ? (
+          <div className="grid place-items-center py-24 text-sm text-err">{overview.error.message}</div>
+        ) : (
+          <div className="flex flex-col gap-3" role="status" aria-label="加载中">
+            <Skeleton panel className="h-24" />
+            <Skeleton panel className="h-44" />
+            <div className="grid gap-3 xl:grid-cols-2">
+              <Skeleton panel className="h-64" />
+              <Skeleton panel className="h-64" />
+            </div>
+          </div>
+        )
       ) : (
         <div className="flex flex-col gap-3">
           <InFlight />
           <Kpis data={data} />
-          <Panel index={next()} title="请求量" actions={<HistogramLegend data={data} window={window} />}>
+          <Panel title="请求量" actions={<HistogramLegend data={data} window={window} />}>
             <Histogram key={window} data={data} window={window} />
           </Panel>
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-            <Routes tool="search" title="搜索路由" index={next()} routes={data.routes} />
-            <Routes tool="fetch" title="抓取路由" index={next()} routes={data.routes} />
-            {data.routes.some((r) => r.tool === "dev_search") && <Routes tool="dev_search" title="开发搜索路由" index={next()} routes={data.routes} />}
-            {data.models.length > 0 && <Models data={data} index={next()} className={!data.routes.some((r) => r.tool === "dev_search") ? "xl:col-span-2" : undefined} />}
+            <Routes tool="search" title="搜索路由" routes={data.routes} />
+            <Routes tool="fetch" title="抓取路由" routes={data.routes} />
+            {data.routes.some((r) => r.tool === "dev_search") && <Routes tool="dev_search" title="开发搜索路由" routes={data.routes} />}
+            {data.models.length > 0 && <Models data={data} className={!data.routes.some((r) => r.tool === "dev_search") ? "xl:col-span-2" : undefined} />}
           </div>
-          {data.stats.errors.length > 0 && <Errors data={data} index={next()} />}
-          <Providers data={data} index={next()} />
-          <Callers data={data} index={next()} />
+          {data.stats.errors.length > 0 && <Errors data={data} />}
+          <Providers data={data} />
+          <Callers data={data} />
           <Roles data={data} />
         </div>
       )}
@@ -67,7 +74,7 @@ function InFlight() {
   const calls = live.data?.calls ?? [];
   if (calls.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-panel border border-signal-text/40 bg-surface py-2 pr-2 pl-4">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-panel border border-signal-text/40 bg-surface py-2 pr-2 pl-4 shadow-panel">
       <span className="flex shrink-0 items-center gap-2 text-sm font-medium">
         <Dot tone="signal" live />
         进行中
@@ -78,15 +85,15 @@ function InFlight() {
           <Link
             key={call.call_id}
             href={`/logs/${call.call_id}`}
-            className="flex h-7 max-w-64 min-w-0 items-center gap-1.5 rounded-ctl border border-line px-2 text-xs transition-colors hover:border-line-strong hover:bg-raised"
+            className="press flex h-7 max-w-64 min-w-0 items-center gap-1.5 rounded-ctl bg-fill px-2 text-xs hover:bg-fill-strong"
           >
-            <span className="tag shrink-0 normal-case">{toolLabel[call.tool] ?? call.tool}</span>
+            <span className="shrink-0 text-ink-3">{toolLabel[call.tool] ?? call.tool}</span>
             <span className="num min-w-0 truncate text-ink-2">{call.summary || call.call_id}</span>
           </Link>
         ))}
         {calls.length > 4 && <span className="num shrink-0 text-xs text-ink-3">+{calls.length - 4}</span>}
       </div>
-      <Link href="/logs" className="ml-auto flex h-7 shrink-0 items-center gap-1 rounded-ctl px-2 text-xs text-ink-3 transition-colors hover:bg-raised hover:text-ink">
+      <Link href="/logs" className="press ml-auto flex h-7 shrink-0 items-center gap-1 rounded-ctl px-2 text-xs text-ink-3 hover:bg-fill hover:text-ink">
         请求日志
         <ArrowRight className="size-3.5" />
       </Link>
@@ -101,13 +108,13 @@ function Kpis({ data }: { data: Overview }) {
   const by = (tool: string) => tools.find((t) => t.tool === tool);
   const tokens = data.stats.input_tokens + data.stats.output_tokens;
   return (
-    <div className="grid grid-cols-2 overflow-hidden rounded-panel border border-line bg-line gap-px lg:grid-cols-4">
+    <StatGrid className="grid-cols-2 lg:grid-cols-4">
       <Kpi label="调用" value={calls} format={(n) => compact(Math.round(n))} detail={tools.length ? tools.map((t) => `${toolLabel[t.tool]} ${compact(t.calls)}`).join(" · ") : "暂无调用"} />
       <Kpi
         label="成功率"
         value={calls ? (calls - errors) / calls : null}
         format={(n) => percent(n, 1)}
-        tone={errors > 0 && errors / calls > 0.1 ? "text-warn" : undefined}
+        tone={errors > 0 && errors / calls > 0.1 ? "warn" : undefined}
         detail={errors ? `${errors} 次失败` : "无失败"}
       />
       <Kpi
@@ -123,31 +130,22 @@ function Kpis({ data }: { data: Overview }) {
         format={(n) => compact(Math.round(n))}
         detail={`输入 ${compact(data.stats.input_tokens)} · 输出 ${compact(data.stats.output_tokens)} · 缓存命中 ${percent(data.stats.cache_read_tokens ?? 0, data.stats.input_tokens)}`}
       />
-    </div>
+    </StatGrid>
   );
 }
 
 /** A headline figure that moves to its new value instead of jumping; null shows as a dash. */
-function Kpi({ label, value, format, unit, detail, tone }: { label: string; value: number | null; format: (n: number) => string; unit?: string; detail: ReactNode; tone?: string }) {
+function Kpi({ label, value, format, unit, detail, tone }: { label: string; value: number | null; format: (n: number) => string; unit?: string; detail: ReactNode; tone?: "warn" }) {
   const shown = useTween(value ?? 0);
-  return (
-    <div className="bg-surface px-4 py-3">
-      <div className="tag">{label}</div>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className={cx("num text-2xl font-medium", tone)}>{value === null ? "—" : format(shown)}</span>
-        {unit && <span className="text-xs text-ink-3">{unit}</span>}
-      </div>
-      <div className="mt-0.5 truncate text-xs text-ink-3">{detail}</div>
-    </div>
-  );
+  return <Stat label={label} value={value === null ? "—" : format(shown)} unit={unit} detail={detail} tone={tone} />;
 }
 
 /** The tools in the order they stack, bottom up, each with its own shade. */
 const stack: { tool: Tool; bar: string }[] = [
-  { tool: "search", bar: "bg-signal-text" },
-  { tool: "fetch", bar: "bg-signal-text/55" },
-  { tool: "dev_search", bar: "bg-info" },
-  { tool: "research", bar: "bg-ink-3" },
+  { tool: "search", bar: "bg-chart-1" },
+  { tool: "fetch", bar: "bg-chart-2" },
+  { tool: "dev_search", bar: "bg-chart-3" },
+  { tool: "research", bar: "bg-chart-4" },
 ];
 
 function HistogramLegend({ data, window }: { data: Overview; window: Window }) {
@@ -158,12 +156,12 @@ function HistogramLegend({ data, window }: { data: Overview; window: Window }) {
         <>
           {used.map(({ tool, bar }) => (
             <span key={tool} className="inline-flex items-center gap-1.5">
-              <span className={cx("size-2 rounded-[2px]", bar)} />
+              <span className={cx("size-2 rounded-full", bar)} />
               {toolLabel[tool]}
             </span>
           ))}
           <span className="inline-flex items-center gap-1.5">
-            <span className="size-2 rounded-[2px] bg-err" />
+            <span className="size-2 rounded-full bg-err" />
             失败
           </span>
         </>
@@ -190,7 +188,7 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
   }
   return (
     <div>
-      <div className="flex h-20 items-end gap-0.5">
+      <div className="flex h-28 items-end gap-1">
         {slots.map((slot, i) => {
           const ok = slot.calls - slot.errors;
           return (
@@ -210,16 +208,16 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
                 onClick={() => slot.calls > 0 && navigate(`/logs?since=${slot.ts}&until=${slot.ts + step}`)}
                 aria-label={`${shortTime(slot.ts)}，${slot.calls} 次调用`}
                 className={cx(
-                  "flex h-full min-w-0 flex-1 origin-bottom animate-grow-y flex-col justify-end rounded-t-[2px] transition-opacity",
+                  "flex h-full min-w-0 flex-1 origin-bottom animate-grow-y flex-col justify-end gap-px transition-opacity",
                   slot.calls > 0 ? "cursor-pointer hover:opacity-80" : "cursor-default",
                 )}
                 style={{ animationDelay: `${Math.round((i / slots.length) * 240)}ms` }}
               >
                 {slot.calls === 0 ? (
-                  <span className="h-px bg-line-strong" />
+                  <span className="h-0.5 rounded-full bg-fill-strong" />
                 ) : (
                   <>
-                    {slot.errors > 0 && <span className="rounded-t-[2px] bg-err transition-[height] duration-500 ease-settle" style={{ height: `${Math.max(2, (slot.errors / peak) * 100)}%` }} />}
+                    {slot.errors > 0 && <span className="rounded-t-tag bg-err transition-[height] duration-500 ease-settle" style={{ height: `${Math.max(2, (slot.errors / peak) * 100)}%` }} />}
                     {/* Errors are not split by tool: the tools share the rest of the bar in proportion. */}
                     {stack
                       .slice()
@@ -231,7 +229,7 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
                         return (
                           <span
                             key={tool}
-                            className={cx("transition-[height] duration-500 ease-settle", bar, first && "rounded-t-[2px]")}
+                            className={cx("transition-[height] duration-500 ease-settle", bar, first && "rounded-t-tag")}
                             style={{ height: `${Math.max(1, ((ok * (n / slot.calls)) / peak) * 100)}%` }}
                           />
                         );
@@ -243,7 +241,7 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
           );
         })}
       </div>
-      <div className="tag mt-2 flex justify-between normal-case">
+      <div className="num mt-2.5 flex justify-between text-2xs text-ink-3">
         <span>{shortTime(slots[0].ts)}</span>
         <span>峰值 {peak} 次 / {stepLabel(step)}</span>
         <span>当前</span>
@@ -254,14 +252,14 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
 
 const shortTime = (ts: number) => dateTime(ts).slice(5, 16);
 
-function Routes({ tool, title, index, routes }: { tool: string; title: string; index: string; routes: RouteStatus[] }) {
+function Routes({ tool, title, routes }: { tool: string; title: string; routes: RouteStatus[] }) {
   const list = routes.filter((r) => r.tool === tool);
   return (
-    <Panel index={index} title={title} flush>
+    <Panel title={title} flush>
       <ol>
         {list.map((route, i) => (
-          <li key={route.provider} className={cx("flex items-center gap-3 border-b border-line px-4 py-2 last:border-b-0", !route.available && "opacity-55")}>
-            <span className="tag w-4">{String(i + 1).padStart(2, "0")}</span>
+          <li key={route.provider} className={cx("flex min-h-11 items-center gap-3 border-b border-line px-4 py-2 last:border-b-0", !route.available && "opacity-55")}>
+            <span className="num w-4 text-2xs text-ink-3">{String(i + 1).padStart(2, "0")}</span>
             <Dot tone={route.available ? (route.disabled || (route.limit > 0 && route.used >= route.limit) ? "warn" : "ok") : "neutral"} live={route.active > 0} />
             <ProviderName id={route.provider} className="w-28 text-sm" icon="size-4" />
             <span className="flex flex-1 items-center justify-end gap-3">
@@ -286,12 +284,12 @@ function Routes({ tool, title, index, routes }: { tool: string; title: string; i
 
 const roleLabel = { extract: "提取", research: "研究" } as const;
 
-function Models({ data, index, className }: { data: Overview; index: string; className?: string }) {
+function Models({ data, className }: { data: Overview; className?: string }) {
   return (
-    <Panel index={index} title="模型" className={className} flush>
+    <Panel title="模型" className={className} flush>
       <ol>
         {data.models.map((model) => (
-          <li key={model.id} className={cx("flex items-center gap-3 border-b border-line px-4 py-2 last:border-b-0", model.roles.length === 0 && "opacity-55")}>
+          <li key={model.id} className={cx("flex min-h-11 items-center gap-3 border-b border-line px-4 py-2 last:border-b-0", model.roles.length === 0 && "opacity-55")}>
             <Dot tone={model.roles.length === 0 ? "neutral" : model.disabled || (model.limit > 0 && model.used >= model.limit) ? "warn" : "ok"} live={model.active > 0} />
             <span className="num min-w-0 truncate text-sm">{model.id}</span>
             <span className="flex shrink-0 gap-1">
@@ -317,9 +315,9 @@ function Models({ data, index, className }: { data: Overview; index: string; cla
   );
 }
 
-function Errors({ data, index }: { data: Overview; index: string }) {
+function Errors({ data }: { data: Overview }) {
   return (
-    <Panel index={index} title="错误分布" info="含已被回退挽回的失败" flush>
+    <Panel title="错误分布" info="含已被回退挽回的失败" flush>
       <div className="overflow-x-auto">
         <Table>
           <thead>
@@ -334,15 +332,13 @@ function Errors({ data, index }: { data: Overview; index: string }) {
           </thead>
           <tbody>
             {data.stats.errors.map((row) => (
-              <tr key={`${row.kind}/${row.provider}/${row.http_status ?? 0}`} className="transition-colors hover:bg-raised/60">
+              <tr key={`${row.kind}/${row.provider}/${row.http_status ?? 0}`} className="transition-colors hover:bg-fill">
                 <Td className="whitespace-nowrap">
                   <Link href={`/logs?provider=${encodeURIComponent(row.provider)}&status=fallback`} className="underline-offset-2 hover:underline">
                     <ProviderName id={row.provider} kind={row.kind} className="text-sm" />
                   </Link>
                 </Td>
-                <Td>
-                  <Badge>{toolLabel[row.kind] ?? row.kind}</Badge>
-                </Td>
+                <Td className="text-xs whitespace-nowrap text-ink-2">{toolLabel[row.kind] ?? row.kind}</Td>
                 <Td className="num text-right text-xs text-err">{row.http_status || "—"}</Td>
                 <Td className="num text-right text-xs">{row.count}</Td>
                 <Td className="max-w-0">
@@ -360,10 +356,10 @@ function Errors({ data, index }: { data: Overview; index: string }) {
   );
 }
 
-function Providers({ data, index }: { data: Overview; index: string }) {
+function Providers({ data }: { data: Overview }) {
   const rows = data.stats.providers;
   return (
-    <Panel index={index} title="提供商表现" info="按发往上游的每次请求统计，含被跳过和对冲中取消的请求" flush>
+    <Panel title="提供商表现" info="按发往上游的每次请求统计，含被跳过和对冲中取消的请求" flush>
       {rows.length === 0 ? (
         <Empty title="暂无数据" />
       ) : (
@@ -387,9 +383,7 @@ function Providers({ data, index }: { data: Overview; index: string }) {
                 const bad = settled > 0 && row.errors / settled > 0.2;
                 return (
                   <tr key={`${row.kind}/${row.provider}`}>
-                    <Td>
-                      <Badge>{toolLabel[row.kind] ?? row.kind}</Badge>
-                    </Td>
+                    <Td className="text-xs whitespace-nowrap text-ink-2">{toolLabel[row.kind] ?? row.kind}</Td>
                     <Td className="whitespace-nowrap">
                       <ProviderName id={row.provider} kind={row.kind} className={row.kind === "llm" ? "text-xs" : undefined} />
                     </Td>
@@ -410,10 +404,10 @@ function Providers({ data, index }: { data: Overview; index: string }) {
   );
 }
 
-function Callers({ data, index }: { data: Overview; index: string }) {
+function Callers({ data }: { data: Overview }) {
   const rows = data.stats.callers;
   return (
-    <Panel index={index} title="调用方" flush>
+    <Panel title="调用方" flush>
       {rows.length === 0 ? (
         <Empty title="暂无数据" />
       ) : (
@@ -467,7 +461,7 @@ function Callers({ data, index }: { data: Overview; index: string }) {
 function Roles({ data }: { data: Overview }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-panel border border-line bg-surface px-4 py-2.5 text-xs text-ink-3">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 px-1 py-1 text-xs text-ink-3">
         <span className="flex items-center gap-2">
           <Dot tone={data.roles.extract ? "ok" : "neutral"} />
           提取模型{data.roles.extract ? "已配置" : "未配置"}

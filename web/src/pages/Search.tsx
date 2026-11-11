@@ -16,10 +16,10 @@ export function SearchPage() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Panel index="01" title="路由优先级" info="调用方可用 search_engine 指定提供商" flush>
+      <Panel title="路由优先级" info="调用方可用 search_engine 指定提供商" flush>
         <RouteList tool="search" />
       </Panel>
-      <Panel index="02" title="行为" flush>
+      <Panel title="行为" flush>
         <Row label="总超时" hint="含回退">
           <NumberInput className="w-24" min={1} suffix="秒" value={config.search.timeout_seconds} onChange={(v) => update((d) => void (d.search.timeout_seconds = v))} />
         </Row>

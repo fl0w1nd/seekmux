@@ -97,10 +97,10 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
 
 function NavList({ location }: { location: string }) {
   return (
-    <nav className="flex-1 overflow-y-auto px-2 pb-4">
+    <nav className="flex-1 overflow-y-auto px-2.5 pb-4">
       {nav.map((section) => (
-        <div key={section.group} className="mt-3.5 first:mt-1">
-          <div className="tag px-2 pb-1">{section.group}</div>
+        <div key={section.group} className="mt-5 first:mt-2">
+          <div className="tag px-2 pb-1.5">{section.group}</div>
           {section.items.map(({ href, label, icon: Icon }) => {
             const active = href === "/" ? location === "/" : location.startsWith(href);
             return (
@@ -109,14 +109,11 @@ function NavList({ location }: { location: string }) {
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={cx(
-                  "relative flex h-8 items-center gap-2.5 rounded-ctl px-2 text-sm transition-colors max-md:h-10",
-                  active
-                    ? "bg-surface font-medium text-ink shadow-[inset_0_0_0_1px_var(--line)]"
-                    : "text-ink-2 hover:bg-raised/70 hover:text-ink",
+                  "mt-px flex h-8 items-center gap-2.5 rounded-ctl px-2 text-sm transition-colors max-md:h-10",
+                  active ? "bg-surface font-medium text-ink shadow-thumb" : "text-ink-2 hover:bg-fill hover:text-ink",
                 )}
               >
-                {active && <span className="absolute inset-y-1.5 -left-2 w-0.5 rounded-full bg-signal-text" />}
-                <Icon className={cx("size-4 shrink-0", active ? "text-signal-text" : "text-ink-3")} />
+                <Icon className={cx("size-4 shrink-0", active ? "text-ink" : "text-ink-3")} />
                 {label}
               </Link>
             );
@@ -132,7 +129,7 @@ function NavFoot() {
   const client = useQueryClient();
   const [theme, setTheme] = useTheme();
   return (
-    <div className="flex items-center justify-between gap-2 border-t border-line p-2.5">
+    <div className="flex items-center justify-between gap-2 border-t border-line px-3 py-2.5">
       <Segmented
         size="sm"
         value={theme}
@@ -172,12 +169,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-dvh max-md:flex-col">
-      <aside className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col border-r border-line bg-bg max-md:hidden">
-        <div className="flex h-13 items-center gap-2.5 px-3.5">
+      <aside className="sticky top-0 flex h-dvh w-60 shrink-0 flex-col border-r border-line bg-bg max-md:hidden">
+        <div className="flex h-15 items-center gap-2.5 px-4.5">
           <Logo className="size-7" />
           <div className="leading-tight">
-            <div className="font-medium">SeekMux</div>
-            <div className={cx("tag normal-case transition-colors", saved && "text-ok")}>
+            <div className="text-sm font-semibold">SeekMux</div>
+            <div className={cx("num text-2xs text-ink-3 transition-colors", saved && "text-ok")}>
               {saving ? "保存中…" : saved ? "✓ 已保存" : meta.version}
             </div>
           </div>
@@ -186,12 +183,12 @@ export function Shell({ children }: { children: ReactNode }) {
         <NavFoot />
       </aside>
 
-      <header className="sticky top-0 z-20 hidden h-[calc(3rem+env(safe-area-inset-top))] shrink-0 items-center gap-2 border-b border-line bg-surface pt-[env(safe-area-inset-top)] pr-[max(0.5rem,env(safe-area-inset-right))] pl-[max(0.5rem,env(safe-area-inset-left))] max-md:flex">
+      <header className="sticky top-0 z-20 hidden h-[calc(3rem+env(safe-area-inset-top))] shrink-0 items-center gap-2 border-b border-line bg-surface/90 backdrop-blur-md pt-[env(safe-area-inset-top)] pr-[max(0.5rem,env(safe-area-inset-right))] pl-[max(0.5rem,env(safe-area-inset-left))] max-md:flex">
         <Button variant="ghost" className="size-10" icon={<Menu />} aria-label="打开菜单" onClick={() => setMenu(true)} />
         <Logo className="size-6" />
-        <div className="min-w-0 flex-1 truncate font-medium">{current?.label ?? "SeekMux"}</div>
+        <div className="min-w-0 flex-1 truncate text-sm font-semibold">{current?.label ?? "SeekMux"}</div>
         {(saving || saved) && (
-          <span className={cx("tag normal-case transition-colors", saved && "text-ok")}>{saving ? "保存中…" : "✓ 已保存"}</span>
+          <span className={cx("text-xs text-ink-3 transition-colors", saved && "text-ok")}>{saving ? "保存中…" : "✓ 已保存"}</span>
         )}
       </header>
       <Drawer open={menu} onOpenChange={setMenu} side="left" title="SeekMux" description={meta.version} bodyClassName="flex flex-col p-0">
@@ -202,7 +199,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <main className="min-w-0 flex-1">
         <div
           className={cx(
-            "mx-auto w-full px-6 py-5 max-md:px-4",
+            "mx-auto w-full px-8 pt-7 pb-12 max-md:px-4 max-md:pt-4",
             measure,
             "max-md:pr-[max(1rem,env(safe-area-inset-right))] max-md:pb-[max(1.5rem,env(safe-area-inset-bottom))] max-md:pl-[max(1rem,env(safe-area-inset-left))]",
             error && "pb-24",
@@ -213,8 +210,8 @@ export function Shell({ children }: { children: ReactNode }) {
       </main>
 
       {error && (
-        <div className="fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex justify-center px-4 pl-60 max-md:pl-4">
-          <div className="flex max-w-2xl animate-in items-center gap-4 rounded-panel border border-line-strong bg-overlay py-2 pr-2 pl-4 shadow-overlay max-md:flex-wrap max-md:gap-2">
+        <div className="fixed inset-x-0 bottom-[max(1rem,env(safe-area-inset-bottom))] z-30 flex justify-center px-4 pl-64 max-md:pl-4">
+          <div className="flex max-w-2xl animate-in items-center gap-4 rounded-panel bg-overlay py-2 pr-2 pl-4 shadow-overlay max-md:flex-wrap max-md:gap-2">
             <span className="flex min-w-0 items-start gap-2.5 text-sm">
               <Dot tone="err" className="mt-2" />
               <span className="min-w-0 break-words">配置保存失败：{error}</span>
@@ -247,15 +244,15 @@ export function PageHeader({
   tabs?: ReactNode;
 }) {
   return (
-    <header className="mb-4">
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-4">
+    <header className="mb-5">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-medium tracking-tight">{title}</h1>
+          <h1 className="t-title">{title}</h1>
           {description && <p className="mt-1 max-w-2xl text-sm text-ink-3">{description}</p>}
         </div>
-        {actions && <div className="flex items-center gap-2">{actions}</div>}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
-      {tabs && <div className="mt-2">{tabs}</div>}
+      {tabs && <div className="mt-3">{tabs}</div>}
     </header>
   );
 }

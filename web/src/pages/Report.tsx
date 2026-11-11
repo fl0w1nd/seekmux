@@ -129,8 +129,8 @@ function Bar({ children }: { children?: ReactNode }) {
     <div className="flex h-16 items-center gap-2.5">
       <Logo className="size-7" />
       <div className="leading-tight">
-        <div className="font-medium">SeekMux</div>
-        <div className="tag whitespace-nowrap normal-case max-sm:hidden">deep research</div>
+        <div className="text-sm font-semibold">SeekMux</div>
+        <div className="text-xs whitespace-nowrap text-ink-3 max-sm:hidden">deep research</div>
       </div>
       <div className="ml-auto flex items-center gap-1">
         {children}
@@ -177,7 +177,7 @@ function Title({ text, className }: { text: string; className?: string }) {
     <div className={className}>
       <h1
         className={cx(
-          "max-w-5xl font-medium tracking-tight text-pretty whitespace-pre-line text-ink",
+          "max-w-5xl font-semibold tracking-tight text-pretty whitespace-pre-line text-ink",
           n <= 44 ? "text-3xl lg:text-4xl" : n <= 120 ? "text-2xl lg:text-3xl" : "text-xl lg:text-2xl",
           long && !open && "line-clamp-4",
         )}
@@ -271,7 +271,7 @@ function Document({ report }: { report: PublicReport }) {
           </Bar>
           <div className="pt-14 pb-12 lg:pt-24 lg:pb-16">
             <div className="tag flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="text-signal-text">深度研究报告</span>
+              <span className="text-ink-2">深度研究报告</span>
               <span>{dateTime(report.finished_at).slice(0, 10)}</span>
             </div>
             <Title text={title} className="mt-5" />
@@ -283,7 +283,7 @@ function Document({ report }: { report: PublicReport }) {
               </div>
             )}
           </div>
-          <dl className="mb-12 grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line lg:grid-cols-4">
+          <dl className="mb-12 grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line bg-clip-padding shadow-panel lg:grid-cols-4">
             {figures.map((figure) => (
               <div key={figure.label} className="flex min-w-0 flex-col gap-1.5 bg-surface px-5 py-4">
                 <dt className="tag">{figure.label}</dt>
@@ -352,7 +352,7 @@ function Document({ report }: { report: PublicReport }) {
         </article>
 
         <aside className="max-xl:mt-14 lg:max-xl:col-start-2">
-          <div className="rounded-panel border border-line xl:sticky xl:top-10">
+          <div className="rounded-panel border border-line bg-surface shadow-panel xl:sticky xl:top-10">
             <dl className="grid max-xl:sm:grid-cols-2 max-xl:sm:[&>div]:border-b-0">
               <Fact label="生成时间">{dateTime(report.finished_at).slice(0, 16)}</Fact>
               <Fact label="报告编号">{report.id.slice(0, 11)}</Fact>
@@ -367,8 +367,8 @@ function Document({ report }: { report: PublicReport }) {
           <div className={cx(column, "py-14 lg:py-20")}>
             <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-3">
               <div>
-                <div className="tag text-signal-text">来源</div>
-                <h2 className="mt-2 text-2xl font-medium tracking-tight">
+                <div className="tag">来源</div>
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight">
                   Agent 读过的 <span className="num">{report.read.length}</span> 个页面
                 </h2>
               </div>
@@ -379,8 +379,8 @@ function Document({ report }: { report: PublicReport }) {
                 const { host, path } = parts(url);
                 return (
                   <li key={url} className="min-w-0 border-r border-b border-line">
-                    <a href={url} target="_blank" rel="noreferrer noopener" className="group flex h-full gap-3.5 px-4 py-3.5 transition-colors hover:bg-raised/60">
-                      <span className="num pt-0.5 text-xs text-signal-text">{String(i + 1).padStart(2, "0")}</span>
+                    <a href={url} target="_blank" rel="noreferrer noopener" className="group flex h-full gap-3.5 px-4 py-3.5 transition-colors hover:bg-fill">
+                      <span className="num pt-0.5 text-xs text-ink-3">{String(i + 1).padStart(2, "0")}</span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2.5">
                           <span className="truncate font-medium text-ink">{host}</span>

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, type APIKey, type KeyUsage, type RoutedTool } from "../lib/api";
 import { compact, percent, toolLabel } from "../lib/format";
 import { Drawer } from "../ui/overlays";
-import { cx, Empty, Info, Segmented, Spinner, Table, Td, Th, Tooltip } from "../ui/primitives";
+import { cx, Empty, Info, Loading, Segmented, Stat, StatGrid, Table, Td, Th, Tooltip } from "../ui/primitives";
 import { ProviderName } from "./ProviderName";
 
 type Days = "7" | "30" | "90" | "365";
@@ -47,9 +47,7 @@ export function KeyUsageDrawer({ apiKey, onClose }: { apiKey: APIKey | null; onC
           />
         </div>
         {!usage ? (
-          <div className="flex justify-center py-10">
-            <Spinner />
-          </div>
+          <Loading rows={5} className="rounded-panel border border-line" />
         ) : usage.total.calls === 0 ? (
           <Empty icon={<BarChart3 />} title="所选时间范围内没有用量" />
         ) : (
@@ -65,12 +63,12 @@ function Report({ usage }: { usage: KeyUsage }) {
   const kinds = (["search", "dev_search", "fetch"] as RoutedTool[]).filter((kind) => usage.providers.some((p) => p.kind === kind));
   return (
     <>
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-        <Figure label="调用" value={total.calls.toLocaleString()} detail={total.errors ? `${total.errors} 次失败` : "无失败"} />
-        <Figure label="输入 Token" value={tokens(total.input_tokens)} detail={total.cache_read_tokens ? `缓存命中 ${percent(total.cache_read_tokens, total.input_tokens)}` : "无缓存命中"} />
-        <Figure label="输出 Token" value={tokens(total.output_tokens)} />
-        <Figure label="上游请求" value={usage.providers.reduce((sum, p) => sum + p.calls, 0).toLocaleString()} detail="搜索与抓取提供商" />
-      </dl>
+      <StatGrid className="grid-cols-2 shadow-none sm:grid-cols-4">
+        <Stat label="调用" value={total.calls.toLocaleString()} detail={total.errors ? `${total.errors} 次失败` : "无失败"} />
+        <Stat label="输入 Token" value={tokens(total.input_tokens)} detail={total.cache_read_tokens ? `缓存命中 ${percent(total.cache_read_tokens, total.input_tokens)}` : "无缓存命中"} />
+        <Stat label="输出 Token" value={tokens(total.output_tokens)} detail="—" />
+        <Stat label="上游请求" value={usage.providers.reduce((sum, p) => sum + p.calls, 0).toLocaleString()} detail="搜索与抓取提供商" />
+      </StatGrid>
 
       <Group title="每日调用">
         <Daily usage={usage} />
@@ -173,20 +171,10 @@ function Report({ usage }: { usage: KeyUsage }) {
   );
 }
 
-function Figure({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <div>
-      <dt className="tag normal-case">{label}</dt>
-      <dd className="num mt-1 text-xl">{value}</dd>
-      {detail && <dd className="mt-0.5 text-xs text-ink-3">{detail}</dd>}
-    </div>
-  );
-}
-
 function Group({ title, info, children }: { title: string; info?: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="flex items-center gap-1 text-sm font-medium">
+      <h3 className="t-heading flex items-center gap-1.5">
         {title}
         {info && <Info>{info}</Info>}
       </h3>
@@ -221,15 +209,15 @@ function Daily({ usage }: { usage: KeyUsage }) {
                 <span className="h-px bg-line-strong" />
               ) : (
                 <>
-                  {d.errors > 0 && <span className="rounded-t-[2px] bg-err" style={{ height: `${Math.max(2, (d.errors / peak) * 100)}%` }} />}
-                  <span className={cx("bg-signal", d.errors === 0 && "rounded-t-[2px]")} style={{ height: `${Math.max(1, ((d.calls - d.errors) / peak) * 100)}%` }} />
+                  {d.errors > 0 && <span className="rounded-t-tag bg-err" style={{ height: `${Math.max(2, (d.errors / peak) * 100)}%` }} />}
+                  <span className={cx("bg-chart-1", d.errors === 0 && "rounded-t-tag")} style={{ height: `${Math.max(1, ((d.calls - d.errors) / peak) * 100)}%` }} />
                 </>
               )}
             </div>
           </Tooltip>
         ))}
       </div>
-      <div className="tag mt-2 flex justify-between normal-case">
+      <div className="num mt-2 flex justify-between text-2xs text-ink-3">
         <span>{day(usage.days[0].ts)}</span>
         <span>峰值 {peak} 次 / 日</span>
         <span>{day(usage.days[usage.days.length - 1].ts)}</span>

@@ -424,7 +424,7 @@ function FetchResultView({ result, from, rendered, onNext }: { result: FetchResu
       {!result.error && total > 0 && (start > 0 || end < total) && (
         <footer className="sticky bottom-0 flex items-center gap-4 rounded-b-panel border-t border-line bg-surface px-4 py-3">
           <div className="min-w-0 flex-1">
-            <div className="relative h-1.5 rounded-full bg-sunken">
+            <div className="relative h-1.5 rounded-full bg-fill-strong">
               <span className="absolute inset-y-0 rounded-full bg-signal-text" style={{ left: `${(start / total) * 100}%`, width: `${Math.max(0.5, ((end - start) / total) * 100)}%` }} />
             </div>
             <div className="num mt-1.5 text-xs text-ink-3">

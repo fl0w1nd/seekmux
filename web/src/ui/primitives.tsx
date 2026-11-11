@@ -1,6 +1,13 @@
 import { clsx, type ClassValue } from "clsx";
-import { Check, ChevronRight, CircleHelp, Copy, Eye, EyeOff, LoaderCircle } from "lucide-react";
-import { Collapsible as RadixCollapsible, Popover as RadixPopover, Switch as RadixSwitch, Tabs as RadixTabs, Tooltip as RadixTooltip } from "radix-ui";
+import { Check, ChevronDown, ChevronRight, CircleHelp, Copy, Eye, EyeOff, LoaderCircle } from "lucide-react";
+import {
+  Collapsible as RadixCollapsible,
+  Popover as RadixPopover,
+  Select as RadixSelect,
+  Switch as RadixSwitch,
+  Tabs as RadixTabs,
+  Tooltip as RadixTooltip,
+} from "radix-ui";
 import {
   useId,
   useRef,
@@ -11,7 +18,6 @@ import {
   type PointerEvent,
   type ReactElement,
   type ReactNode,
-  type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
 
@@ -21,11 +27,12 @@ export const cx = (...values: ClassValue[]) => clsx(values);
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
+// Filled, not outlined: a control inside a panel must not draw a second box.
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: "bg-signal text-signal-ink font-medium hover:bg-signal-hover",
-  secondary: "border border-line-strong bg-surface text-ink hover:bg-raised",
-  ghost: "text-ink-2 hover:bg-raised hover:text-ink",
-  danger: "border border-err/40 text-err hover:bg-err/10",
+  secondary: "bg-fill text-ink hover:bg-fill-strong",
+  ghost: "text-ink-2 hover:bg-fill hover:text-ink",
+  danger: "bg-err/10 text-err hover:bg-err/15",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -36,16 +43,18 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 export function Button({ variant = "secondary", size = "md", icon, loading, className, children, disabled, ...rest }: ButtonProps) {
+  // A primary action that cannot be taken goes neutral, rather than a faded signal.
+  const idle = disabled && !loading;
   return (
     <button
       type="button"
       disabled={disabled || loading}
       className={cx(
-        "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-ctl whitespace-nowrap transition-colors",
-        "disabled:opacity-45 [&_svg]:size-3.5 [&_svg]:shrink-0",
-        size === "sm" ? "h-7 px-2 text-xs" : "h-8 px-3 text-sm",
+        "press inline-flex shrink-0 items-center justify-center gap-1.5 rounded-ctl whitespace-nowrap",
+        "[&_svg]:size-3.5 [&_svg]:shrink-0",
+        size === "sm" ? "h-7 px-2.5 text-xs" : "h-8 px-3 text-sm",
         !children && (size === "sm" ? "w-7 px-0" : "w-8 px-0"),
-        buttonVariants[variant],
+        idle && variant === "primary" ? "bg-fill-strong font-medium text-ink-3" : cx(buttonVariants[variant], idle && "opacity-45"),
         className,
       )}
       {...rest}
@@ -56,17 +65,40 @@ export function Button({ variant = "secondary", size = "md", icon, loading, clas
   );
 }
 
+/** The look of a square icon-only control, for a link that acts as one. */
+export const iconButton = (size: "sm" | "md" = "md") =>
+  cx("press inline-grid shrink-0 place-items-center rounded-ctl text-ink-3 hover:bg-fill hover:text-ink [&_svg]:size-4", size === "sm" ? "size-7" : "size-8");
+
+/** A square control that shows only an icon; `label` names it for assistive technology and its tooltip. */
+export function IconButton({
+  icon,
+  label,
+  size = "md",
+  tooltip = true,
+  className,
+  ...rest
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & { icon: ReactNode; label: string; size?: "sm" | "md"; tooltip?: boolean }) {
+  const button = (
+    <button type="button" aria-label={label} className={cx(iconButton(size), "disabled:opacity-45", className)} {...rest}>
+      {icon}
+    </button>
+  );
+  return tooltip ? <Tooltip content={label}>{button}</Tooltip> : button;
+}
+
 /* ---------- Form controls ---------- */
 
 /** Controls fill their container unless the caller sets a width. */
 const fill = (className?: string) => !/(^|\s)w-/.test(className ?? "") && "w-full";
 
-const control =
-  "rounded-ctl border border-line bg-sunken px-2.5 text-sm text-ink placeholder:text-ink-3 transition-colors " +
-  "hover:border-line-strong focus:border-signal-text focus:outline-none disabled:opacity-50 aria-[invalid=true]:border-err";
+/** A field: the brightest layer, a hairline that darkens on hover and rings on focus. */
+export const field =
+  "rounded-ctl border border-line-strong bg-surface text-sm text-ink placeholder:text-ink-3 transition-[border-color,box-shadow] " +
+  "hover:border-ink-3/45 focus:border-signal-text focus:shadow-ring focus:outline-none disabled:opacity-50 " +
+  "aria-[invalid=true]:border-err aria-[invalid=true]:focus:shadow-none";
 
 export function Input({ className, mono, ...rest }: InputHTMLAttributes<HTMLInputElement> & { mono?: boolean }) {
-  return <input className={cx(control, fill(className), "h-8", mono && "num", className)} spellCheck={false} autoComplete="off" {...rest} />;
+  return <input className={cx(field, "h-8 px-2.5", fill(className), mono && "num", className)} spellCheck={false} autoComplete="off" {...rest} />;
 }
 
 // Marks a field as none of a password manager's business (Bitwarden, 1Password, LastPass, Dashlane).
@@ -103,23 +135,110 @@ export function PasswordInput({ className, plain, ...rest }: Omit<InputHTMLAttri
 }
 
 export function Textarea({ className, mono, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement> & { mono?: boolean }) {
-  return <textarea className={cx(control, fill(className), "min-h-24 resize-y py-2 leading-5", mono && "num text-xs", className)} spellCheck={false} {...rest} />;
+  return <textarea className={cx(field, "min-h-24 resize-y px-2.5 py-2 leading-5", fill(className), mono && "num text-xs", className)} spellCheck={false} {...rest} />;
 }
 
-export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
+export interface SelectOption {
+  value: string;
+  label: ReactNode;
+  disabled?: boolean;
+}
+export interface SelectGroup {
+  group: string;
+  options: SelectOption[];
+}
+
+// Radix reserves the empty string for "nothing chosen"; an option worth "" travels under this name.
+const none = "\u0000none";
+const encode = (value: string) => (value === "" ? none : value);
+const decode = (value: string) => (value === none ? "" : value);
+
+/** One value out of a list: a field that opens the list in place, styled like every other field. */
+export function Select({
+  value,
+  onChange,
+  options,
+  placeholder,
+  disabled,
+  mono,
+  size = "md",
+  className,
+  "aria-label": label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: (SelectOption | SelectGroup)[];
+  placeholder?: string;
+  disabled?: boolean;
+  mono?: boolean;
+  size?: "sm" | "md";
+  className?: string;
+  "aria-label"?: string;
+}) {
+  const item = (option: SelectOption) => (
+    <RadixSelect.Item
+      key={option.value}
+      value={encode(option.value)}
+      disabled={option.disabled}
       className={cx(
-        control,
-        fill(className),
-        "h-8 appearance-none bg-[length:10px] bg-[position:right_0.6rem_center] bg-no-repeat pr-7",
-        "bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 10 6%22><path d=%22M1 1l4 4 4-4%22 fill=%22none%22 stroke=%22%23808a80%22 stroke-width=%221.5%22 stroke-linecap=%22round%22/></svg>')]",
-        className,
+        "relative flex min-h-8 cursor-pointer items-center rounded-thumb py-1.5 pr-3 pl-7 text-sm text-ink outline-none select-none",
+        "data-disabled:cursor-not-allowed data-disabled:opacity-45 data-highlighted:bg-fill",
+        mono && "num",
       )}
-      {...rest}
     >
-      {children}
-    </select>
+      <RadixSelect.ItemIndicator className="absolute left-2 inline-flex">
+        <Check className="size-3.5 text-signal-text" />
+      </RadixSelect.ItemIndicator>
+      <RadixSelect.ItemText>{option.label}</RadixSelect.ItemText>
+    </RadixSelect.Item>
+  );
+  // Without an option worth "", an empty value is no choice yet, and shows the placeholder.
+  const offered = options.some((entry) => ("group" in entry ? entry.options : [entry]).some((option) => option.value === ""));
+  return (
+    <RadixSelect.Root value={value === "" && !offered ? "" : encode(value)} onValueChange={(v) => onChange(decode(v))} disabled={disabled}>
+      <RadixSelect.Trigger
+        aria-label={label}
+        className={cx(
+          field,
+          "group/select inline-flex items-center justify-between gap-1.5 pr-2 pl-2.5 text-left whitespace-nowrap data-placeholder:text-ink-3 data-[state=open]:border-signal-text data-[state=open]:shadow-ring",
+          size === "sm" ? "h-7 text-xs" : "h-8",
+          mono && "num",
+          fill(className),
+          className,
+        )}
+      >
+        <span className="min-w-0 truncate">
+          <RadixSelect.Value placeholder={placeholder} />
+        </span>
+        <RadixSelect.Icon className="shrink-0 text-ink-3">
+          <ChevronDown className="size-3.5 transition-transform group-data-[state=open]/select:rotate-180" />
+        </RadixSelect.Icon>
+      </RadixSelect.Trigger>
+      <RadixSelect.Portal>
+        <RadixSelect.Content
+          position="popper"
+          sideOffset={4}
+          collisionPadding={12}
+          className={cx(
+            "z-50 max-h-(--radix-select-content-available-height) min-w-(--radix-select-trigger-width) max-w-[calc(100vw-1.5rem)] animate-in overflow-hidden",
+            "rounded-panel bg-overlay shadow-overlay",
+          )}
+        >
+          <RadixSelect.Viewport className="p-1">
+            {options.map((entry) =>
+              "group" in entry ? (
+                <RadixSelect.Group key={entry.group} className="not-first:mt-1 not-first:border-t not-first:border-line not-first:pt-1">
+                  <RadixSelect.Label className="tag px-2 pt-1.5 pb-1">{entry.group}</RadixSelect.Label>
+                  {entry.options.map(item)}
+                </RadixSelect.Group>
+              ) : (
+                item(entry)
+              ),
+            )}
+          </RadixSelect.Viewport>
+        </RadixSelect.Content>
+      </RadixSelect.Portal>
+    </RadixSelect.Root>
   );
 }
 
@@ -158,7 +277,7 @@ export function NumberInput({
         onBlur={() => setText(null)}
         {...rest}
       />
-      {shown && <span className="tag pointer-events-none absolute inset-y-0 right-2.5 flex items-center normal-case">{shown}</span>}
+      {shown && <span className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center text-xs text-ink-3">{shown}</span>}
     </div>
   );
 }
@@ -167,12 +286,12 @@ export function Switch(props: ComponentProps<typeof RadixSwitch.Root>) {
   return (
     <RadixSwitch.Root
       className={cx(
-        "relative h-5 w-9 shrink-0 rounded-full border border-line-strong bg-sunken transition-colors",
-        "data-[state=checked]:border-signal data-[state=checked]:bg-signal disabled:opacity-45",
+        "relative h-5 w-9 shrink-0 rounded-full bg-fill-strong transition-colors hover:bg-ink-3/30",
+        "data-[state=checked]:bg-signal data-[state=checked]:hover:bg-signal-hover disabled:opacity-45",
       )}
       {...props}
     >
-      <RadixSwitch.Thumb className="block size-3.5 translate-x-0.5 rounded-full bg-ink-3 transition-transform data-[state=checked]:translate-x-[18px] data-[state=checked]:bg-signal-ink" />
+      <RadixSwitch.Thumb className="block size-4 translate-x-0.5 rounded-full bg-thumb shadow-thumb transition-transform duration-200 ease-settle data-[state=checked]:translate-x-[18px]" />
     </RadixSwitch.Root>
   );
 }
@@ -193,14 +312,7 @@ export function Segmented<T extends string>({
   stretch?: boolean;
 }) {
   return (
-    <div
-      role="radiogroup"
-      className={cx(
-        "items-stretch rounded-ctl border border-line bg-sunken p-0.5",
-        size === "sm" ? "h-7" : "h-8",
-        stretch ? "flex w-full" : "inline-flex",
-      )}
-    >
+    <div role="radiogroup" className={cx("items-stretch gap-0.5 rounded-ctl bg-fill p-0.5", size === "sm" ? "h-7" : "h-8", stretch ? "flex w-full" : "inline-flex")}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -209,10 +321,10 @@ export function Segmented<T extends string>({
           aria-checked={option.value === value}
           onClick={() => onChange(option.value)}
           className={cx(
-            "inline-flex items-center gap-1.5 rounded-[3px] px-2.5 whitespace-nowrap transition-colors [&_svg]:size-3.5",
+            "inline-flex items-center gap-1.5 rounded-thumb whitespace-nowrap transition-[color,background-color,box-shadow] duration-150 [&_svg]:size-3.5",
             stretch && "flex-1 justify-center",
-            size === "sm" ? "text-xs" : "text-sm",
-            option.value === value ? "bg-raised text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]" : "text-ink-3 hover:text-ink",
+            size === "sm" ? "px-2 text-xs" : "px-2.5 text-sm",
+            option.value === value ? "bg-thumb text-ink shadow-thumb" : "text-ink-2 hover:text-ink",
           )}
         >
           {option.label}
@@ -248,7 +360,9 @@ export function Field({
         <span
           id={id}
           className="text-xs font-medium text-ink-2"
-          onClick={(e) => e.currentTarget.closest("[role=group]")?.querySelector<HTMLElement>("input, textarea, select")?.focus()}
+          onClick={(e) =>
+            e.currentTarget.closest("[role=group]")?.querySelector<HTMLElement>("input, textarea, select, button[role=combobox]")?.focus()
+          }
         >
           {label}
         </span>
@@ -274,13 +388,13 @@ const toneText: Record<Tone, string> = {
 };
 
 /** The LED: a dot that carries a state. `live` makes it breathe. */
-export function Dot({ tone = "neutral", live, className }: { tone?: Tone; live?: boolean; className?: string }) {
+export function Dot({ tone = "neutral", live, halo = true, className }: { tone?: Tone; live?: boolean; halo?: boolean; className?: string }) {
   return (
     <span
       aria-hidden
       className={cx(
         "inline-block size-1.5 shrink-0 rounded-full bg-current",
-        tone === "neutral" ? "text-ink-3" : cx(toneText[tone], "shadow-[0_0_0_3px_color-mix(in_oklch,currentColor_20%,transparent)]"),
+        tone === "neutral" ? "text-ink-3" : cx(toneText[tone], halo && "ring-3 ring-current/18"),
         live && "animate-pulse-dot",
         className,
       )}
@@ -288,26 +402,62 @@ export function Dot({ tone = "neutral", live, className }: { tone?: Tone; live?:
   );
 }
 
-export function Badge({ tone = "neutral", dot, children, className }: { tone?: Tone; dot?: boolean; children: ReactNode; className?: string }) {
+/** A state in a dot and a word, with no box: for what is fine or neutral. */
+export function Status({ tone = "neutral", live, children, className }: { tone?: Tone; live?: boolean; children: ReactNode; className?: string }) {
+  return (
+    <span className={cx("inline-flex items-center gap-1.5 text-xs whitespace-nowrap text-ink-2", className)}>
+      <Dot tone={tone} live={live} />
+      {children}
+    </span>
+  );
+}
+
+/**
+ * A short label on a tinted ground, no border: a category, or a state that
+ * needs a look. A state that is fine is a `Status`.
+ */
+export function Badge({ tone = "neutral", dot, mono, children, className }: { tone?: Tone; dot?: boolean; mono?: boolean; children: ReactNode; className?: string }) {
   return (
     <span
       className={cx(
-        "inline-flex h-5 items-center gap-1.5 rounded-[3px] border px-1.5 font-mono text-2xs whitespace-nowrap",
-        tone === "neutral" ? "border-line text-ink-2" : cx(toneText[tone], "border-current/30 bg-current/8"),
+        "inline-flex h-5 items-center gap-1.5 rounded-tag px-1.5 whitespace-nowrap",
+        mono ? "num text-2xs" : "text-xs font-medium",
+        tone === "neutral" ? "bg-fill text-ink-2" : cx(toneText[tone], "bg-current/10"),
         className,
       )}
     >
-      {dot && <Dot tone={tone} />}
+      {dot && <Dot tone={tone} halo={false} />}
       <span className={cx("inline-flex items-center gap-1", tone !== "neutral" && toneText[tone])}>{children}</span>
     </span>
   );
 }
 
+/** A state in its weight: what is fine or neutral as a dot and a word, a problem as a tinted badge. */
+export function State({ tone, live, children }: { tone: Tone; live?: boolean; children: ReactNode }) {
+  return tone === "warn" || tone === "err" ? (
+    <Badge tone={tone} dot>
+      {children}
+    </Badge>
+  ) : (
+    <Status tone={tone} live={live}>
+      {children}
+    </Status>
+  );
+}
+
+/** A keyboard key, as named in a tooltip or beside an action. */
+export function Kbd({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <kbd className={cx("num inline-flex h-4.5 min-w-4.5 items-center justify-center rounded-tag bg-fill px-1 text-2xs text-ink-3 not-italic", className)}>
+      {children}
+    </kbd>
+  );
+}
+
 /* ---------- Containers ---------- */
 
-/** The basic container: a titled block with an optional index tag and actions. */
+/** The basic container: a titled block with optional actions. */
 export function Panel({
-  index,
   title,
   description,
   info,
@@ -316,7 +466,6 @@ export function Panel({
   className,
   flush,
 }: {
-  index?: string;
   title?: ReactNode;
   description?: ReactNode;
   info?: ReactNode;
@@ -327,14 +476,13 @@ export function Panel({
   flush?: boolean;
 }) {
   return (
-    <section className={cx("rounded-panel border border-line bg-surface", className)}>
+    <section className={cx("rounded-panel border border-line bg-surface shadow-panel", className)}>
       {(title || actions) && (
-        <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
+        <header className="flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
           <div className="min-w-0">
-            <h2 className="flex items-baseline gap-2 text-sm font-medium">
-              {index && <span className="tag text-signal-text">{index}</span>}
+            <h2 className="t-heading flex items-center gap-1.5">
               {title}
-              {info && <Info label={infoLabel(title)} className="self-center">{info}</Info>}
+              {info && <Info label={infoLabel(title)}>{info}</Info>}
             </h2>
             {description && <p className="mt-0.5 text-xs text-ink-3">{description}</p>}
           </div>
@@ -353,7 +501,7 @@ export function Panel({
 export function Section({ title, summary, defaultOpen, children }: { title: ReactNode; summary?: ReactNode; defaultOpen?: boolean; children: ReactNode }) {
   return (
     <RadixCollapsible.Root defaultOpen={defaultOpen} className="group/section border-t border-line">
-      <RadixCollapsible.Trigger className="flex h-10 w-full items-center gap-2 px-4 text-left text-sm hover:bg-raised/60">
+      <RadixCollapsible.Trigger className="flex h-11 w-full items-center gap-2 px-4 text-left text-sm transition-colors hover:bg-fill">
         <ChevronRight className="size-3.5 shrink-0 text-ink-3 transition-transform group-data-[state=open]/section:rotate-90" />
         <span className="shrink-0 font-medium">{title}</span>
         {summary && <span className="ml-auto min-w-0 truncate text-xs text-ink-3">{summary}</span>}
@@ -393,22 +541,27 @@ export function Choice({
   detail?: ReactNode;
 }) {
   return (
-    <div className={cx("border-b border-line last:border-b-0", checked && "bg-raised")}>
+    <div className={cx("border-b border-line transition-colors last:border-b-0", checked && "bg-fill")}>
       <button
         type="button"
         role="radio"
         aria-checked={checked}
         disabled={disabled}
         onClick={onSelect}
-        className="flex h-9 w-full items-center gap-2.5 px-3 text-left text-sm hover:bg-raised/60 disabled:cursor-not-allowed disabled:opacity-50"
+        className="flex h-10 w-full items-center gap-2.5 px-3 text-left text-sm hover:bg-fill disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span className={cx("grid size-3.5 shrink-0 place-items-center rounded-full border", checked ? "border-signal-text" : "border-line-strong")}>
-          {checked && <span className="size-1.5 rounded-full bg-signal-text" />}
+        <span
+          className={cx(
+            "grid size-4 shrink-0 place-items-center rounded-full border transition-colors",
+            checked ? "border-signal-text bg-signal-text" : "border-line-strong bg-surface",
+          )}
+        >
+          {checked && <span className="size-1.5 rounded-full bg-surface" />}
         </span>
         <span className={cx("min-w-0 truncate", checked && "font-medium", mono && "num")}>{title}</span>
         {status && <span className="ml-auto shrink-0">{status}</span>}
       </button>
-      {detail && <div className="num -mt-1 px-3 pb-2 pl-9 text-xs leading-relaxed break-words text-ink-3">{detail}</div>}
+      {detail && <div className="num -mt-1.5 px-3 pb-2.5 pl-9.5 text-xs leading-relaxed break-words text-ink-3">{detail}</div>}
     </div>
   );
 }
@@ -416,10 +569,9 @@ export function Choice({
 /** The status of a choice: a dot and a word. */
 export function ChoiceStatus({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <span className="flex items-center gap-1.5 text-xs text-ink-3">
-      <Dot tone={tone} />
+    <Status tone={tone} className="text-ink-3">
       {children}
-    </span>
+    </Status>
   );
 }
 
@@ -436,16 +588,16 @@ export function Tabs<T extends string>({ value, onChange, className, children }:
 /** The tab strip of a pane; `actions` sit at its right end. */
 export function TabList<T extends string>({ tabs, actions, flush }: { tabs: { value: T; label: ReactNode; disabled?: boolean }[]; actions?: ReactNode; flush?: boolean }) {
   return (
-    <div className={cx("flex h-10 shrink-0 items-center gap-4 border-b border-line", !flush && "px-4")}>
-      <RadixTabs.List className="flex h-full items-stretch gap-4">
+    <div className={cx("flex h-11 shrink-0 items-center gap-4 border-b border-line", !flush && "px-4")}>
+      <RadixTabs.List className="flex h-full items-stretch gap-5">
         {tabs.map((tab) => (
           <RadixTabs.Trigger
             key={tab.value}
             value={tab.value}
             disabled={tab.disabled}
             className={cx(
-              "relative inline-flex items-center gap-1.5 text-sm text-ink-3 transition-colors hover:text-ink disabled:opacity-45 data-[state=active]:font-medium data-[state=active]:text-ink",
-              "after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full data-[state=active]:after:bg-signal-text",
+              "relative inline-flex items-center gap-1.5 text-sm text-ink-2 transition-colors hover:text-ink disabled:opacity-45 data-[state=active]:text-ink",
+              "after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:transition-colors data-[state=active]:after:bg-ink",
             )}
           >
             {tab.label}
@@ -484,7 +636,7 @@ export function Row({
   return (
     <div
       className={cx(
-        "grid grid-cols-1 gap-x-4 gap-y-1.5 border-b border-line px-4 py-2.5 last:border-b-0 sm:grid-cols-[11rem_minmax(0,1fr)]",
+        "grid min-h-13 grid-cols-1 gap-x-4 gap-y-1.5 border-b border-line px-4 py-2.5 last:border-b-0 sm:grid-cols-[11rem_minmax(0,1fr)]",
         align === "start" ? "items-start" : "items-center",
         className,
       )}
@@ -501,20 +653,22 @@ export function Row({
   );
 }
 
-export function Empty({ icon, title, children }: { icon?: ReactNode; title: string; children?: ReactNode }) {
+/** Nothing to show: a title, and the action when there is something to do. `page` fills a pane. */
+export function Empty({ icon, title, children, size = "panel" }: { icon?: ReactNode; title: string; children?: ReactNode; size?: "panel" | "page" }) {
   return (
-    <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-      {icon && <div className="text-ink-3 [&_svg]:size-5">{icon}</div>}
-      <div className="text-sm text-ink-2">{title}</div>
-      {children && <div className="max-w-sm text-xs text-ink-3">{children}</div>}
+    <div className={cx("flex flex-col items-center justify-center gap-3 px-6 text-center", size === "page" ? "min-h-72 py-16" : "py-10")}>
+      {icon && <div className="grid size-10 place-items-center rounded-full bg-fill text-ink-3 [&_svg]:size-4.5">{icon}</div>}
+      <div className="text-sm font-medium text-ink-2">{title}</div>
+      {children && <div className="flex max-w-sm flex-wrap items-center justify-center gap-2 text-xs text-ink-3">{children}</div>}
     </div>
   );
 }
 
+/** Something wrong now, and its fix: a tinted strip, no border. */
 export function Notice({ tone = "info", children, className }: { tone?: Tone; children: ReactNode; className?: string }) {
   return (
-    <div className={cx("flex gap-2.5 rounded-ctl border border-current/25 bg-current/6 px-3 py-2 text-xs", toneText[tone], className)}>
-      <Dot tone={tone} className="mt-1.5" />
+    <div className={cx("flex gap-2.5 rounded-ctl bg-current/8 px-3 py-2.5 text-sm", toneText[tone], className)}>
+      <Dot tone={tone} halo={false} className="mt-[0.4375rem]" />
       <div className="min-w-0 flex-1 text-ink-2">{children}</div>
     </div>
   );
@@ -524,25 +678,57 @@ export function Spinner({ className }: { className?: string }) {
   return <LoaderCircle className={cx("size-4 animate-spin text-ink-3", className)} />;
 }
 
+/** A block the size of what is on its way; `panel` for one that stands in for a whole panel. */
+export function Skeleton({ className, panel }: { className?: string; panel?: boolean }) {
+  return <span aria-hidden className={cx("skeleton block", panel ? "rounded-panel" : "h-3 rounded-tag", className)} />;
+}
+
+/** Rows on their way: the shape of a list or a table while it loads. */
+export function Loading({ rows = 4, className }: { rows?: number; className?: string }) {
+  const widths = ["w-2/5", "w-3/5", "w-1/3", "w-1/2", "w-2/3"];
+  return (
+    <div role="status" aria-label="加载中" className={className}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex h-11 items-center gap-4 border-b border-line px-4 last:border-b-0">
+          <Skeleton className="w-16" />
+          <Skeleton className={widths[i % widths.length]} />
+          <Skeleton className="ml-auto w-12" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ---------- Data ---------- */
 
-/** A meter of used slots. Up to 24 slots are drawn one by one; beyond that it is a bar. */
+/** Headline figures side by side, split by hairlines. */
+export function StatGrid({ className, children }: { className?: string; children: ReactNode }) {
+  return <div className={cx("grid gap-px overflow-hidden rounded-panel border border-line bg-line bg-clip-padding shadow-panel", className)}>{children}</div>;
+}
+
+/** One headline figure: a label, the value, a line of detail. */
+export function Stat({ label, value, unit, detail, tone, size = "lg" }: { label: ReactNode; value: ReactNode; unit?: ReactNode; detail?: ReactNode; tone?: Tone; size?: "md" | "lg" }) {
+  return (
+    <div className={cx("min-w-0 bg-surface px-4", size === "lg" ? "py-3.5" : "py-3")}>
+      <div className="tag truncate">{label}</div>
+      <div className={cx("flex min-w-0 items-baseline gap-1.5", size === "lg" ? "mt-1" : "mt-0.5")}>
+        <span className={cx("min-w-0 truncate", size === "lg" ? "num text-2xl font-medium tracking-tight" : "text-sm text-ink", tone && toneText[tone])}>{value}</span>
+        {unit && <span className="shrink-0 text-xs text-ink-3">{unit}</span>}
+      </div>
+      {detail && <div className="mt-1 truncate text-xs text-ink-3">{detail}</div>}
+    </div>
+  );
+}
+
+/** How much of a limit is in use, as a bar. */
 export function Meter({ used, limit, tone = "signal" }: { used: number; limit: number; tone?: Tone }) {
-  if (limit <= 0) return <span className="tag normal-case">不限</span>;
+  if (limit <= 0) return <span className="text-xs text-ink-3">不限</span>;
   const full = used >= limit;
   const color = full ? "bg-warn" : tone === "signal" ? "bg-signal-text" : "bg-ok";
-  if (limit <= 24) {
-    return (
-      <span className="inline-flex gap-px" role="meter" aria-valuenow={used} aria-valuemax={limit}>
-        {Array.from({ length: limit }, (_, i) => (
-          <span key={i} className={cx("h-3 w-1 rounded-[1px]", i < used ? color : "bg-line")} />
-        ))}
-      </span>
-    );
-  }
+  const share = Math.min(100, (used / limit) * 100);
   return (
-    <span className="inline-block h-1.5 w-24 overflow-hidden rounded-full bg-line" role="meter" aria-valuenow={used} aria-valuemax={limit}>
-      <span className={cx("block h-full rounded-full transition-[width] duration-500 ease-settle", color)} style={{ width: `${Math.min(100, (used / limit) * 100)}%` }} />
+    <span className="inline-block h-1 w-20 overflow-hidden rounded-full bg-fill-strong" role="meter" aria-valuenow={used} aria-valuemax={limit}>
+      <span className={cx("block h-full rounded-full transition-[width] duration-500 ease-settle", color)} style={{ width: `${used > 0 ? Math.max(6, share) : 0}%` }} />
     </span>
   );
 }
@@ -583,6 +769,8 @@ export function CodeBlock({ children, copy, className, wrap }: { children: strin
 function infoLabel(label: ReactNode): string {
   return typeof label === "string" ? `${label}说明` : "说明";
 }
+
+const floating = "z-50 animate-in rounded-ctl bg-overlay text-xs text-ink-2 shadow-overlay";
 
 /**
  * The ⓘ beside a label. It opens on hover with a mouse and on tap on a touch
@@ -642,7 +830,7 @@ export function Info({
           }}
           onPointerEnter={hover(true)}
           onPointerLeave={hover(false)}
-          className="z-50 max-w-72 animate-in rounded-ctl border border-line-strong bg-overlay px-2.5 py-1.5 text-xs leading-relaxed font-normal text-ink-2 shadow-overlay"
+          className={cx(floating, "max-w-72 px-3 py-2 leading-relaxed font-normal")}
         >
           {children}
         </RadixPopover.Content>
@@ -656,10 +844,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
     <RadixTooltip.Root>
       <RadixTooltip.Trigger asChild>{children}</RadixTooltip.Trigger>
       <RadixTooltip.Portal>
-        <RadixTooltip.Content
-          sideOffset={6}
-          className="z-50 max-w-xs animate-in rounded-ctl border border-line-strong bg-overlay px-2 py-1 text-xs text-ink-2 shadow-overlay"
-        >
+        <RadixTooltip.Content sideOffset={6} className={cx(floating, "max-w-xs px-2 py-1")}>
           {content}
         </RadixTooltip.Content>
       </RadixTooltip.Portal>
@@ -670,11 +855,11 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
 /* ---------- Table ---------- */
 
 export const Table = ({ className, ...rest }: ComponentProps<"table">) => (
-  <table className={cx("w-full border-collapse text-sm", className)} {...rest} />
+  <table className={cx("w-full border-collapse text-sm [&>tbody>tr:last-child>td]:border-b-0", className)} {...rest} />
 );
 export const Th = ({ className, ...rest }: ComponentProps<"th">) => (
-  <th className={cx("tag h-8 border-b border-line px-3 text-left font-normal whitespace-nowrap first:pl-4 last:pr-4", className)} {...rest} />
+  <th className={cx("tag h-9 border-b border-line px-3 text-left whitespace-nowrap first:pl-4 last:pr-4", className)} {...rest} />
 );
 export const Td = ({ className, ...rest }: ComponentProps<"td">) => (
-  <td className={cx("h-9 border-b border-line px-3 py-1.5 first:pl-4 last:pr-4", className)} {...rest} />
+  <td className={cx("h-11 border-b border-line px-3 py-2 first:pl-4 last:pr-4", className)} {...rest} />
 );

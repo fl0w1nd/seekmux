@@ -12,7 +12,7 @@ export function ResearchPage() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Panel index="01" title="模型与读取" info="研究模型需支持工具调用" flush>
+      <Panel title="模型与读取" info="研究模型需支持工具调用" flush>
         {research.enabled && !configured && <Notice tone="err" className="m-4 mb-0">未选择研究模型，配置无法保存。</Notice>}
         <Row label="研究模型">
           <ModelSelect value={research.model} onChange={(id) => update((d) => void (d.research.model = id))} />
@@ -51,7 +51,7 @@ export function ResearchPage() {
         </Row>
       </Panel>
 
-      <Panel index="02" title="运行预算" info="任一项用尽时，Agent 停止检索，基于已有材料撰写报告" flush>
+      <Panel title="运行预算" info="任一项用尽时，Agent 停止检索，基于已有材料撰写报告" flush>
         <Row label="最大步数" info={budgetInfo.max_steps}>
           <NumberInput className="w-24" min={1} suffix="步" value={research.max_steps} onChange={(v) => update((d) => void (d.research.max_steps = Math.round(v)))} />
         </Row>
@@ -69,7 +69,7 @@ export function ResearchPage() {
         </Row>
       </Panel>
 
-      <Panel index="03" title="系统提示词" actions={<span className="tag normal-case">支持 {"{{date}}"}</span>}>
+      <Panel title="系统提示词" actions={<span className="num text-2xs text-ink-3">支持 {"{{date}}"}</span>}>
         <Textarea
           rows={9}
           aria-label="研究 Agent 的指令"

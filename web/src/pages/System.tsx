@@ -33,7 +33,7 @@ export function SystemPage() {
     <>
       <PageHeader title="系统" />
       <div className="flex flex-col gap-3">
-        <Panel index="01" title="请求日志" flush>
+        <Panel title="请求日志" flush>
           <Row label="保留天数" hint="研究报告链接同期失效">
             <NumberInput className="w-24" min={1} suffix="天" value={config.logs.retention_days} onChange={(v) => update((d) => void (d.logs.retention_days = Math.round(v)))} />
           </Row>
@@ -46,7 +46,6 @@ export function SystemPage() {
         </Panel>
 
         <Panel
-          index="02"
           title="自动熔断"
           info="对搜索、抓取提供商与提取模型生效：连续失败达到阈值后暂时跳过，冷却期满放行一次试探请求"
           flush
@@ -64,7 +63,7 @@ export function SystemPage() {
           </Row>
         </Panel>
 
-        <Panel index="03" title="网络" flush>
+        <Panel title="网络" flush>
           <Row label="对外地址" hint="留空取请求到达的地址" info="研究报告链接与 OAuth 登录地址以此开头。Agent 经内网地址接入时需要填写。">
             <Input mono className="w-72" value={config.network.public_url ?? ""} placeholder="https://seekmux.example.com" onChange={(e) => update((d) => void (d.network.public_url = e.target.value.trim() || undefined))} />
           </Row>
@@ -81,7 +80,7 @@ export function SystemPage() {
           </Row>
         </Panel>
 
-        <Panel index="04" title="配置文件" flush>
+        <Panel title="配置文件" flush>
           <Row label="导出为 YAML" hint="含明文 API Key">
             <a href="/api/config/export" download>
               <Button icon={<Download />} tabIndex={-1}>
@@ -116,7 +115,7 @@ export function SystemPage() {
 
         <PasswordPanel />
 
-        <div className="tag px-1 normal-case">SeekMux {meta.version}</div>
+        <div className="num px-1 text-2xs text-ink-3">SeekMux {meta.version}</div>
       </div>
     </>
   );
@@ -145,7 +144,6 @@ function PasswordPanel() {
       }}
     >
       <Panel
-        index="05"
         title="管理员密码"
         flush
         actions={

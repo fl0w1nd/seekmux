@@ -112,7 +112,7 @@ export function NodeDetail({ node, text, total, origin = 0, onClose, closeClassN
             style={{ left: `${left}%`, width: `${Math.min(100 - left, (took / span) * 100)}%` }}
           />
         </div>
-        <div className="tag mt-1 flex justify-between normal-case">
+        <div className="num mt-1 flex justify-between text-2xs text-ink-3">
           <span>请求开始后 {duration(node.start_ms)}</span>
           <span>全程 {duration(span)}</span>
         </div>

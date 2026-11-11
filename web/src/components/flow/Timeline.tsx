@@ -71,7 +71,7 @@ export function Timeline({
   return (
     <div className={cx("overflow-x-auto", className)} onClick={onSelect ? () => onSelect(0) : undefined}>
       <div className="min-w-[34rem]">
-        <div className="tag flex border-b border-line py-1.5 pr-4 normal-case">
+        <div className="num flex border-b border-line py-1.5 pr-4 text-2xs text-ink-3">
           <span className="w-64 shrink-0 pl-4 max-lg:w-52">节点</span>
           <span className="flex flex-1 justify-between">
             <span>0</span>
@@ -115,11 +115,11 @@ export function Timeline({
                 className={cx(
                   "flex h-7 items-center border-b border-line pr-4 text-xs transition-colors last:border-b-0 focus-visible:outline-offset-[-2px]",
                   onSelect && "cursor-pointer",
-                  active ? "bg-raised" : onSelect && "hover:bg-raised/60",
+                  active ? "bg-fill-strong" : onSelect && "hover:bg-fill",
                 )}
               >
                 <span className="flex w-64 shrink-0 items-center gap-1.5 pr-3 max-lg:w-52" style={{ paddingLeft: `${1 + Math.min(depth, 6) * 0.625}rem` }}>
-                  <span className={cx("tag shrink-0 normal-case", active && "text-signal-text")}>{kind}</span>
+                  <span className={cx("tag shrink-0", active && "text-ink")}>{kind}</span>
                   {node.kind === "attempt" ? (
                     <ProviderName id={node.name ?? ""} icon="size-3" className="text-ink" />
                   ) : node.kind === "llm" || node.kind === "agent" ? (

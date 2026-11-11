@@ -11,11 +11,11 @@ export function FetchPage() {
 
   return (
     <div className="flex flex-col gap-3">
-      <Panel index="01" title="路由优先级" info="命中路由规则的 URL 不走此列表；调用方可用 fetch_engine 指定提供商。修改参数会清空页面缓存。" flush>
+      <Panel title="路由优先级" info="命中路由规则的 URL 不走此列表；调用方可用 fetch_engine 指定提供商。修改参数会清空页面缓存。" flush>
         <RouteList tool="fetch" />
       </Panel>
 
-      <Panel index="02" title="行为" flush>
+      <Panel title="行为" flush>
         <Row label="慢请求对冲" info="提供商超过阈值仍未返回时，并行请求下一个，采纳先成功的结果">
           <Switch checked={fetch.smart_fallback} onCheckedChange={(v) => update((d) => void (d.fetch.smart_fallback = v))} aria-label="慢请求对冲" />
           <NumberInput className="w-24" min={1} suffix="秒" disabled={!fetch.smart_fallback} value={fetch.slow_threshold_seconds} onChange={(v) => update((d) => void (d.fetch.slow_threshold_seconds = v))} aria-label="慢请求阈值" />
@@ -34,7 +34,7 @@ export function FetchPage() {
         </Row>
       </Panel>
 
-      <Panel index="03" title="提取模型" flush>
+      <Panel title="提取模型" flush>
         {!configured && (
           <div className="border-b border-line px-4 py-2.5">
             <Notice tone="warn">未配置提取模型，fetch 只返回原文。</Notice>
