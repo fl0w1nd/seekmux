@@ -190,7 +190,7 @@ export function CallInspector({
         <div className="@container flex flex-col gap-4">
           <div
             className={cx(
-              "grid grid-cols-2 gap-x-5 gap-y-3 rounded-panel border border-line bg-surface px-4 py-3.5 shadow-panel @xl:grid-cols-4",
+              "grid grid-cols-2 gap-x-5 gap-y-3 rounded-panel border border-line bg-surface px-4 py-3.5 @xl:grid-cols-4",
               entry && entry.input_tokens > 0
                 ? "@5xl:grid-cols-[minmax(4.5rem,0.75fr)_minmax(12.5rem,1.85fr)_minmax(5rem,0.9fr)_minmax(5.5rem,0.9fr)_minmax(5.5rem,0.9fr)_minmax(7.5rem,1.1fr)_minmax(6rem,0.95fr)_minmax(4.5rem,0.75fr)]"
                 : "@5xl:grid-cols-6",

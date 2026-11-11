@@ -4,7 +4,7 @@ import { api, type Config, type LLMProvider, type LLMType, type Model, type Reas
 import { Tripped, useStatus } from "../components/Health";
 import { useConfig } from "../lib/config";
 import { compact, duration } from "../lib/format";
-import { PageHeader } from "../Shell";
+import { PageHeader } from "../components/PageHeader";
 import { JSONInput, RateLimitInput, SecretInput } from "../ui/inputs";
 import { Dialog, useConfirm } from "../ui/overlays";
 import { Badge, Button, Empty, Field, Info, Input, Notice, NumberInput, Panel, Segmented, Select, Status, Table, Td, Th, Tooltip } from "../ui/primitives";

@@ -6,7 +6,7 @@ import { ModelChain, ModelSelect } from "../components/ModelPicker";
 import { api, type APIKey, type KeyPolicy, type Tool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { ago, compact, dateTime, toolLabel } from "../lib/format";
-import { PageHeader } from "../Shell";
+import { PageHeader } from "../components/PageHeader";
 import { RateLimitInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
 import { Badge, Button, CodeBlock, cx, Empty, Field, Info, Input, Loading, Notice, NumberInput, Panel, Section, Segmented, Switch, Table, Td, Th } from "../ui/primitives";

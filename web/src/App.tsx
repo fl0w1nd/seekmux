@@ -77,7 +77,7 @@ function Pages() {
           <Redirect to="/play/search" replace />
         </Route>
         {play && <Route path="/play/:page">{null}</Route>}
-        <Route path="/providers/:id?" component={ProvidersPage} />
+        <Route path="/providers/:category?/:id?" component={ProvidersPage} />
         {/* Self-hosted fetchers had a page of their own before they joined the providers. */}
         <Route path="/fetchers">
           <Redirect to="/providers" replace />

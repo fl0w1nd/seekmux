@@ -1,17 +1,18 @@
-import { ChevronLeft, ChevronRight, ExternalLink, Plus } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight, ExternalLink, Plus, Server } from "lucide-react";
+import { useState } from "react";
 import { Collapsible as RadixCollapsible } from "radix-ui";
 import { Link, Redirect, useLocation, useParams } from "wouter";
 import { CardRow, ProviderRoutes } from "../components/CardRow";
 import { healthLabel, Reenable, useStatus } from "../components/Health";
 import type { Fetcher, FetcherWorker, Provider, ProviderInfo, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
+import { providerCategories } from "../lib/pages";
 import { toolLabel } from "../lib/format";
 import { routingRules } from "../lib/routing";
-import { PageHeader } from "../Shell";
+import { PageHeader } from "../components/PageHeader";
 import { BrandIcon } from "../ui/brand";
 import { RateLimitInput, SecretInput } from "../ui/inputs";
-import { Button, cx, Dot, Info, Input, Notice, NumberInput, State, type Tone } from "../ui/primitives";
+import { Button, cx, Dot, Empty, Info, Input, Notice, NumberInput, Panel, State, type Tone } from "../ui/primitives";
 import { addFetcher, CreateFetcherDialog, FetcherDetail, fetcherState } from "./Fetchers";
 
 type Status = ReturnType<typeof useStatus>;
@@ -76,9 +77,12 @@ function useEntries(): { cloud: Entry[]; self: Entry[]; idle: Entry[] } {
   return { cloud, self, idle };
 }
 
-/** Every provider of the gateway: a directory rail on the left and the chosen provider's sheet on the right, in one frame. */
+/**
+ * The providers of one category: their list on the left and the chosen
+ * provider's settings on the right, in one frame.
+ */
 export function ProvidersPage() {
-  const { id } = useParams<{ id?: string }>();
+  const { category, id } = useParams<{ category?: string; id?: string }>();
   const { config, meta, update } = useConfig();
   const [, navigate] = useLocation();
   const [creating, setCreating] = useState(false);
@@ -90,144 +94,129 @@ export function ProvidersPage() {
   const remember = (worker: FetcherWorker) => setFresh((f) => ({ ...f, [worker.id]: worker.token }));
 
   const groups = useEntries();
-  const all = [...groups.cloud, ...groups.self, ...groups.idle];
+  const current = providerCategories.find((c) => c.value === category);
+  if (!current) {
+    // An address from before the categories names the provider straight after /providers.
+    if (category && groups.self.some((e) => e.id === category)) return <Redirect to={`/providers/self/${category}`} replace />;
+    if (category && [...groups.cloud, ...groups.idle].some((e) => e.id === category)) return <Redirect to={`/providers/cloud/${category}`} replace />;
+    return <Redirect to="/providers/cloud" replace />;
+  }
+
+  const base = `/providers/${current.value}`;
+  const self = current.value === "self";
+  const entries = self ? groups.self : [...groups.cloud, ...groups.idle];
   // Without one in the address, the wide layout shows the first.
-  const selected = all.find((e) => e.id === (id ?? all[0]?.id));
-  if (id && !selected) return <Redirect to="/providers" replace />;
+  const selected = entries.find((e) => e.id === (id ?? entries[0]?.id));
+  if (id && !selected) return <Redirect to={base} replace />;
+  const create = () => setCreating(true);
 
   return (
     <>
-      <PageHeader title="提供商" />
-      {id && (
-        <Link href="/providers" className="mb-2.5 inline-flex items-center gap-1 text-sm text-ink-3 transition-colors hover:text-ink lg:hidden">
-          <ChevronLeft className="size-4" />
-          全部提供商
-        </Link>
-      )}
-      <div className="overflow-hidden rounded-panel border border-line bg-surface shadow-panel lg:grid lg:min-h-[calc(100dvh-9.5rem)] lg:grid-cols-[15rem_minmax(0,1fr)]">
-        <nav aria-label="提供商" className={cx("flex flex-col border-line bg-bg/60 lg:border-r", id && "max-lg:hidden")}>
-          <ProviderList
-            groups={groups}
-            selected={id ? selected?.id : undefined}
-            fallback={selected?.id}
-            onCreate={() => setCreating(true)}
-          />
-        </nav>
-        <div className={cx("min-w-0 bg-surface", !id && "max-lg:hidden")}>
-          {selected?.fetcher ? (
-            <FetcherDetail
-              key={selected.id}
-              fetcher={selected.fetcher}
-              fresh={fresh}
-              remember={remember}
-              created={created === selected.id}
-              onGuideClosed={() => setCreated(undefined)}
-              onRemoved={() => navigate("/providers", { replace: true })}
-            />
-          ) : (
-            selected && <BuiltinDetail key={selected.id} id={selected.id} />
+      <PageHeader
+        section="提供商"
+        title={current.label}
+        actions={
+          self &&
+          entries.length > 0 && (
+            <Button variant="primary" icon={<Plus />} onClick={create}>
+              新建抓取器
+            </Button>
+          )
+        }
+      />
+      {self && entries.length === 0 ? (
+        <Panel>
+          <Empty size="page" icon={<Server />} title="尚无自托管抓取器">
+            <Button variant="primary" icon={<Plus />} onClick={create}>
+              新建抓取器
+            </Button>
+          </Empty>
+        </Panel>
+      ) : (
+        <>
+          {id && (
+            <Link href={base} className="mb-2.5 inline-flex items-center gap-1 text-sm text-ink-3 transition-colors hover:text-ink lg:hidden">
+              <ChevronLeft className="size-4" />
+              全部{current.label}
+            </Link>
           )}
-        </div>
-      </div>
+          <div className="overflow-hidden rounded-panel border border-line bg-surface lg:grid lg:min-h-[calc(100dvh-9rem)] lg:grid-cols-[14rem_minmax(0,1fr)]">
+            <nav aria-label={current.label} className={cx("border-line p-1.5 lg:border-r", id && "max-lg:hidden")}>
+              {self ? (
+                groups.self.map((e) => <EntryRow key={e.id} base={base} entry={e} active={e.id === selected?.id} />)
+              ) : (
+                <CloudList groups={groups} base={base} active={selected?.id} />
+              )}
+            </nav>
+            <div className={cx("min-w-0", !id && "max-lg:hidden")}>
+              {selected?.fetcher ? (
+                <FetcherDetail
+                  key={selected.id}
+                  fetcher={selected.fetcher}
+                  fresh={fresh}
+                  remember={remember}
+                  created={created === selected.id}
+                  onGuideClosed={() => setCreated(undefined)}
+                  onRemoved={() => navigate(base, { replace: true })}
+                />
+              ) : (
+                selected && <BuiltinDetail key={selected.id} id={selected.id} />
+              )}
+            </div>
+          </div>
+        </>
+      )}
       <CreateFetcherDialog
         open={creating}
         onClose={() => setCreating(false)}
         onCreate={(type, name) => {
-          const { id: created, worker } = addFetcher(config, meta, update, type, name);
+          const { id: made, worker } = addFetcher(config, meta, update, type, name);
           remember(worker);
-          setCreated(created);
+          setCreated(made);
           setCreating(false);
-          navigate(`/providers/${created}`);
+          navigate(`/providers/self/${made}`);
         }}
       />
     </>
   );
 }
 
-function ProviderList({
-  groups,
-  selected,
-  fallback,
-  onCreate,
-}: {
-  groups: ReturnType<typeof useEntries>;
-  selected?: string;
-  fallback?: string;
-  onCreate: () => void;
-}) {
-  // The highlighted row: the one in the address, else, in the wide layout, the one on show.
-  const active = selected ?? fallback;
+/** The cloud services that are set up, then a fold of those that are not. */
+function CloudList({ groups, base, active }: { groups: ReturnType<typeof useEntries>; base: string; active?: string }) {
   const [open, setOpen] = useState(false);
   const idleOpen = open || groups.idle.some((e) => e.id === active);
   return (
-    <div className="flex flex-1 flex-col">
-      <Group label="云服务" action={<span className="num text-2xs text-ink-3">{groups.cloud.length}</span>}>
-        {groups.cloud.map((e) => (
-          <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} />
-        ))}
-        {groups.cloud.length === 0 && <p className="px-2 pb-2 text-xs text-ink-3">尚未配置</p>}
-      </Group>
-      <Group
-        label="自托管"
-        action={
-          <button
-            type="button"
-            onClick={onCreate}
-            className="press -mr-1 inline-flex h-6 items-center gap-0.5 rounded-thumb px-1.5 text-xs text-ink-2 hover:bg-fill hover:text-ink"
-          >
-            <Plus className="size-3" />
-            新建
-          </button>
-        }
-      >
-        {groups.self.map((e) => (
-          <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} />
-        ))}
-        {groups.self.length === 0 && <p className="px-2 pb-2 text-xs text-ink-3">用已登录的浏览器读取页面</p>}
-      </Group>
+    <>
+      {groups.cloud.map((e) => (
+        <EntryRow key={e.id} base={base} entry={e} active={e.id === active} />
+      ))}
       {groups.idle.length > 0 && (
-        <RadixCollapsible.Root open={idleOpen} onOpenChange={setOpen} className="group/idle border-t border-line">
-          <RadixCollapsible.Trigger className="flex h-10 w-full items-center gap-1.5 px-3.5 text-left transition-colors hover:bg-fill">
+        <RadixCollapsible.Root open={idleOpen} onOpenChange={setOpen} className={cx("group/idle", groups.cloud.length > 0 && "mt-1.5 border-t border-line pt-1.5")}>
+          <RadixCollapsible.Trigger className="flex h-8 w-full items-center gap-1.5 rounded-ctl px-2 text-left transition-colors hover:bg-fill">
             <ChevronRight className="size-3.5 text-ink-3 transition-transform group-data-[state=open]/idle:rotate-90" />
             <span className="tag">未配置</span>
             <span className="num ml-auto text-2xs text-ink-3">{groups.idle.length}</span>
           </RadixCollapsible.Trigger>
-          <RadixCollapsible.Content className="px-1.5 pb-1.5">
+          <RadixCollapsible.Content className="flex flex-col gap-px">
             {groups.idle.map((e) => (
-              <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} quiet />
+              <EntryRow key={e.id} base={base} entry={e} active={e.id === active} quiet />
             ))}
           </RadixCollapsible.Content>
         </RadixCollapsible.Root>
       )}
-    </div>
+    </>
   );
 }
 
-function Group({ label, action, children }: { label: string; action?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="border-b border-line pb-2 last:border-b-0">
-      <div className="flex h-9 items-center justify-between px-3.5 pt-1">
-        <span className="tag">{label}</span>
-        {action}
-      </div>
-      <div className="flex flex-col gap-px px-1.5">{children}</div>
-    </div>
-  );
-}
-
-/**
- * A provider's row in the directory rail: one compact line. `soft` marks a row
- * highlighted only because it is on show in the wide layout, not because it
- * was chosen; `quiet` leaves out the state of a provider that is not set up.
- */
-function EntryRow({ entry, active, soft, quiet }: { entry: Entry; active: boolean; soft?: boolean; quiet?: boolean }) {
+/** A provider's row in the list: one compact line; `quiet` leaves out the state of a provider that is not set up. */
+function EntryRow({ base, entry, active, quiet }: { base: string; entry: Entry; active: boolean; quiet?: boolean }) {
   return (
     <Link
-      href={`/providers/${entry.id}`}
-      aria-current={active && !soft ? "page" : undefined}
+      href={`${base}/${entry.id}`}
+      aria-current={active ? "page" : undefined}
       className={cx(
-        "flex h-9 items-center gap-2.5 rounded-ctl px-2 transition-colors max-lg:h-11",
-        active ? "lg:bg-surface lg:font-medium lg:text-ink lg:shadow-thumb" : "hover:bg-fill",
+        "mt-px flex h-9 items-center gap-2.5 rounded-ctl px-2 transition-colors max-lg:h-11",
+        active ? "lg:bg-fill lg:font-medium" : "hover:bg-fill",
       )}
     >
       <BrandIcon id={entry.icon} className="size-4 shrink-0" />

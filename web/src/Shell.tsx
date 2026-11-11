@@ -3,6 +3,7 @@ import {
   Bot,
   Boxes,
   Braces,
+  ChevronRight,
   Gauge,
   Globe,
   KeyRound,
@@ -18,10 +19,11 @@ import {
   Sun,
   Wrench,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { api } from "./lib/api";
 import { useConfig } from "./lib/config";
+import { providerCategories, routingPages, toolPages } from "./lib/pages";
 import { Drawer } from "./ui/overlays";
 import { Button, cx, Dot, Segmented, Tooltip } from "./ui/primitives";
 
@@ -41,7 +43,15 @@ export function Logo({ className }: { className?: string }) {
   );
 }
 
-const nav = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: ComponentType<{ className?: string }>;
+  /** The pages under the item, listed beneath it while it is open. */
+  sub?: ComponentType<{ location: string }>;
+}
+
+const nav: { group: string; items: NavItem[] }[] = [
   {
     group: "监控",
     items: [
@@ -61,10 +71,10 @@ const nav = [
   {
     group: "网关",
     items: [
-      { href: "/providers", label: "提供商", icon: Boxes },
+      { href: "/providers", label: "提供商", icon: Boxes, sub: ProviderLinks },
       { href: "/models", label: "模型接口", icon: Bot },
-      { href: "/tools", label: "工具", icon: Wrench },
-      { href: "/routing", label: "服务路由", icon: Route },
+      { href: "/tools", label: "工具", icon: Wrench, sub: ToolLinks },
+      { href: "/routing", label: "服务路由", icon: Route, sub: RoutingLinks },
     ],
   },
   {
@@ -95,33 +105,108 @@ export function useTheme(): [Theme, (theme: Theme) => void] {
   return [theme, setTheme];
 }
 
+/** Whether the address is the page of `href` or one under it. */
+const within = (href: string, location: string) => (href === "/" ? location === "/" : location === href || location.startsWith(`${href}/`));
+
 function NavList({ location }: { location: string }) {
   return (
     <nav className="flex-1 overflow-y-auto px-2.5 pb-4">
       {nav.map((section) => (
         <div key={section.group} className="mt-5 first:mt-2">
           <div className="tag px-2 pb-1.5">{section.group}</div>
-          {section.items.map(({ href, label, icon: Icon }) => {
-            const active = href === "/" ? location === "/" : location.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={cx(
-                  "mt-px flex h-8 items-center gap-2.5 rounded-ctl px-2 text-sm transition-colors max-md:h-10",
-                  active ? "bg-surface font-medium text-ink shadow-thumb" : "text-ink-2 hover:bg-fill hover:text-ink",
-                )}
-              >
-                <Icon className={cx("size-4 shrink-0", active ? "text-ink" : "text-ink-3")} />
-                {label}
-              </Link>
-            );
-          })}
+          {section.items.map((item) => (
+            <NavEntry key={item.href} item={item} location={location} />
+          ))}
         </div>
       ))}
     </nav>
   );
+}
+
+/** One item of the sidebar; an item with pages under it opens into a list of them while one is on show. */
+function NavEntry({ item, location }: { item: NavItem; location: string }) {
+  const { href, label, icon: Icon, sub: Sub } = item;
+  const active = within(href, location);
+  // Open while one of its pages is on show; the chevron opens or closes it in between.
+  const [open, setOpen] = useState(active);
+  useEffect(() => setOpen(active), [active]);
+  // With a list beneath it, the item only marks where the chosen page lives; the page itself carries the thumb.
+  const own = active && !Sub;
+
+  return (
+    <div>
+      <div className="relative mt-px">
+        <Link
+          href={href}
+          aria-current={own ? "page" : undefined}
+          className={cx(
+            "flex h-8 items-center gap-2.5 rounded-ctl px-2 text-sm transition-colors max-md:h-10",
+            own ? "bg-surface font-medium text-ink shadow-thumb" : active ? "font-medium text-ink hover:bg-fill" : "text-ink-2 hover:bg-fill hover:text-ink",
+          )}
+        >
+          <Icon className={cx("size-4 shrink-0", active ? "text-ink" : "text-ink-3")} />
+          {label}
+        </Link>
+        {Sub && (
+          <button
+            type="button"
+            aria-label={open ? `收起${label}` : `展开${label}`}
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+            className="press absolute inset-y-0 right-0 grid w-8 place-items-center rounded-ctl text-ink-3 transition-colors hover:text-ink"
+          >
+            <ChevronRight className={cx("size-3.5 transition-transform duration-150", open && "rotate-90")} />
+          </button>
+        )}
+      </div>
+      {Sub && open && (
+        <div className="mt-0.5 mb-1.5 ml-4 flex animate-in flex-col gap-px border-l border-line pl-2">
+          <Sub location={location} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A page in the list beneath a sidebar item. */
+function SubLink({ href, location, children }: { href: string; location: string; children: ReactNode }) {
+  const active = within(href, location);
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cx(
+        "flex h-7 items-center rounded-ctl px-2 text-sm transition-colors max-md:h-9",
+        active ? "bg-surface font-medium text-ink shadow-thumb" : "text-ink-2 hover:bg-fill hover:text-ink",
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+    </Link>
+  );
+}
+
+function ProviderLinks({ location }: { location: string }) {
+  return providerCategories.map(({ value, label }) => (
+    <SubLink key={value} href={`/providers/${value}`} location={location}>
+      {label}
+    </SubLink>
+  ));
+}
+
+function ToolLinks({ location }: { location: string }) {
+  return toolPages.map(({ value, label }) => (
+    <SubLink key={value} href={`/tools/${value}`} location={location}>
+      {label}
+    </SubLink>
+  ));
+}
+
+function RoutingLinks({ location }: { location: string }) {
+  return routingPages.map(({ value, label }) => (
+    <SubLink key={value} href={`/routing/${value}`} location={location}>
+      {label}
+    </SubLink>
+  ));
 }
 
 /** Theme and sign-out, the foot of the sidebar and of the menu on a phone. */
@@ -160,16 +245,16 @@ export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { meta, saving, saved, error, retry, discard } = useConfig();
   const [menu, setMenu] = useState(false);
-  // Every monitoring and management page shares one 68rem frame so headings and panel edges never shift; only workbenches and call flows widen.
+  // Every monitoring and management page shares one 68rem measure so headings and panel edges never shift; only workbenches and call flows widen.
   const measure = /^\/(play\/|logs\/.)/.test(location) ? "max-w-[96rem]" : "max-w-[68rem]";
-  const current = nav.flatMap((section) => section.items).find(({ href }) => (href === "/" ? location === "/" : location.startsWith(href)));
+  const current = nav.flatMap((section) => section.items).find(({ href }) => within(href, location));
 
   // The menu of a phone closes once a page is chosen.
   useEffect(() => setMenu(false), [location]);
 
   return (
     <div className="flex min-h-dvh max-md:flex-col">
-      <aside className="sticky top-0 flex h-dvh w-60 shrink-0 flex-col border-r border-line bg-bg max-md:hidden">
+      <aside className="sticky top-0 flex h-dvh w-60 shrink-0 flex-col bg-bg max-md:hidden">
         <div className="flex h-15 items-center gap-2.5 px-4.5">
           <Logo className="size-7" />
           <div className="leading-tight">
@@ -196,16 +281,19 @@ export function Shell({ children }: { children: ReactNode }) {
         <NavFoot />
       </Drawer>
 
-      <main className="min-w-0 flex-1">
-        <div
-          className={cx(
-            "mx-auto w-full px-8 pt-7 pb-12 max-md:px-4 max-md:pt-4",
-            measure,
-            "max-md:pr-[max(1rem,env(safe-area-inset-right))] max-md:pb-[max(1.5rem,env(safe-area-inset-bottom))] max-md:pl-[max(1rem,env(safe-area-inset-left))]",
-            error && "pb-24",
-          )}
-        >
-          {children}
+      {/* The pages sit on one sheet beside the sidebar, starting right after it. */}
+      <main className="min-w-0 flex-1 md:py-2 md:pr-2">
+        <div className="bg-surface max-md:min-h-[calc(100dvh-3rem)] md:min-h-[calc(100dvh-1rem)] md:rounded-panel md:border md:border-line md:shadow-panel">
+          <div
+            className={cx(
+              "mx-auto w-full px-8 pt-6 pb-12 max-md:px-4 max-md:pt-4",
+              measure,
+              "max-md:pr-[max(1rem,env(safe-area-inset-right))] max-md:pb-[max(1.5rem,env(safe-area-inset-bottom))] max-md:pl-[max(1rem,env(safe-area-inset-left))]",
+              error && "pb-24",
+            )}
+          >
+            {children}
+          </div>
         </div>
       </main>
 
@@ -228,31 +316,5 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       )}
     </div>
-  );
-}
-
-/** The heading every page starts with; page-level tabs sit directly beneath it. */
-export function PageHeader({
-  title,
-  description,
-  actions,
-  tabs,
-}: {
-  title: string;
-  description?: ReactNode;
-  actions?: ReactNode;
-  tabs?: ReactNode;
-}) {
-  return (
-    <header className="mb-5">
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-4 gap-y-3">
-        <div className="min-w-0">
-          <h1 className="t-title">{title}</h1>
-          {description && <p className="mt-1 max-w-2xl text-sm text-ink-3">{description}</p>}
-        </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-      </div>
-      {tabs && <div className="mt-3">{tabs}</div>}
-    </header>
   );
 }

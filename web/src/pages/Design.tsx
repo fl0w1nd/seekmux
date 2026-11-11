@@ -5,7 +5,7 @@ import { FlowView } from "../components/flow/FlowView";
 import { Timeline } from "../components/flow/Timeline";
 import type { TraceNode } from "../lib/api";
 import { TraceStore, useTraceStore } from "../lib/trace";
-import { PageHeader } from "../Shell";
+import { PageHeader } from "../components/PageHeader";
 import { ChipInput, RateLimitInput } from "../ui/inputs";
 import { Markdown } from "../ui/markdown";
 import { Popover, useConfirm, useToast } from "../ui/overlays";
@@ -100,7 +100,7 @@ const roles = [
 ] as const;
 
 const elevations = [
-  ["shadow-panel", "shadow-panel", "面板、指标条"],
+  ["shadow-panel", "shadow-panel", "页面底板"],
   ["shadow-raise", "shadow-raise", "可点击卡片悬停"],
   ["shadow-thumb", "shadow-thumb", "滑块、侧栏选中项"],
   ["shadow-overlay", "shadow-overlay", "弹层、对话框"],

@@ -5,18 +5,14 @@ import { Link, Redirect, useLocation, useParams } from "wouter";
 import { api, type Config, type DomainProviderStats, type DomainStats, type FetchOutcome, type Rule } from "../lib/api";
 import { missing, ProviderIcon } from "../components/ProviderName";
 import { useConfig } from "../lib/config";
+import { routingPages } from "../lib/pages";
 import { bytes, duration, percent } from "../lib/format";
 import { cleanPattern, newRuleID, routingRules, ruleForDomain, validPattern } from "../lib/routing";
-import { PageHeader } from "../Shell";
+import { PageHeader } from "../components/PageHeader";
 import { BrandIcon } from "../ui/brand";
 import { ChipInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, cx, Empty, Field, Input, Loading, Panel, Segmented, Status, Switch, Table, TabList, TabPanel, Tabs, Td, Th, Tooltip } from "../ui/primitives";
-
-const tabs = [
-  { value: "rules", label: "规则" },
-  { value: "domains", label: "域名统计" },
-];
+import { Badge, Button, cx, Empty, Field, Input, Loading, Panel, Segmented, Status, Switch, Table, Td, Th, Tooltip } from "../ui/primitives";
 
 /** Whether a provider can be called: it has an API key or needs none; a fetcher has a worker switched on. */
 function useCredentials() {
@@ -29,35 +25,32 @@ export function RoutingPage() {
   const [, navigate] = useLocation();
   // The rule in the dialog; one the configuration does not hold yet is new.
   const [form, setForm] = useState<Rule | null>(null);
-  if (!tabs.some((t) => t.value === tab)) return <Redirect to="/routing/rules" replace />;
+  const current = routingPages.find((t) => t.value === tab);
+  if (!current) return <Redirect to="/routing/rules" replace />;
 
   return (
     <>
-      <Tabs value={tab} onChange={(value) => navigate(`/routing/${value}`)}>
-        <PageHeader
-          title="服务路由"
-          tabs={<TabList flush tabs={tabs} />}
-          actions={
-            tab === "rules" && (
-              <Button variant="primary" icon={<Plus />} onClick={() => setForm({ id: newRuleID(), name: "", enabled: true, match: [], providers: [] })}>
-                新建规则
-              </Button>
-            )
-          }
+      <PageHeader
+        section="服务路由"
+        title={current.label}
+        actions={
+          tab === "rules" && (
+            <Button variant="primary" icon={<Plus />} onClick={() => setForm({ id: newRuleID(), name: "", enabled: true, match: [], providers: [] })}>
+              新建规则
+            </Button>
+          )
+        }
+      />
+      {tab === "rules" ? (
+        <Rules onEdit={setForm} />
+      ) : (
+        <Domains
+          onRoute={(rule) => {
+            setForm(rule);
+            navigate("/routing/rules");
+          }}
         />
-        <TabPanel value={tab}>
-          {tab === "rules" ? (
-            <Rules onEdit={setForm} />
-          ) : (
-            <Domains
-              onRoute={(rule) => {
-                setForm(rule);
-                navigate("/routing/rules");
-              }}
-            />
-          )}
-        </TabPanel>
-      </Tabs>
+      )}
       {form && <RuleDialog rule={form} onClose={() => setForm(null)} />}
     </>
   );
@@ -95,7 +88,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
 
   return (
     <Panel
-      title="路由规则"
+      title="匹配顺序"
       info="自上而下匹配，命中即停。命中的 URL 只由规则的提供商抓取，调用方用 fetch_engine 指定时除外。"
       flush
     >
@@ -357,7 +350,7 @@ function Domains({ onRoute }: { onRoute: (rule: Rule) => void }) {
 
   return (
     <Panel
-      title="域名统计"
+      title="抓取结果"
       info={`保留 ${query.data?.retention_days ?? 90} 天，不含缓存命中与取消的请求`}
       actions={
         <>

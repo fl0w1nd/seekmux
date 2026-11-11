@@ -476,7 +476,7 @@ export function Panel({
   flush?: boolean;
 }) {
   return (
-    <section className={cx("rounded-panel border border-line bg-surface shadow-panel", className)}>
+    <section className={cx("rounded-panel border border-line bg-surface", className)}>
       {(title || actions) && (
         <header className="flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
           <div className="min-w-0">
@@ -703,7 +703,7 @@ export function Loading({ rows = 4, className }: { rows?: number; className?: st
 
 /** Headline figures side by side, split by hairlines. */
 export function StatGrid({ className, children }: { className?: string; children: ReactNode }) {
-  return <div className={cx("grid gap-px overflow-hidden rounded-panel border border-line bg-line bg-clip-padding shadow-panel", className)}>{children}</div>;
+  return <div className={cx("grid gap-px overflow-hidden rounded-panel border border-line bg-line bg-clip-padding", className)}>{children}</div>;
 }
 
 /** One headline figure: a label, the value, a line of detail. */

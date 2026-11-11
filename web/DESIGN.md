@@ -3,7 +3,7 @@
 Signal is the interface system of the SeekMux console. It is built for one
 job: operating a gateway. The screen shows machine facts (latencies, quotas,
 routes, keys) and a small number of settings, so the system is dense and
-quiet: white sheets on a light canvas, hairlines, weight instead of ornament,
+quiet: one white sheet beside a light canvas, hairlines, weight instead of ornament,
 and a single loud color reserved for what matters right now.
 
 The living reference is the `/design` page of the console (`src/pages/Design.tsx`),
@@ -14,10 +14,11 @@ components in `src/ui/`.
 
 1. **One signal.** There is exactly one brand color, a lime. It marks the
    primary action on a screen and things that are live. It is never decoration.
-2. **Quiet depth.** The canvas (`bg`) carries the navigation; content sits on
-   white sheets (`surface`) that are lifted off it by a hairline and a faint
-   two-layer shadow. Inside a sheet, depth is a fill; the only shadow there is
-   the small one of a thumb.
+2. **Quiet depth.** The canvas (`bg`) carries the navigation; the pages sit
+   on one white sheet (`surface`) beside it, lifted by a hairline and a faint
+   two-layer shadow. Inside the sheet, panels are hairline boxes with no
+   shadow, and depth is a fill; the only shadow there is the small one of a
+   thumb.
 3. **One closed border per thing.** A panel draws one box. What is inside it
    is divided by lines and fills: buttons, badges, segmented controls and
    selected rows are filled, not outlined, so a control never draws a second
@@ -111,23 +112,36 @@ thumb, a list item); `rounded-ctl` (7px) for controls and groups of rows;
 `rounded-panel` (12px) for panels and floating layers. Controls are 32px
 tall, 28px in dense places.
 
-**Elevation.** Four shadows, all faint: `shadow-panel` lifts a sheet off the
-canvas, `shadow-raise` is a clickable card under the pointer (and the
+**Elevation.** Four shadows, all faint: `shadow-panel` lifts the page sheet
+off the canvas (and the figures of a report and the cards of a call flow), `shadow-raise` is a clickable card under the pointer (and the
 playground composer), `shadow-thumb` is the white thumb of a switch or a
 segmented control and the chosen item of the sidebar, `shadow-overlay` is a
 dialog, a drawer, a popover, a toast. `shadow-ring` is the focus halo of a
 field. No other shadows.
 
-**Layout.** Navigation rails (the global sidebar and in-page master-detail
-directories) sit on `bg` so that `surface` belongs only to active sheets and
-panels; a master-detail view shares one `rounded-panel` frame split by a 1px
-line rather than two separate cards of uneven height, and the frame is at
-least as tall as the viewport allows, so the detail is never shorter than its
-directory. Every monitoring and management page shares a single `68rem`
-(`max-w-[68rem]`) outer frame so page headings and panel edges never jump when
-moving down the sidebar; only workbenches and full-page call flow canvases
-(`/play/*`, `/logs/:id`) expand to `96rem` (`max-w-[96rem]`). The playground
-uses the same `PageHeader` as every other page.
+**Layout.** The sidebar sits on `bg` with no border; every page sits on one
+sheet beside it (`md:` inset by `0.5rem` from the window, `rounded-panel`,
+`line`, `shadow-panel`), and below `md` the sheet is the whole screen.
+Content is centered on the sheet. Every monitoring and management page
+shares a single `68rem` (`max-w-[68rem]`) measure so page headings and panel
+edges never jump when moving down the sidebar; only workbenches and
+full-page call flow canvases (`/play/*`, `/logs/:id`) expand to `96rem`
+(`max-w-[96rem]`).
+
+A section with pages of its own (providers, tools, routing) lists those
+pages beneath its sidebar item, which opens while one of them is on show;
+the chevron opens or closes another in between. The sidebar lists pages,
+never the things a page manages: providers are two pages, `云服务` and `自托管`,
+and the providers of each are listed and managed on the page. Pages do not
+repeat the sidebar list as tabs under the heading. Such a page names its
+section in the heading, `section / title`, with the section in `ink-3`
+(`PageHeader`'s `section`; `meta` sits beside the title, `description` under
+it).
+
+A master-detail view shares one `rounded-panel` frame split by a 1px line:
+the list on the left, the chosen item on the right, the chosen row a fill.
+The frame is at least as tall as the viewport allows, so the detail is never
+shorter than its list.
 
 Inside panels, settings rows (`Row`, `CardRow`) align on a fixed left label
 column (`11rem` in full-width panels, `8.5rem` inside a split detail pane) with

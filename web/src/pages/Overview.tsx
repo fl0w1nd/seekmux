@@ -7,7 +7,7 @@ import { Tripped } from "../components/Health";
 import { ProviderName } from "../components/ProviderName";
 import { ago, bytes, compact, dateTime, duration, percent, toolLabel } from "../lib/format";
 import { useTween } from "../lib/motion";
-import { PageHeader } from "../Shell";
+import { PageHeader } from "../components/PageHeader";
 import { Badge, cx, Dot, Empty, Meter, Notice, Panel, Segmented, Skeleton, Stat, StatGrid, Table, Td, Th, Tooltip } from "../ui/primitives";
 
 type Window = "1h" | "24h" | "7d";
@@ -74,7 +74,7 @@ function InFlight() {
   const calls = live.data?.calls ?? [];
   if (calls.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-panel border border-signal-text/40 bg-surface py-2 pr-2 pl-4 shadow-panel">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-panel border border-signal-text/40 bg-surface py-2 pr-2 pl-4">
       <span className="flex shrink-0 items-center gap-2 text-sm font-medium">
         <Dot tone="signal" live />
         进行中

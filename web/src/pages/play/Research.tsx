@@ -155,7 +155,7 @@ export function ResearchPlay() {
             <Run key={data.id} task={data} skew={data.now - task.dataUpdatedAt} onStop={() => void stop()} onReuse={() => reuse(data)} onClose={() => show(null)} />
           ) : (
             task.error ? (
-              <section className="grid min-h-56 place-items-center rounded-panel border border-line bg-surface p-4 shadow-panel">
+              <section className="grid min-h-56 place-items-center rounded-panel border border-line bg-surface p-4">
                 <Notice tone="err">{task.error.message}</Notice>
               </section>
             ) : (
@@ -163,7 +163,7 @@ export function ResearchPlay() {
             )
           )
         ) : (
-          <section className="grid min-h-56 place-items-center rounded-panel border border-line bg-surface shadow-panel">
+          <section className="grid min-h-56 place-items-center rounded-panel border border-line bg-surface">
             <Empty icon={<Workflow />} title="运行后显示研究过程" />
           </section>
         )
@@ -395,7 +395,7 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
 
   return (
     // No overflow clipping here: the panes inside clip themselves.
-    <section ref={ref} className="@container flex min-h-[32rem] min-w-0 scroll-mt-6 flex-col rounded-panel border border-line bg-surface shadow-panel">
+    <section ref={ref} className="@container flex min-h-[32rem] min-w-0 scroll-mt-6 flex-col rounded-panel border border-line bg-surface">
       <header className="flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-line px-4 py-3">
         <div className="min-w-0 flex-1 basis-72">
           <div className="flex items-center gap-2 text-xs">

@@ -529,7 +529,7 @@ export function Output({
     <section
       ref={ref}
       className={cx(
-        "flex min-w-0 scroll-mt-6 flex-col rounded-panel border border-line bg-surface shadow-panel",
+        "flex min-w-0 scroll-mt-6 flex-col rounded-panel border border-line bg-surface",
         idle ? "min-h-56" : "min-h-[24rem]",
       )}
     >

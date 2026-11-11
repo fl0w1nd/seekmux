@@ -10,7 +10,7 @@ import { useConfig } from "../lib/config";
 import { compact, dateTime, duration, logTime, toolLabel } from "../lib/format";
 import { useNow } from "../lib/motion";
 import { useLiveCalls } from "../lib/trace";
-import { PageHeader } from "../Shell";
+import { PageHeader } from "../components/PageHeader";
 import { modalOpen, SidePanel, useConfirm, useToast } from "../ui/overlays";
 import { Badge, Button, cx, Dot, Empty, iconButton, Input, Kbd, Loading, Panel, Segmented, Select, Status, Table, Td, Th, Tooltip } from "../ui/primitives";
 import { CallInspector } from "./Log";
@@ -457,7 +457,7 @@ function StatusBadge({ status }: { status: LogEntry["status"] }) {
 function InFlight({ calls, origin, onOpen }: { calls: LiveCall[]; origin: (call: LiveCall) => number; onOpen: (e: MouseEvent | KeyboardEvent, id: string) => void }) {
   const now = useNow(true, 500);
   return (
-    <section className="mb-3 overflow-hidden rounded-panel border border-signal-text/40 bg-surface shadow-panel">
+    <section className="mb-3 overflow-hidden rounded-panel border border-signal-text/40 bg-surface">
       <header className="flex h-10 items-center gap-2 border-b border-line px-4">
         <Dot tone="signal" live />
         <h2 className="t-heading text-sm">进行中</h2>

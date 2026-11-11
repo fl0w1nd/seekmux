@@ -3,7 +3,7 @@ import { Download, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useConfig } from "../lib/config";
-import { PageHeader } from "../Shell";
+import { PageHeader } from "../components/PageHeader";
 import { useConfirm, useToast } from "../ui/overlays";
 import { Button, Input, Notice, NumberInput, Panel, Row, Switch, PasswordInput } from "../ui/primitives";
 
