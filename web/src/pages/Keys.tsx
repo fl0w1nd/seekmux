@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BarChart3, Check, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
+import { Ban, BarChart3, Check, KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { KeyUsageDrawer } from "../components/KeyUsage";
 import { ModelChain, ModelSelect } from "../components/ModelPicker";
@@ -9,7 +9,7 @@ import { ago, compact, dateTime, toolLabel } from "../lib/format";
 import { PageHeader } from "../components/PageHeader";
 import { RateLimitInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, CodeBlock, cx, Empty, Field, Info, Input, Loading, Notice, NumberInput, Panel, Section, Segmented, Switch, Table, Td, Th } from "../ui/primitives";
+import { Badge, Button, CodeBlock, CopyButton, cx, Empty, Field, IconButton, Info, Input, Loading, Notice, NumberInput, Panel, Section, Segmented, Status, Switch, Table, Td, Th, Tooltip } from "../ui/primitives";
 
 /** The days the list sums the usage of each key over. */
 const usageDays = 30;
@@ -22,7 +22,6 @@ function policyNotes(key: APIKey): string[] {
   const notes: string[] = [];
   if (extract_models?.length || research_model) notes.push("自定义模型");
   if (research.max_steps || research.max_duration_seconds || research.max_tokens || research.quick_only || research.concurrency) notes.push("研究受限");
-  if (key.expires_at && !expired(key)) notes.push(`${dateTime(key.expires_at).slice(0, 10)} 到期`);
   return notes;
 }
 
@@ -66,96 +65,100 @@ export function KeysPage() {
           ) : (
             <div className="overflow-x-auto">
               <Table>
-              <thead>
-                <tr>
-                  <Th>名称</Th>
-                  <Th>密钥</Th>
-                  <Th>可用工具</Th>
-                  <Th>限流</Th>
-                  <Th className="whitespace-nowrap">近 {usageDays} 天</Th>
-                  <Th>最近使用</Th>
-                  <Th>创建于</Th>
-                  <Th />
-                </tr>
-              </thead>
-              <tbody>
-                {keys.data?.map((key) => {
-                  const revoked = Boolean(key.revoked_at);
-                  const used = usage.data?.keys[key.id];
-                  const notes = policyNotes(key);
-                  return (
-                    <tr key={key.id} className={cx("transition-colors hover:bg-fill", revoked && "text-ink-3")}>
-                      <Td>
-                        <div className="font-medium">{key.name}</div>
-                        {notes.length > 0 && <div className="mt-0.5 text-xs text-ink-3">{notes.join(" · ")}</div>}
-                      </Td>
-                      <Td className="num text-xs">{key.oauth_client ? <Badge tone="info">OAuth</Badge> : `${key.prefix}…`}</Td>
-                      <Td className="text-xs whitespace-nowrap text-ink-2">{key.scopes.map((scope) => toolLabel[scope]).join(" · ")}</Td>
-                      <Td className="num text-xs">{key.rate_limit || "不限"}</Td>
-                      <Td className="num text-xs whitespace-nowrap">
-                        {used?.calls ? (
-                          <button type="button" className="underline-offset-2 hover:underline" onClick={() => setInspected(key)}>
-                            {used.calls.toLocaleString()} 次{used.input_tokens ? ` · ${compact(used.input_tokens + used.output_tokens)} Token` : ""}
-                          </button>
-                        ) : (
-                          <span className="text-ink-3">—</span>
-                        )}
-                      </Td>
-                      <Td className="text-xs">
-                        {revoked ? <Badge tone="err">已吊销</Badge> : expired(key) ? <Badge tone="warn">已过期</Badge> : ago(key.last_used_at)}
-                      </Td>
-                      <Td className="num text-xs">{dateTime(key.created_at).slice(0, 10)}</Td>
-                      <Td className="w-0">
-                        <span className="flex justify-end gap-1">
-                          <Button size="sm" variant="ghost" icon={<BarChart3 />} aria-label="用量" onClick={() => setInspected(key)} />
-                          {revoked ? (
-                            <Button size="sm" variant="ghost" icon={<Trash2 />} aria-label="删除" onClick={() => remove.mutate(key.id)} />
+                <thead>
+                  <tr>
+                    <Th>名称</Th>
+                    <Th>密钥</Th>
+                    <Th>可用工具</Th>
+                    <Th>限流</Th>
+                    <Th className="text-right">近 {usageDays} 天</Th>
+                    <Th>状态</Th>
+                    <Th>最近使用</Th>
+                    <Th>创建于</Th>
+                    <Th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {keys.data?.map((key) => {
+                    const revoked = Boolean(key.revoked_at);
+                    const used = usage.data?.keys[key.id];
+                    const notes = policyNotes(key);
+                    return (
+                      <tr key={key.id} className={cx(revoked && "text-ink-3")}>
+                        <Td>
+                          <span className="flex items-center gap-2 whitespace-nowrap">
+                            <span className="font-medium">{key.name}</span>
+                            {notes.map((note) => (
+                              <Badge key={note}>{note}</Badge>
+                            ))}
+                          </span>
+                        </Td>
+                        <Td className="num text-xs whitespace-nowrap">{key.oauth_client ? <Badge tone="info">OAuth</Badge> : `${key.prefix}…`}</Td>
+                        <Td className={cx("text-xs whitespace-nowrap", !revoked && "text-ink-2")}>{key.scopes.map((scope) => toolLabel[scope]).join(" · ")}</Td>
+                        <Td className={cx("num text-xs whitespace-nowrap", !key.rate_limit && "font-sans text-ink-3")}>{key.rate_limit || "不限"}</Td>
+                        <Td className="num text-right text-xs whitespace-nowrap">
+                          {used?.calls ? (
+                            <Tooltip content={used.input_tokens ? `${compact(used.input_tokens + used.output_tokens)} Token` : "查看用量"}>
+                              <button type="button" className="underline-offset-2 hover:underline" onClick={() => setInspected(key)}>
+                                {used.calls.toLocaleString()}
+                                <span className="ml-1 font-sans text-ink-3">次</span>
+                              </button>
+                            </Tooltip>
                           ) : (
-                            <>
-                              <Button size="sm" variant="ghost" icon={<Pencil />} aria-label="编辑" onClick={() => setForm(key)} />
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                onClick={async () => {
-                                  if (await confirm({ title: `吊销「${key.name}」？`, body: key.oauth_client ? "该客户端的令牌立即失效，再次接入需要重新登录授权。" : "使用该密钥的 Agent 将立即失去访问权限，且无法恢复。", confirm: "吊销", danger: true })) {
-                                    revoke.mutate(key.id);
-                                  }
-                                }}
-                              >
-                                吊销
-                              </Button>
-                            </>
+                            <span className="text-ink-3">—</span>
                           )}
-                        </span>
-                      </Td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
+                        </Td>
+                        <Td className="whitespace-nowrap">
+                          <KeyState apiKey={key} />
+                        </Td>
+                        <Td className={cx("text-xs whitespace-nowrap", !revoked && "text-ink-2")}>{ago(key.last_used_at)}</Td>
+                        <Td className="num text-xs whitespace-nowrap text-ink-3">{dateTime(key.created_at).slice(0, 10)}</Td>
+                        <Td className="w-0">
+                          <span className="flex justify-end gap-0.5">
+                            <IconButton size="sm" icon={<BarChart3 />} label="用量" onClick={() => setInspected(key)} />
+                            {revoked ? (
+                              <IconButton
+                                size="sm"
+                                icon={<Trash2 />}
+                                label="删除"
+                                className="hover:bg-err/10 hover:text-err"
+                                onClick={() => remove.mutate(key.id)}
+                              />
+                            ) : (
+                              <>
+                                <IconButton size="sm" icon={<Pencil />} label="编辑" onClick={() => setForm(key)} />
+                                <IconButton
+                                  size="sm"
+                                  icon={<Ban />}
+                                  label="吊销"
+                                  className="hover:bg-err/10 hover:text-err"
+                                  onClick={async () => {
+                                    if (
+                                      await confirm({
+                                        title: `吊销「${key.name}」？`,
+                                        body: key.oauth_client ? "该客户端的令牌立即失效，再次接入需要重新登录授权。" : "使用该密钥的 Agent 将立即失去访问权限，且无法恢复。",
+                                        confirm: "吊销",
+                                        danger: true,
+                                      })
+                                    ) {
+                                      revoke.mutate(key.id);
+                                    }
+                                  }}
+                                />
+                              </>
+                            )}
+                          </span>
+                        </Td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
             </div>
           )}
         </Panel>
 
-        <Panel title="连接方式">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="flex min-w-0 flex-col gap-3">
-              {!config.oauth.disabled && (
-                <Field label="Claude Code · OAuth" hint="首次连接时在浏览器授权">
-                  <CodeBlock copy wrap>{`claude mcp add --transport http seekmux ${endpoint()}`}</CodeBlock>
-                </Field>
-              )}
-              <Field label="Claude Code · 密钥">
-                <CodeBlock copy wrap>{`claude mcp add --transport http seekmux ${endpoint()} --header "Authorization: Bearer <你的密钥>"`}</CodeBlock>
-              </Field>
-            </div>
-            <Field label="通用 MCP 配置（JSON）" className="min-w-0">
-              <CodeBlock copy>
-                {JSON.stringify({ mcpServers: { seekmux: { type: "http", url: endpoint(), headers: { Authorization: "Bearer <你的密钥>" } } } }, null, 2)}
-              </CodeBlock>
-            </Field>
-          </div>
-        </Panel>
+        <Connect oauth={!config.oauth.disabled} />
       </div>
 
       {form && (
@@ -186,6 +189,52 @@ export function KeysPage() {
         </div>
       </Dialog>
     </>
+  );
+}
+
+/** Whether a key works: revoked and expired are problems; a key that will expire says when. */
+function KeyState({ apiKey: key }: { apiKey: APIKey }) {
+  if (key.revoked_at) return <Badge tone="err" dot>已吊销</Badge>;
+  if (expired(key)) return <Badge tone="warn" dot>已过期</Badge>;
+  if (key.expires_at) return <Status tone="ok">{dateTime(key.expires_at).slice(0, 10)} 到期</Status>;
+  return <Status tone="ok">有效</Status>;
+}
+
+type Method = "oauth" | "key" | "json";
+
+/** How a client connects: the endpoint, and one way to add it at a time. */
+function Connect({ oauth }: { oauth: boolean }) {
+  const url = endpoint();
+  const [picked, setPicked] = useState<Method>(oauth ? "oauth" : "key");
+  const method = !oauth && picked === "oauth" ? "key" : picked;
+  const methods: { value: Method; label: string }[] = [
+    ...(oauth ? [{ value: "oauth" as const, label: "Claude Code · OAuth" }] : []),
+    { value: "key", label: "Claude Code · 密钥" },
+    { value: "json", label: "通用 JSON" },
+  ];
+  const code = {
+    oauth: `claude mcp add --transport http seekmux ${url}`,
+    key: `claude mcp add --transport http seekmux ${url} --header "Authorization: Bearer <你的密钥>"`,
+    json: JSON.stringify({ mcpServers: { seekmux: { type: "http", url, headers: { Authorization: "Bearer <你的密钥>" } } } }, null, 2),
+  }[method];
+
+  return (
+    <Panel title="连接方式" flush>
+      <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-1.5">
+        <span className="tag w-16 shrink-0">MCP 地址</span>
+        <span className="num min-w-0 flex-1 truncate text-sm">{url}</span>
+        <CopyButton text={url} label="复制" />
+      </div>
+      <div className="flex flex-col gap-3 p-4">
+        <div className="max-w-full overflow-x-auto">
+          <Segmented size="sm" value={method} onChange={setPicked} options={methods} />
+        </div>
+        <CodeBlock copy wrap={method !== "json"}>
+          {code}
+        </CodeBlock>
+        {method === "oauth" && <span className="text-xs text-ink-3">首次连接时在浏览器授权</span>}
+      </div>
+    </Panel>
   );
 }
 
