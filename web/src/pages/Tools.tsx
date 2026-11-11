@@ -20,14 +20,11 @@ export function ToolsPage() {
   const current = tools.find((t) => t.value === tool);
   if (!current) return <Redirect to={`/tools/${tools[0].value}`} replace />;
   return (
-    <>
-      <PageHeader title="工具" />
-      <Tabs value={current.value} onChange={(value) => navigate(`/tools/${value}`)}>
-        <TabList flush tabs={tools.map(({ value, label }) => ({ value, label }))} />
-        <TabPanel value={current.value} className="pt-6">
-          <current.page />
-        </TabPanel>
-      </Tabs>
-    </>
+    <Tabs value={current.value} onChange={(value) => navigate(`/tools/${value}`)}>
+      <PageHeader title="工具" tabs={<TabList flush tabs={tools.map(({ value, label }) => ({ value, label }))} />} />
+      <TabPanel value={current.value}>
+        <current.page />
+      </TabPanel>
+    </Tabs>
   );
 }

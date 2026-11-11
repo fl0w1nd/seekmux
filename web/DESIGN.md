@@ -67,7 +67,7 @@ off (`--color-*: initial`), so only these names exist as utilities.
 
 | Group | Tokens | Use |
 | --- | --- | --- |
-| Surfaces | `bg` `surface` `raised` `sunken` `overlay` | page, panel, hover/selected, inputs and code, floating layers |
+| Surfaces | `bg` `surface` `raised` `sunken` `overlay` | page and navigation rail, panel, hover/selected, inputs and code, floating layers |
 | Lines | `line` `line-strong` | separators and containers; controls and overlays |
 | Text | `ink` `ink-2` `ink-3` | primary, secondary, captions and placeholders |
 | Brand | `signal` `signal-hover` `signal-ink` `signal-text` | fill, hover fill, text on the fill, brand-colored text on a surface |
@@ -84,6 +84,26 @@ uppercase, tracked — the micro label on panels, columns and lanes).
 
 **Shape.** Two radii only: `rounded-ctl` (5px) for controls, `rounded-panel`
 (10px) for containers. Controls are 32px tall, 28px in dense places.
+
+**Layout.** Navigation rails (the global sidebar and in-page master-detail
+directories) sit on `bg` so that `surface` belongs only to active sheets and
+panels; a master-detail view shares one `rounded-panel` frame split by a 1px
+line rather than two separate cards of uneven height. Every monitoring and
+management page shares a single `68rem` (`max-w-[68rem]`) outer frame so page
+headings and panel edges never jump when moving down the sidebar; only
+workbenches and full-page call flow canvases (`/play/*`, `/logs/:id`) expand to
+`96rem` (`max-w-[96rem]`).
+
+Inside panels, settings rows (`Row`, `CardRow`) align on a fixed left label
+column (`11rem` in full-width panels, `8.5rem` inside a split detail pane) with
+controls placed immediately beside the label and short hints inline after the
+control, never pushed to opposite ends of a wide card. Controls size to the
+value they hold: numbers take `w-20`–`w-32`, short names and selects
+`w-48`–`w-72`, URLs and secrets at most `max-w-md`. All panels, tables and lane
+lists share `px-4` horizontal padding, `gap-3` between stacked panels, `min-h-8`
+on `PageHeader` (with page-level tabs attached directly beneath), and `h-8`
+column header strips. A `Panel` groups a coherent domain of settings — do not
+wrap a single setting in its own panel.
 
 **Motion.** 140ms ease-out for entering layers, 200ms for the drawer. Folding
 regions (`animate-fold-down` / `animate-fold-up`) and moving quantities

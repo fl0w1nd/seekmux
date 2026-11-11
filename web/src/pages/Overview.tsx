@@ -39,13 +39,13 @@ export function OverviewPage() {
       {!data ? (
         <div className="grid place-items-center py-24">{overview.error ? <span className="text-sm text-err">{overview.error.message}</span> : <Spinner />}</div>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           <InFlight />
           <Kpis data={data} />
-          <Panel index={next()} title="请求量" actions={<span className="num text-xs text-ink-3">每柱 {stepLabel(windows[window].step)}</span>}>
+          <Panel index={next()} title="请求量" actions={<HistogramLegend data={data} window={window} />}>
             <Histogram key={window} data={data} window={window} />
           </Panel>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             <Routes tool="search" title="搜索路由" index={next()} routes={data.routes} />
             <Routes tool="fetch" title="抓取路由" index={next()} routes={data.routes} />
             {data.routes.some((r) => r.tool === "dev_search") && <Routes tool="dev_search" title="开发搜索路由" index={next()} routes={data.routes} />}
@@ -131,7 +131,7 @@ function Kpis({ data }: { data: Overview }) {
 function Kpi({ label, value, format, unit, detail, tone }: { label: string; value: number | null; format: (n: number) => string; unit?: string; detail: ReactNode; tone?: string }) {
   const shown = useTween(value ?? 0);
   return (
-    <div className="bg-surface px-4 py-3.5">
+    <div className="bg-surface px-4 py-3">
       <div className="tag">{label}</div>
       <div className="mt-1 flex items-baseline gap-1.5">
         <span className={cx("num text-2xl font-medium", tone)}>{value === null ? "—" : format(shown)}</span>
@@ -150,6 +150,29 @@ const stack: { tool: Tool; bar: string }[] = [
   { tool: "research", bar: "bg-ink-3" },
 ];
 
+function HistogramLegend({ data, window }: { data: Overview; window: Window }) {
+  const used = stack.filter((s) => data.stats.buckets.some((b) => b.tools?.[s.tool]));
+  return (
+    <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-xs text-ink-3">
+      {used.length > 1 && (
+        <>
+          {used.map(({ tool, bar }) => (
+            <span key={tool} className="inline-flex items-center gap-1.5">
+              <span className={cx("size-2 rounded-[2px]", bar)} />
+              {toolLabel[tool]}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1.5">
+            <span className="size-2 rounded-[2px] bg-err" />
+            失败
+          </span>
+        </>
+      )}
+      <span className="num">每柱 {stepLabel(windows[window].step)}</span>
+    </div>
+  );
+}
+
 function Histogram({ data, window }: { data: Overview; window: Window }) {
   const [, navigate] = useLocation();
   const { span, step } = windows[window];
@@ -160,7 +183,6 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
     return found.get(ts) ?? { ts, calls: 0, errors: 0, tools: {} };
   });
   const peak = Math.max(1, ...slots.map((s) => s.calls));
-  const used = stack.filter((s) => slots.some((slot) => slot.tools?.[s.tool]));
   if (slots.every((s) => s.calls === 0)) {
     return (
       <Empty icon={<Activity />} title="所选时间范围内没有请求" />
@@ -168,7 +190,7 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
   }
   return (
     <div>
-      <div className="flex h-28 items-end gap-0.5">
+      <div className="flex h-20 items-end gap-0.5">
         {slots.map((slot, i) => {
           const ok = slot.calls - slot.errors;
           return (
@@ -226,20 +248,6 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
         <span>峰值 {peak} 次 / {stepLabel(step)}</span>
         <span>当前</span>
       </div>
-      {used.length > 1 && (
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
-          {used.map(({ tool, bar }) => (
-            <span key={tool} className="inline-flex items-center gap-1.5">
-              <span className={cx("size-2 rounded-[2px]", bar)} />
-              {toolLabel[tool]}
-            </span>
-          ))}
-          <span className="inline-flex items-center gap-1.5">
-            <span className="size-2 rounded-[2px] bg-err" />
-            失败
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -252,7 +260,7 @@ function Routes({ tool, title, index, routes }: { tool: string; title: string; i
     <Panel index={index} title={title} flush>
       <ol>
         {list.map((route, i) => (
-          <li key={route.provider} className={cx("flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0", !route.available && "opacity-55")}>
+          <li key={route.provider} className={cx("flex items-center gap-3 border-b border-line px-4 py-2 last:border-b-0", !route.available && "opacity-55")}>
             <span className="tag w-4">{String(i + 1).padStart(2, "0")}</span>
             <Dot tone={route.available ? (route.disabled || (route.limit > 0 && route.used >= route.limit) ? "warn" : "ok") : "neutral"} live={route.active > 0} />
             <ProviderName id={route.provider} className="w-28 text-sm" icon="size-4" />
@@ -283,7 +291,7 @@ function Models({ data, index, className }: { data: Overview; index: string; cla
     <Panel index={index} title="模型" className={className} flush>
       <ol>
         {data.models.map((model) => (
-          <li key={model.id} className={cx("flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0", model.roles.length === 0 && "opacity-55")}>
+          <li key={model.id} className={cx("flex items-center gap-3 border-b border-line px-4 py-2 last:border-b-0", model.roles.length === 0 && "opacity-55")}>
             <Dot tone={model.roles.length === 0 ? "neutral" : model.disabled || (model.limit > 0 && model.used >= model.limit) ? "warn" : "ok"} live={model.active > 0} />
             <span className="num min-w-0 truncate text-sm">{model.id}</span>
             <span className="flex shrink-0 gap-1">

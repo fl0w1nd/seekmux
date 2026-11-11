@@ -2,9 +2,9 @@ import { ChevronLeft, ChevronRight, ExternalLink, Plus } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Collapsible as RadixCollapsible } from "radix-ui";
 import { Link, Redirect, useLocation, useParams } from "wouter";
-import { CardRow } from "../components/CardRow";
+import { CardRow, ProviderRoutes } from "../components/CardRow";
 import { healthLabel, Reenable, useStatus } from "../components/Health";
-import type { Fetcher, FetcherWorker, Provider, ProviderInfo } from "../lib/api";
+import type { Fetcher, FetcherWorker, Provider, ProviderInfo, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { toolLabel } from "../lib/format";
 import { routingRules } from "../lib/routing";
@@ -22,13 +22,13 @@ interface Entry {
   name: string;
   /** The logo: the provider's own, or a fetcher's type. */
   icon: string;
-  tools: string[];
-  state: { tone: Tone; label: string };
+  tools: RoutedTool[];
+  state: { tone: Tone; label: string; short?: string };
   fetcher?: Fetcher;
 }
 
 /** How a built-in provider stands, in a few words: what a route of it lacks, or that it is set up. */
-function builtinState(info: ProviderInfo, creds: Provider, status: Status): { tone: Tone; label: string } {
+function builtinState(info: ProviderInfo, creds: Provider, status: Status): { tone: Tone; label: string; short?: string } {
   const off = status?.routes.filter((r) => r.provider === info.id && r.available && r.disabled) ?? [];
   if (off.some((r) => r.disabled_reason === "auth")) return { tone: "err", label: "密钥被拒" };
   if (off.some((r) => r.disabled_reason === "quota")) return { tone: "err", label: "额度用尽" };
@@ -56,23 +56,27 @@ function useEntries(): { cloud: Entry[]; self: Entry[]; idle: Entry[] } {
   for (const info of meta.catalog) {
     const creds = config.providers[info.id];
     const state = builtinState(info, creds, status);
-    const entry = { id: info.id, name: info.name, icon: info.id, tools: info.tools, state };
+    const entry: Entry = { id: info.id, name: info.name, icon: info.id, tools: info.tools, state };
     const keyed = Boolean(creds.api_key || (creds.api_key_hint && !creds.clear_api_key));
     const set = keyed || Boolean(creds.base_url) || (!info.key_required && routed.has(info.id));
     (set ? cloud : idle).push(entry);
   }
-  const self = config.fetchers.map((fetcher) => ({
-    id: fetcher.id,
-    name: fetcher.name || fetcher.id,
-    icon: fetcher.type,
-    tools: ["fetch"],
-    state: fetcherState(fetcher, status),
-    fetcher,
-  }));
+  const self: Entry[] = config.fetchers.map((fetcher) => {
+    const state = fetcherState(fetcher, status);
+    const short = state.label === "无可用 Worker" ? "无可用" : state.label === "未启用 Worker" ? "未启用" : state.label;
+    return {
+      id: fetcher.id,
+      name: fetcher.name || fetcher.id,
+      icon: fetcher.type,
+      tools: ["fetch"],
+      state: { ...state, short },
+      fetcher,
+    };
+  });
   return { cloud, self, idle };
 }
 
-/** Every provider of the gateway: a list of all of them, and the settings of the one chosen. */
+/** Every provider of the gateway: a directory rail on the left and the chosen provider's sheet on the right, in one frame. */
 export function ProvidersPage() {
   const { id } = useParams<{ id?: string }>();
   const { config, meta, update } = useConfig();
@@ -93,23 +97,23 @@ export function ProvidersPage() {
 
   return (
     <>
-      <PageHeader
-        title="提供商"
-        actions={
-          <Button icon={<Plus />} onClick={() => setCreating(true)}>
-            新建抓取器
-          </Button>
-        }
-      />
-      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
-        <nav aria-label="提供商" className={cx("lg:sticky lg:top-6", id && "max-lg:hidden")}>
-          <ProviderList groups={groups} selected={id ? selected?.id : undefined} fallback={selected?.id} />
+      <PageHeader title="提供商" />
+      {id && (
+        <Link href="/providers" className="mb-2.5 inline-flex items-center gap-1 text-sm text-ink-3 transition-colors hover:text-ink lg:hidden">
+          <ChevronLeft className="size-4" />
+          全部提供商
+        </Link>
+      )}
+      <div className="overflow-hidden rounded-panel border border-line bg-surface lg:grid lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <nav aria-label="提供商" className={cx("flex flex-col border-line bg-bg/55 lg:border-r", id && "max-lg:hidden")}>
+          <ProviderList
+            groups={groups}
+            selected={id ? selected?.id : undefined}
+            fallback={selected?.id}
+            onCreate={() => setCreating(true)}
+          />
         </nav>
-        <div className={cx("min-w-0", !id && "max-lg:hidden")}>
-          <Link href="/providers" className="mb-3 inline-flex items-center gap-1 text-sm text-ink-3 transition-colors hover:text-ink lg:hidden">
-            <ChevronLeft className="size-4" />
-            全部提供商
-          </Link>
+        <div className={cx("min-w-0 bg-surface", !id && "max-lg:hidden")}>
           {selected?.fetcher ? (
             <FetcherDetail
               key={selected.id}
@@ -140,33 +144,55 @@ export function ProvidersPage() {
   );
 }
 
-function ProviderList({ groups, selected, fallback }: { groups: ReturnType<typeof useEntries>; selected?: string; fallback?: string }) {
+function ProviderList({
+  groups,
+  selected,
+  fallback,
+  onCreate,
+}: {
+  groups: ReturnType<typeof useEntries>;
+  selected?: string;
+  fallback?: string;
+  onCreate: () => void;
+}) {
   // The highlighted row: the one in the address, else, in the wide layout, the one on show.
   const active = selected ?? fallback;
   const [open, setOpen] = useState(false);
   const idleOpen = open || groups.idle.some((e) => e.id === active);
   return (
-    <div className="overflow-hidden rounded-panel border border-line bg-surface">
-      <Group label="云服务">
+    <div className="flex flex-1 flex-col">
+      <Group label="云服务" action={<span className="num text-2xs text-ink-3">{groups.cloud.length}</span>}>
         {groups.cloud.map((e) => (
           <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} />
         ))}
-        {groups.cloud.length === 0 && <p className="px-3 pb-3 text-xs text-ink-3">尚未配置</p>}
+        {groups.cloud.length === 0 && <p className="px-3 pb-2 text-xs text-ink-3">尚未配置</p>}
       </Group>
-      <Group label="自托管">
+      <Group
+        label="自托管"
+        action={
+          <button
+            type="button"
+            onClick={onCreate}
+            className="-mr-1 inline-flex items-center gap-0.5 rounded-ctl px-1.5 py-0.5 text-xs text-ink-2 transition-colors hover:bg-raised hover:text-ink"
+          >
+            <Plus className="size-3" />
+            新建
+          </button>
+        }
+      >
         {groups.self.map((e) => (
           <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} />
         ))}
-        {groups.self.length === 0 && <p className="px-3 pb-3 text-xs text-ink-3">用自己已登录的浏览器读取页面</p>}
+        {groups.self.length === 0 && <p className="px-3 pb-2 text-xs text-ink-3">用已登录的浏览器读取页面</p>}
       </Group>
       {groups.idle.length > 0 && (
         <RadixCollapsible.Root open={idleOpen} onOpenChange={setOpen} className="group/idle border-t border-line">
-          <RadixCollapsible.Trigger className="flex h-9 w-full items-center gap-1.5 px-3 text-left transition-colors hover:bg-raised/60">
+          <RadixCollapsible.Trigger className="flex h-8.5 w-full items-center gap-1.5 px-3 text-left transition-colors hover:bg-raised/60">
             <ChevronRight className="size-3.5 text-ink-3 transition-transform group-data-[state=open]/idle:rotate-90" />
             <span className="tag">未配置</span>
             <span className="num ml-auto text-2xs text-ink-3">{groups.idle.length}</span>
           </RadixCollapsible.Trigger>
-          <RadixCollapsible.Content className="pb-1.5">
+          <RadixCollapsible.Content className="px-1.5 pb-1.5">
             {groups.idle.map((e) => (
               <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} quiet />
             ))}
@@ -177,45 +203,48 @@ function ProviderList({ groups, selected, fallback }: { groups: ReturnType<typeo
   );
 }
 
-function Group({ label, children }: { label: string; children: ReactNode }) {
+function Group({ label, action, children }: { label: string; action?: ReactNode; children: ReactNode }) {
   return (
     <div className="border-b border-line pb-1.5 last:border-b-0">
-      <div className="tag px-3 pt-3 pb-1.5">{label}</div>
-      {children}
+      <div className="flex items-center justify-between px-3 pt-2.5 pb-1">
+        <span className="tag">{label}</span>
+        {action}
+      </div>
+      <div className="flex flex-col gap-0.5 px-1.5">{children}</div>
     </div>
   );
 }
 
 /**
- * A provider's row. `soft` marks a row highlighted only because it is on show
- * in the wide layout, not because it was chosen; `quiet` leaves out the state
- * of a provider that is not set up.
+ * A provider's row in the directory rail: one compact line. `soft` marks a row
+ * highlighted only because it is on show in the wide layout, not because it
+ * was chosen; `quiet` leaves out the state of a provider that is not set up.
  */
 function EntryRow({ entry, active, soft, quiet }: { entry: Entry; active: boolean; soft?: boolean; quiet?: boolean }) {
   return (
     <Link
       href={`/providers/${entry.id}`}
       aria-current={active && !soft ? "page" : undefined}
-      // Only the wide layout shows the chosen one next to the list.
-      className={cx("relative flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-raised/60 max-lg:py-2.5", active && "lg:bg-raised")}
+      className={cx(
+        "flex h-8.5 items-center gap-2 rounded-ctl px-2 transition-colors max-lg:h-10",
+        active
+          ? "lg:bg-surface lg:font-medium lg:text-ink lg:shadow-[inset_0_0_0_1px_var(--line)]"
+          : "hover:bg-raised/65",
+      )}
     >
-      {active && <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-signal-text max-lg:hidden" />}
       <BrandIcon id={entry.icon} className="size-4 shrink-0" />
-      <span className="min-w-0 flex-1">
-        <span className={cx("block truncate text-sm", quiet ? "text-ink-2" : "text-ink")}>{entry.name}</span>
-        <span className="block truncate text-2xs text-ink-3">{entry.tools.map((t) => toolLabel[t] ?? t).join(" · ")}</span>
-      </span>
+      <span className={cx("min-w-0 flex-1 truncate text-sm", quiet && !active ? "text-ink-2" : "text-ink")}>{entry.name}</span>
       {!quiet && (
-        <span className="flex shrink-0 items-center gap-1.5 text-2xs text-ink-2">
+        <span className="flex shrink-0 items-center gap-1.5 text-2xs text-ink-3">
           <Dot tone={entry.state.tone} />
-          {entry.state.label}
+          <span>{entry.state.short ?? entry.state.label}</span>
         </span>
       )}
     </Link>
   );
 }
 
-/** The settings of a built-in provider: its key, limits and address, and what keeps its routes from serving. */
+/** The settings of a built-in provider: its key, limits, address and active routes. */
 function BuiltinDetail({ id }: { id: string }) {
   const { config, update, meta } = useConfig();
   const status = useStatus();
@@ -228,8 +257,8 @@ function BuiltinDetail({ id }: { id: string }) {
   const set = (change: (p: Provider) => void) => update((d) => void change(d.providers[info.id]));
 
   return (
-    <section className="rounded-panel border border-line bg-surface">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3">
+    <section className="flex flex-col">
+      <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
         <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
           <BrandIcon id={info.id} className="size-4" />
           <span className="truncate">{info.name}</span>
@@ -237,23 +266,18 @@ function BuiltinDetail({ id }: { id: string }) {
             {state.label}
           </Badge>
         </span>
-        <span className="flex items-center gap-2">
-          {tools.map((tool) => (
-            <Badge key={tool}>{toolLabel[tool]}</Badge>
-          ))}
-          <a
-            href={info.website}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-1 inline-flex items-center gap-1 text-xs text-ink-3 transition-colors hover:text-ink"
-          >
-            控制台 <ExternalLink className="size-3" />
-          </a>
-        </span>
+        <a
+          href={info.website}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-ink-3 transition-colors hover:text-ink"
+        >
+          控制台 <ExternalLink className="size-3" />
+        </a>
       </header>
 
       {off.length > 0 && (
-        <div className="flex flex-col gap-2 border-b border-line p-3.5">
+        <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
           {off.map((route) => {
             const account = route.disabled_reason === "auth" || route.disabled_reason === "quota";
             return (
@@ -282,51 +306,63 @@ function BuiltinDetail({ id }: { id: string }) {
         </div>
       )}
 
-      <CardRow label="API Key" aside={!info.key_required && "可选"}>
-        <SecretInput
-          value={creds}
-          placeholder={info.key_required ? "粘贴 API Key" : "填写后额度更高"}
-          onChange={(next) => update((d) => void (d.providers[info.id] = next))}
-        />
-      </CardRow>
-
-      <CardRow
-        label="配额限流"
-        aside={
-          tools.length > 1 && (
-            <div className="flex items-center gap-1 text-2xs text-ink-3">
-              {tools.length} 工具共用
-              <Info>{`${tools.map((tool) => toolLabel[tool]).join("、")}的调用合并计数`}</Info>
-            </div>
-          )
-        }
-      >
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-          <RateLimitInput value={creds.rate_limit} fallback={info.default_rate_limit} onChange={(rate_limit) => set((p) => (p.rate_limit = rate_limit))} />
-          <div className="flex items-center gap-1.5 text-xs text-ink-3">
-            <span>并发</span>
-            <NumberInput
-              className="w-20"
-              min={0}
-              zero="不限"
-              value={creds.concurrency}
-              onChange={(concurrency) => set((p) => (p.concurrency = Math.max(0, Math.round(concurrency))))}
-              aria-label={`${info.name} 并发上限`}
+      <div>
+        <CardRow label="API Key" aside={!info.key_required && "可选"}>
+          <div className="max-w-md">
+            <SecretInput
+              value={creds}
+              placeholder={info.key_required ? "粘贴 API Key" : "填写后额度更高"}
+              onChange={(next) => update((d) => void (d.providers[info.id] = next))}
             />
           </div>
-        </div>
-      </CardRow>
+        </CardRow>
 
-      <CardRow label="接口地址" aside={creds.base_url && <div className="text-2xs text-signal-text">已自定义</div>}>
-        <div className="flex items-center gap-2">
-          <Input mono value={creds.base_url ?? ""} placeholder={defaultUrl} aria-label={`${info.name} 接口地址`} onChange={(e) => set((p) => (p.base_url = e.target.value.trim() || undefined))} />
-          {creds.base_url && (
-            <Button size="sm" variant="ghost" onClick={() => set((p) => (p.base_url = undefined))}>
-              恢复默认
-            </Button>
-          )}
-        </div>
-      </CardRow>
+        <CardRow
+          label="配额限流"
+          aside={
+            tools.length > 1 && (
+              <div className="flex items-center gap-1 text-2xs text-ink-3">
+                {tools.length} 工具共用
+                <Info>{`${tools.map((tool) => toolLabel[tool]).join("、")}的调用合并计数`}</Info>
+              </div>
+            )
+          }
+        >
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <RateLimitInput value={creds.rate_limit} fallback={info.default_rate_limit} onChange={(rate_limit) => set((p) => (p.rate_limit = rate_limit))} />
+            <div className="flex items-center gap-1.5 text-xs text-ink-3">
+              <span>并发</span>
+              <NumberInput
+                className="w-20"
+                min={0}
+                zero="不限"
+                value={creds.concurrency}
+                onChange={(concurrency) => set((p) => (p.concurrency = Math.max(0, Math.round(concurrency))))}
+                aria-label={`${info.name} 并发上限`}
+              />
+            </div>
+          </div>
+        </CardRow>
+
+        <CardRow label="接口地址" aside={creds.base_url && <div className="text-2xs text-signal-text">已自定义</div>}>
+          <div className="flex max-w-md items-center gap-2">
+            <Input
+              mono
+              value={creds.base_url ?? ""}
+              placeholder={defaultUrl}
+              aria-label={`${info.name} 接口地址`}
+              onChange={(e) => set((p) => (p.base_url = e.target.value.trim() || undefined))}
+            />
+            {creds.base_url && (
+              <Button size="sm" variant="ghost" onClick={() => set((p) => (p.base_url = undefined))}>
+                恢复默认
+              </Button>
+            )}
+          </div>
+        </CardRow>
+      </div>
+
+      <ProviderRoutes id={info.id} tools={tools} />
     </section>
   );
 }

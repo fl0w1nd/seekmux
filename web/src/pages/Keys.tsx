@@ -53,7 +53,7 @@ export function KeysPage() {
           </Button>
         }
       />
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         <Panel flush>
           {keys.data?.length === 0 ? (
             <Empty icon={<KeyRound />} title="尚无访问密钥" />
@@ -138,13 +138,22 @@ export function KeysPage() {
         </Panel>
 
         <Panel index="MCP" title="连接方式">
-          <div className="grid gap-4">
-            {!config.oauth.disabled && (
-              <Field label="Claude Code · OAuth" hint="首次连接时在浏览器授权">
-                <CodeBlock copy wrap>{`claude mcp add --transport http seekmux ${endpoint()}`}</CodeBlock>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="flex min-w-0 flex-col gap-3">
+              {!config.oauth.disabled && (
+                <Field label="Claude Code · OAuth" hint="首次连接时在浏览器授权">
+                  <CodeBlock copy wrap>{`claude mcp add --transport http seekmux ${endpoint()}`}</CodeBlock>
+                </Field>
+              )}
+              <Field label="Claude Code · 密钥">
+                <CodeBlock copy wrap>{`claude mcp add --transport http seekmux ${endpoint()} --header "Authorization: Bearer <你的密钥>"`}</CodeBlock>
               </Field>
-            )}
-            <ConnectionGuide secret="<你的密钥>" />
+            </div>
+            <Field label="通用 MCP 配置（JSON）" className="min-w-0">
+              <CodeBlock copy>
+                {JSON.stringify({ mcpServers: { seekmux: { type: "http", url: endpoint(), headers: { Authorization: "Bearer <你的密钥>" } } } }, null, 2)}
+              </CodeBlock>
+            </Field>
           </div>
         </Panel>
       </div>

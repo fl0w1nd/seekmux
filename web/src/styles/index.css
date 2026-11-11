@@ -16,11 +16,11 @@
   color-scheme: light;
 
   /* Surfaces, from the page up. */
-  --bg: oklch(0.972 0.006 112);
-  --surface: oklch(0.995 0.003 112);
-  --raised: oklch(0.955 0.008 116);
-  --sunken: oklch(0.948 0.008 116);
-  --overlay: oklch(0.995 0.003 112);
+  --bg: oklch(0.966 0.006 112);
+  --surface: oklch(0.997 0.002 112);
+  --raised: oklch(0.952 0.008 116);
+  --sunken: oklch(0.958 0.007 115);
+  --overlay: oklch(0.997 0.002 112);
 
   /* Lines. */
   --line: oklch(0.895 0.01 122);

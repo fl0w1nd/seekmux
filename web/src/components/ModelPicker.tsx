@@ -42,7 +42,7 @@ export function ModelSelect({ value, onChange, empty = "未选择" }: { value: s
   const models = allModels(config);
   if (models.length === 0) return <NoModels />;
   return (
-    <Select className="max-w-sm" value={value} onChange={(e) => onChange(e.target.value)} aria-label="模型">
+    <Select className="w-72 max-w-full" value={value} onChange={(e) => onChange(e.target.value)} aria-label="模型">
       <option value="">{empty}</option>
       {/* A model that was removed since it was chosen. */}
       {value && !models.some((m) => m.id === value) && <option value={value}>{value}（已不存在）</option>}
@@ -123,15 +123,15 @@ export function ModelChain({ value, onChange }: { value: string[]; onChange: (id
         {value.map((id, index) => {
           const model = models.find((m) => m.id === id);
           return (
-            <li key={id} className="flex items-center gap-3 border-b border-line px-3 py-2">
+            <li key={id} className="flex items-center gap-3 border-b border-line px-3 py-1.5">
               <span className="num w-6 text-sm text-signal-text">{String(index + 1).padStart(2, "0")}</span>
               <span className="flex flex-col">
                 <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
                 <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === value.length - 1} onClick={() => move(index, 1)} />
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="num truncate text-sm font-medium">{id}</div>
-                <div className="tag normal-case">{model ? model.provider : "模型已不存在"}</div>
+              <div className="flex min-w-0 flex-1 items-baseline gap-2">
+                <span className="num truncate text-sm font-medium">{id}</span>
+                <span className="shrink-0 text-xs text-ink-3">{model ? model.provider : "模型已不存在"}</span>
               </div>
               {index === 0 ? <Badge tone="signal">首选</Badge> : <Badge>备用</Badge>}
               <span className="num hidden w-24 text-right text-xs text-ink-3 sm:block">{model?.rate_limit || "不限流"}</span>

@@ -46,8 +46,8 @@ const sampleMarkdown = `## Streamable HTTP
 `;
 
 const surfaces = [
-  ["bg", "bg-bg", "页面底色"],
-  ["surface", "bg-surface", "面板"],
+  ["bg", "bg-bg", "页面与导航栏底色"],
+  ["surface", "bg-surface", "面板与主内容区"],
   ["raised", "bg-raised", "悬停、选中"],
   ["sunken", "bg-sunken", "输入框、代码"],
   ["overlay", "bg-overlay", "弹层"],
@@ -71,8 +71,8 @@ const scale = [
   ["text-2xl", "28 / 34", "关键数字"],
   ["text-xl", "20 / 28", "页面标题"],
   ["text-lg", "16 / 24", "强调段落"],
-  ["text-base", "14 / 22", "正文、面板标题"],
-  ["text-sm", "13 / 20", "控件、表格"],
+  ["text-base", "14 / 22", "正文"],
+  ["text-sm", "13 / 20", "面板标题、控件、表格"],
   ["text-xs", "12 / 18", "说明文字"],
   ["text-2xs", "11 / 16", "标签（tag）"],
 ] as const;
@@ -174,7 +174,7 @@ export function DesignPage() {
   return (
     <>
       <PageHeader title="设计规范" description="Signal 的全部 token 与控件，规则见 web/DESIGN.md。" />
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         <Panel index="01" title="表面与线" description="层级靠明度差和 1px 线表达，不用阴影；阴影只留给真正浮起的弹层。">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
             {surfaces.map(([name, className, use]) => (

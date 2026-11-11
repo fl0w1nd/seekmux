@@ -33,19 +33,19 @@ export function RoutingPage() {
 
   return (
     <>
-      <PageHeader
-        title="服务路由"
-        actions={
-          tab === "rules" && (
-            <Button variant="primary" icon={<Plus />} onClick={() => setForm({ id: newRuleID(), name: "", enabled: true, match: [], providers: [] })}>
-              新建规则
-            </Button>
-          )
-        }
-      />
       <Tabs value={tab} onChange={(value) => navigate(`/routing/${value}`)}>
-        <TabList flush tabs={tabs} />
-        <TabPanel value={tab} className="pt-6">
+        <PageHeader
+          title="服务路由"
+          tabs={<TabList flush tabs={tabs} />}
+          actions={
+            tab === "rules" && (
+              <Button variant="primary" icon={<Plus />} onClick={() => setForm({ id: newRuleID(), name: "", enabled: true, match: [], providers: [] })}>
+                新建规则
+              </Button>
+            )
+          }
+        />
+        <TabPanel value={tab}>
           {tab === "rules" ? (
             <Rules onEdit={setForm} />
           ) : (
@@ -100,14 +100,28 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
       info="自上而下匹配，命中即停。命中的 URL 只由规则的提供商抓取，调用方用 fetch_engine 指定时除外。"
       flush
     >
+      <div className="hidden h-8 items-center gap-3 border-b border-line px-4 lg:flex">
+        <span className={cx("tag shrink-0", own > 1 ? "w-16" : "w-6")}>#</span>
+        <span className="tag w-56 shrink-0">规则</span>
+        <span className="tag flex-1">匹配域名</span>
+        <span className="tag w-52 shrink-0">提供商</span>
+        <span className="tag w-24 shrink-0 text-right">操作</span>
+      </div>
       <ol>
         {rules.map((rule, index) => {
           const ready = rule.providers.some(usable);
+          const patterns = rule.match.join(" · ");
           return (
-            <li key={rule.id} className={cx("flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 last:border-b-0", !rule.enabled && "opacity-60")}>
-              <span className={cx("num w-6 text-sm", rule.enabled && ready ? "text-signal-text" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
+            <li
+              key={rule.id}
+              className={cx(
+                "flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-line px-4 py-2.5 last:border-b-0 lg:flex-nowrap",
+                !rule.enabled && "opacity-60",
+              )}
+            >
+              <span className={cx("num w-6 shrink-0 text-sm", rule.enabled && ready ? "text-signal-text" : "text-ink-3")}>{String(index + 1).padStart(2, "0")}</span>
               {own > 1 && (
-                <span className={cx("flex w-7 flex-col", rule.builtin && "max-sm:hidden")}>
+                <span className={cx("flex w-7 shrink-0 flex-col", rule.builtin && "max-sm:hidden")}>
                   {!rule.builtin && (
                     <>
                       <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(index, -1)} />
@@ -116,46 +130,43 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
                   )}
                 </span>
               )}
-              <div className="min-w-48 flex-1 max-sm:basis-[calc(100%-3rem)]">
-                <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
-                  {rule.builtin && <BrandIcon id={rule.id} className="size-4" />}
-                  {rule.name}
-                  {rule.builtin && <Badge>内置</Badge>}
-                  {!rule.enabled ? (
-                    <Badge>已停用</Badge>
-                  ) : ready ? (
-                    <Badge tone="ok" dot>
-                      生效
+              <div className="flex min-w-44 shrink-0 flex-wrap items-center gap-1.5 text-sm font-medium max-lg:flex-1 lg:w-56">
+                {rule.builtin && <BrandIcon id={rule.id} className="size-4 shrink-0" />}
+                <span className="truncate">{rule.name}</span>
+                {rule.builtin && <Badge>内置</Badge>}
+                {!rule.enabled ? (
+                  <Badge>已停用</Badge>
+                ) : ready ? (
+                  <Badge tone="ok" dot>
+                    生效
+                  </Badge>
+                ) : (
+                  <Link href={missing(provider(rule.providers[0] ?? "")).href}>
+                    <Badge tone="warn" dot>
+                      {rule.providers.length > 0 && rule.providers.every((id) => provider(id).fetcher) ? "未启用 Worker" : "缺少密钥"}
                     </Badge>
-                  ) : (
-                    <Link href={missing(provider(rule.providers[0] ?? "")).href}>
-                      <Badge tone="warn" dot>
-                        {rule.providers.length > 0 && rule.providers.every((id) => provider(id).fetcher) ? "未启用 Worker" : "缺少密钥"}
-                      </Badge>
-                    </Link>
-                  )}
-                </div>
-                <div className="num mt-1 text-xs break-all text-ink-3">{rule.match.join(" · ")}</div>
+                  </Link>
+                )}
               </div>
-              <div className="flex flex-col gap-1 text-right max-sm:order-1 max-sm:mr-auto max-sm:ml-10 max-sm:text-left">
-                <span className="tag">提供商</span>
-                <span className="flex flex-wrap items-center justify-end gap-1.5 text-xs text-ink-2 max-sm:justify-start">
-                  {rule.providers.length === 0 && <span className="text-ink-3">未配置</span>}
-                  {rule.providers.map((id, i) => (
-                    <Fragment key={id}>
-                      {i > 0 && <span className="text-ink-3">→</span>}
-                      <ProviderIcon id={id} className="size-3.5" />
-                      {provider(id).name}
-                    </Fragment>
-                  ))}
-                </span>
+              <div className="num min-w-0 flex-1 truncate text-xs text-ink-3 max-lg:order-3 max-lg:basis-full max-lg:pl-9" title={patterns}>
+                {patterns}
               </div>
-              <Button size="sm" variant="ghost" className="max-sm:order-2" icon={<Pencil />} onClick={() => onEdit(rule)}>
-                编辑
-              </Button>
-              <span className="flex max-sm:order-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5 text-xs text-ink-2 max-lg:order-4 max-lg:mr-auto max-lg:pl-9 lg:w-52">
+                {rule.providers.length === 0 && <span className="text-ink-3">未配置</span>}
+                {rule.providers.map((id, i) => (
+                  <Fragment key={id}>
+                    {i > 0 && <span className="text-ink-3">→</span>}
+                    <ProviderIcon id={id} className="size-3.5 shrink-0" />
+                    <span className="truncate">{provider(id).name}</span>
+                  </Fragment>
+                ))}
+              </div>
+              <div className="ml-auto flex shrink-0 items-center justify-end gap-2 lg:ml-0 lg:w-24">
+                <Button size="sm" variant="ghost" icon={<Pencil />} onClick={() => onEdit(rule)}>
+                  编辑
+                </Button>
                 <Switch checked={rule.enabled} onCheckedChange={(enabled) => enable(rule, index, enabled)} aria-label={`启用规则 ${rule.name}`} />
-              </span>
+              </div>
             </li>
           );
         })}

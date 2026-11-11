@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, BookOpen, Check, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
-import { CardRow } from "../components/CardRow";
+import { CardRow, ProviderRoutes } from "../components/CardRow";
 import { Tripped, useStatus } from "../components/Health";
 import { type api, type Config, type Fetcher, type FetcherWorker, type Meta, type RouteStatus, type WorkerProfile, type WorkerStatus } from "../lib/api";
 import { useConfig } from "../lib/config";
@@ -9,7 +9,7 @@ import { routingRules } from "../lib/routing";
 import { BrandIcon } from "../ui/brand";
 import { RateLimitInput } from "../ui/inputs";
 import { Dialog, Drawer, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, Choice, ChoiceList, CodeBlock, cx, Field, Info, Input, Notice, NumberInput, Select, Switch, TabList, TabPanel, Tabs, type Tone } from "../ui/primitives";
+import { Badge, Button, Choice, ChoiceList, CodeBlock, cx, Field, Info, Input, NumberInput, Select, Switch, TabList, TabPanel, Tabs, type Tone } from "../ui/primitives";
 
 /** A token a worker can present: 32 random bytes, URL-safe. */
 function newToken(): string {
@@ -249,9 +249,11 @@ export function FetcherDetail({
       ),
     });
 
+  const customName = Boolean(type && fetcher.name.trim().toLowerCase() !== type.name.toLowerCase());
+
   return (
-    <section className="rounded-panel border border-line bg-surface">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3">
+    <section className="flex flex-col">
+      <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
         <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
           <BrandIcon id={fetcher.type} className="size-4" />
           <span className="truncate">{fetcher.name}</span>
@@ -264,10 +266,10 @@ export function FetcherDetail({
           )}
         </span>
         <span className="flex items-center gap-2">
-          <Badge>{type?.name ?? fetcher.type}</Badge>
-          <span className="num text-2xs text-ink-3">{fetcher.id}</span>
+          {customName && <Badge>{type?.name ?? fetcher.type}</Badge>}
+          {fetcher.id !== fetcher.type && <span className="num text-2xs text-ink-3">{fetcher.id}</span>}
           {type?.website && (
-            <a href={type.website} target="_blank" rel="noreferrer" className="ml-1 inline-flex items-center gap-1 text-xs text-ink-3 transition-colors hover:text-ink">
+            <a href={type.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-ink-3 transition-colors hover:text-ink">
               项目 <ExternalLink className="size-3" />
             </a>
           )}
@@ -285,62 +287,50 @@ export function FetcherDetail({
           tabs={tabs}
           actions={
             tab === "workers" && (
-              <Button
-                size="sm"
-                icon={<Plus />}
-                onClick={() => {
-                  const worker = newWorker(fetcher.workers.length + 1);
-                  remember(worker);
-                  set((f) => f.workers.push(worker));
-                }}
-              >
-                添加 Worker
-              </Button>
+              <div className="flex items-center gap-3">
+                {fetcher.workers.length > 1 && <span className="hidden text-xs text-ink-3 sm:inline">按顺序故障转移</span>}
+                <Button
+                  size="sm"
+                  icon={<Plus />}
+                  onClick={() => {
+                    const worker = newWorker(fetcher.workers.length + 1);
+                    remember(worker);
+                    set((f) => f.workers.push(worker));
+                  }}
+                >
+                  添加 Worker
+                </Button>
+              </div>
             )
           }
         />
 
         <TabPanel value="settings">
-          {!used && (
-            <div className="border-b border-line p-3.5">
-              <Notice tone="info">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span>尚未使用</span>
-                  <Link href="/tools/fetch" className="text-ink underline underline-offset-2">
-                    加入抓取路由
-                  </Link>
-                  <Link href="/routing/rules" className="text-ink underline underline-offset-2">
-                    用于路由规则
-                  </Link>
+          <div>
+            <CardRow label="名称">
+              <Input className="w-64 max-w-full" value={fetcher.name} maxLength={64} aria-label="抓取器名称" onChange={(e) => set((f) => (f.name = e.target.value))} />
+            </CardRow>
+            <CardRow label="配额限流" aside="所有 Worker 共用">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                <RateLimitInput value={fetcher.rate_limit} fallback={type?.default_rate_limit} onChange={(rate_limit) => set((f) => (f.rate_limit = rate_limit))} />
+                <div className="flex items-center gap-1.5 text-xs text-ink-3">
+                  <span>并发</span>
+                  <NumberInput
+                    className="w-20"
+                    min={0}
+                    zero="不限"
+                    value={fetcher.concurrency}
+                    onChange={(concurrency) => set((f) => (f.concurrency = Math.max(0, Math.round(concurrency))))}
+                    aria-label={`${fetcher.name} 并发上限`}
+                  />
                 </div>
-              </Notice>
-            </div>
-          )}
-          <CardRow label="名称">
-            <Input value={fetcher.name} maxLength={64} aria-label="抓取器名称" onChange={(e) => set((f) => (f.name = e.target.value))} />
-          </CardRow>
-          <CardRow label="配额限流" aside="所有 Worker 共用">
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-              <RateLimitInput value={fetcher.rate_limit} fallback={type?.default_rate_limit} onChange={(rate_limit) => set((f) => (f.rate_limit = rate_limit))} />
-              <div className="flex items-center gap-1.5 text-xs text-ink-3">
-                <span>并发</span>
-                <NumberInput
-                  className="w-20"
-                  min={0}
-                  zero="不限"
-                  value={fetcher.concurrency}
-                  onChange={(concurrency) => set((f) => (f.concurrency = Math.max(0, Math.round(concurrency))))}
-                  aria-label={`${fetcher.name} 并发上限`}
-                />
               </div>
-            </div>
-          </CardRow>
+            </CardRow>
+          </div>
+          <ProviderRoutes id={fetcher.id} tools={["fetch"]} />
         </TabPanel>
 
         <TabPanel value="workers">
-          <p className="border-b border-line px-4 py-2.5 text-2xs text-ink-3">
-            按顺序使用，前一个不可用时才用下一个
-          </p>
           <ol>
             {fetcher.workers.map((worker, i) => (
               <WorkerItem
@@ -426,11 +416,13 @@ function WorkerItem({
   return (
     <li className="border-b border-line last:border-b-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
-        <span className={state.usable ? "num w-6 text-sm text-signal-text" : "num w-6 text-sm text-ink-3"}>{String(index + 1).padStart(2, "0")}</span>
-        <span className="flex flex-col">
-          <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(-1)} />
-          <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === count - 1} onClick={() => move(1)} />
-        </span>
+        <span className={state.usable ? "num w-5 text-sm text-signal-text" : "num w-5 text-sm text-ink-3"}>{String(index + 1).padStart(2, "0")}</span>
+        {count > 1 && (
+          <span className="flex flex-col">
+            <Button size="sm" variant="ghost" className="h-4" icon={<ArrowUp />} aria-label="上移" disabled={index === 0} onClick={() => move(-1)} />
+            <Button size="sm" variant="ghost" className="h-4" icon={<ArrowDown />} aria-label="下移" disabled={index === count - 1} onClick={() => move(1)} />
+          </span>
+        )}
         <Input className="w-44" value={worker.name} maxLength={64} aria-label="Worker 名称" onChange={(e) => set((w) => (w.name = e.target.value))} />
         <Badge tone={state.tone} dot>
           {state.label}
@@ -459,9 +451,9 @@ function WorkerItem({
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-x-4 gap-y-2 px-4 pb-3 sm:grid-cols-[4.5rem_1fr] sm:pl-[4.75rem]">
-        <span className="self-center text-xs font-medium text-ink-2">令牌</span>
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-2 border-t border-line/60 bg-bg/30 px-4 py-3 sm:grid-cols-[8.5rem_minmax(0,1fr)]">
+        <span className="self-center text-sm text-ink">令牌</span>
+        <div className="flex max-w-md min-w-0 items-center gap-2">
           <span className="num flex h-8 min-w-0 flex-1 items-center truncate rounded-ctl border border-line bg-sunken px-2.5 text-sm text-ink-2">
             {token ?? worker.token_hint ?? "未生成"}
           </span>
@@ -480,11 +472,11 @@ function WorkerItem({
 
         {!connected && (
           <>
-            <span className="flex items-center gap-1 self-start pt-2 text-xs font-medium text-ink-2">
+            <span className="flex items-center gap-1 self-start pt-1.5 text-sm text-ink">
               运行
               <Info>网关前有反向代理时，需为 /worker 转发 WebSocket 升级</Info>
             </span>
-            <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex max-w-xl min-w-0 flex-col gap-1.5">
               <CodeBlock copy wrap>
                 {command}
               </CodeBlock>
@@ -500,8 +492,8 @@ function WorkerItem({
           </>
         )}
 
-        <span className="self-center text-xs font-medium text-ink-2">Profile</span>
-        <div className="flex min-w-0 flex-col gap-1.5">
+        <span className="self-center text-sm text-ink">Profile</span>
+        <div className="flex max-w-xs min-w-0 flex-col gap-1.5">
           <Select value={chosen} onChange={(e) => set((w) => (w.profile = e.target.value || undefined))} aria-label={`${worker.name} 的 Chrome Profile`}>
             <option value="">OpenCLI 默认</option>
             {profiles.map((p) => (

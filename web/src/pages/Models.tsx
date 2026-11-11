@@ -70,7 +70,7 @@ export function ModelsPage() {
           </Empty>
         </Panel>
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           {providers.map((p, pi) => {
             const inUse = p.models.some((m) => rolesOf(config, m.id).length > 0);
             const hasKey = Boolean(p.api_key || (p.api_key_hint && !p.clear_api_key));

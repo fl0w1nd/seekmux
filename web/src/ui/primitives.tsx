@@ -193,7 +193,14 @@ export function Segmented<T extends string>({
   stretch?: boolean;
 }) {
   return (
-    <div role="radiogroup" className={cx("rounded-ctl border border-line bg-sunken p-0.5", stretch ? "flex w-full" : "inline-flex")}>
+    <div
+      role="radiogroup"
+      className={cx(
+        "items-stretch rounded-ctl border border-line bg-sunken p-0.5",
+        size === "sm" ? "h-7" : "h-8",
+        stretch ? "flex w-full" : "inline-flex",
+      )}
+    >
       {options.map((option) => (
         <button
           key={option.value}
@@ -204,7 +211,7 @@ export function Segmented<T extends string>({
           className={cx(
             "inline-flex items-center gap-1.5 rounded-[3px] px-2.5 whitespace-nowrap transition-colors [&_svg]:size-3.5",
             stretch && "flex-1 justify-center",
-            size === "sm" ? "h-6 text-xs" : "h-7 text-sm",
+            size === "sm" ? "text-xs" : "text-sm",
             option.value === value ? "bg-raised text-ink shadow-[inset_0_0_0_1px_var(--line-strong)]" : "text-ink-3 hover:text-ink",
           )}
         >
@@ -322,9 +329,9 @@ export function Panel({
   return (
     <section className={cx("rounded-panel border border-line bg-surface", className)}>
       {(title || actions) && (
-        <header className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-3">
+        <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-4 py-2.5">
           <div className="min-w-0">
-            <h2 className="flex items-baseline gap-2 text-base font-medium">
+            <h2 className="flex items-baseline gap-2 text-sm font-medium">
               {index && <span className="tag text-signal-text">{index}</span>}
               {title}
               {info && <Info label={infoLabel(title)} className="self-center">{info}</Info>}
@@ -429,7 +436,7 @@ export function Tabs<T extends string>({ value, onChange, className, children }:
 /** The tab strip of a pane; `actions` sit at its right end. */
 export function TabList<T extends string>({ tabs, actions, flush }: { tabs: { value: T; label: ReactNode; disabled?: boolean }[]; actions?: ReactNode; flush?: boolean }) {
   return (
-    <div className={cx("flex h-11 shrink-0 items-center gap-4 border-b border-line", !flush && "px-4")}>
+    <div className={cx("flex h-10 shrink-0 items-center gap-4 border-b border-line", !flush && "px-4")}>
       <RadixTabs.List className="flex h-full items-stretch gap-4">
         {tabs.map((tab) => (
           <RadixTabs.Trigger
@@ -437,7 +444,7 @@ export function TabList<T extends string>({ tabs, actions, flush }: { tabs: { va
             value={tab.value}
             disabled={tab.disabled}
             className={cx(
-              "relative inline-flex items-center gap-1.5 text-sm text-ink-3 transition-colors hover:text-ink disabled:opacity-45 data-[state=active]:text-ink",
+              "relative inline-flex items-center gap-1.5 text-sm text-ink-3 transition-colors hover:text-ink disabled:opacity-45 data-[state=active]:font-medium data-[state=active]:text-ink",
               "after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full data-[state=active]:after:bg-signal-text",
             )}
           >
@@ -458,18 +465,38 @@ export function TabPanel({ value, className, children }: { value: string; classN
   );
 }
 
-/** A settings row: what the setting is on the left, its control on the right. */
-export function Row({ label, hint, info, children, className }: { label: ReactNode; hint?: ReactNode; info?: ReactNode; children: ReactNode; className?: string }) {
+/** A settings row: a fixed label column on the left, its control aligned right beside it. */
+export function Row({
+  label,
+  hint,
+  info,
+  align = "center",
+  children,
+  className,
+}: {
+  label: ReactNode;
+  hint?: ReactNode;
+  info?: ReactNode;
+  align?: "center" | "start";
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={cx("flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-line px-4 py-3 last:border-b-0", className)}>
-      <div className="min-w-48 flex-1">
-        <div className="flex items-center gap-1 text-sm">
-          {label}
-          {info && <Info label={infoLabel(label)}>{info}</Info>}
-        </div>
-        {hint && <div className="mt-0.5 text-xs text-ink-3">{hint}</div>}
+    <div
+      className={cx(
+        "grid grid-cols-1 gap-x-4 gap-y-1.5 border-b border-line px-4 py-2.5 last:border-b-0 sm:grid-cols-[11rem_minmax(0,1fr)]",
+        align === "start" ? "items-start" : "items-center",
+        className,
+      )}
+    >
+      <div className={cx("flex items-center gap-1 text-sm text-ink", align === "start" && "sm:pt-1.5")}>
+        {label}
+        {info && <Info label={infoLabel(label)}>{info}</Info>}
       </div>
-      <div className="flex min-w-0 max-w-full shrink-0 items-center gap-2">{children}</div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5">
+        {children}
+        {hint && <span className="text-xs text-ink-3">{hint}</span>}
+      </div>
     </div>
   );
 }
@@ -649,5 +676,5 @@ export const Th = ({ className, ...rest }: ComponentProps<"th">) => (
   <th className={cx("tag h-8 border-b border-line px-3 text-left font-normal whitespace-nowrap first:pl-4 last:pr-4", className)} {...rest} />
 );
 export const Td = ({ className, ...rest }: ComponentProps<"td">) => (
-  <td className={cx("h-10 border-b border-line px-3 first:pl-4 last:pr-4", className)} {...rest} />
+  <td className={cx("h-9 border-b border-line px-3 py-1.5 first:pl-4 last:pr-4", className)} {...rest} />
 );

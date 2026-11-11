@@ -99,8 +99,8 @@ function NavList({ location }: { location: string }) {
   return (
     <nav className="flex-1 overflow-y-auto px-2 pb-4">
       {nav.map((section) => (
-        <div key={section.group} className="mt-4 first:mt-1">
-          <div className="tag px-2 pb-1.5">{section.group}</div>
+        <div key={section.group} className="mt-3.5 first:mt-1">
+          <div className="tag px-2 pb-1">{section.group}</div>
           {section.items.map(({ href, label, icon: Icon }) => {
             const active = href === "/" ? location === "/" : location.startsWith(href);
             return (
@@ -110,7 +110,9 @@ function NavList({ location }: { location: string }) {
                 aria-current={active ? "page" : undefined}
                 className={cx(
                   "relative flex h-8 items-center gap-2.5 rounded-ctl px-2 text-sm transition-colors max-md:h-10",
-                  active ? "bg-raised text-ink" : "text-ink-2 hover:bg-raised/60 hover:text-ink",
+                  active
+                    ? "bg-surface font-medium text-ink shadow-[inset_0_0_0_1px_var(--line)]"
+                    : "text-ink-2 hover:bg-raised/70 hover:text-ink",
                 )}
               >
                 {active && <span className="absolute inset-y-1.5 -left-2 w-0.5 rounded-full bg-signal-text" />}
@@ -161,8 +163,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { meta, saving, saved, error, retry, discard } = useConfig();
   const [menu, setMenu] = useState(false);
-  // A workbench and the page of one call are laid out across the window; the other pages are read as a column.
-  const wide = /^\/(play\/|logs\/.)/.test(location);
+  // Every monitoring and management page shares one 68rem frame so headings and panel edges never shift; only workbenches and call flows widen.
+  const measure = /^\/(play\/|logs\/.)/.test(location) ? "max-w-[96rem]" : "max-w-[68rem]";
   const current = nav.flatMap((section) => section.items).find(({ href }) => (href === "/" ? location === "/" : location.startsWith(href)));
 
   // The menu of a phone closes once a page is chosen.
@@ -170,8 +172,8 @@ export function Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-dvh max-md:flex-col">
-      <aside className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col border-r border-line bg-surface max-md:hidden">
-        <div className="flex h-14 items-center gap-2.5 px-3.5">
+      <aside className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col border-r border-line bg-bg max-md:hidden">
+        <div className="flex h-13 items-center gap-2.5 px-3.5">
           <Logo className="size-7" />
           <div className="leading-tight">
             <div className="font-medium">SeekMux</div>
@@ -200,8 +202,8 @@ export function Shell({ children }: { children: ReactNode }) {
       <main className="min-w-0 flex-1">
         <div
           className={cx(
-            "mx-auto w-full px-6 py-6 max-md:px-4",
-            wide ? "max-w-[104rem]" : "max-w-6xl",
+            "mx-auto w-full px-6 py-5 max-md:px-4",
+            measure,
             "max-md:pr-[max(1rem,env(safe-area-inset-right))] max-md:pb-[max(1.5rem,env(safe-area-inset-bottom))] max-md:pl-[max(1rem,env(safe-area-inset-left))]",
             error && "pb-24",
           )}
@@ -232,15 +234,28 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-/** The heading every page starts with. */
-export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
+/** The heading every page starts with; page-level tabs sit directly beneath it. */
+export function PageHeader({
+  title,
+  description,
+  actions,
+  tabs,
+}: {
+  title: string;
+  description?: ReactNode;
+  actions?: ReactNode;
+  tabs?: ReactNode;
+}) {
   return (
-    <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-      <div className="min-w-0">
-        <h1 className="text-xl font-medium tracking-tight">{title}</h1>
-        {description && <p className="mt-1 max-w-2xl text-sm text-ink-3">{description}</p>}
+    <header className="mb-4">
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-medium tracking-tight">{title}</h1>
+          {description && <p className="mt-1 max-w-2xl text-sm text-ink-3">{description}</p>}
+        </div>
+        {actions && <div className="flex items-center gap-2">{actions}</div>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {tabs && <div className="mt-2">{tabs}</div>}
     </header>
   );
 }

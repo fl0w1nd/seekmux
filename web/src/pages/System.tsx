@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { PageHeader } from "../Shell";
 import { useConfirm, useToast } from "../ui/overlays";
-import { Button, Field, Input, Notice, NumberInput, Panel, Row, Switch, PasswordInput } from "../ui/primitives";
+import { Button, Input, Notice, NumberInput, Panel, Row, Switch, PasswordInput } from "../ui/primitives";
 
 export function SystemPage() {
   const { config, update, meta } = useConfig();
@@ -32,7 +32,7 @@ export function SystemPage() {
   return (
     <>
       <PageHeader title="系统" />
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         <Panel index="01" title="请求日志" flush>
           <Row label="保留天数" hint="研究报告链接同期失效">
             <NumberInput className="w-24" min={1} suffix="天" value={config.logs.retention_days} onChange={(v) => update((d) => void (d.logs.retention_days = Math.round(v)))} />
@@ -138,30 +138,37 @@ function PasswordPanel() {
   });
   const mismatch = repeat !== "" && repeat !== next;
   return (
-    <Panel index="05" title="管理员密码">
-      <form
-        className="flex max-w-sm flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          change.mutate();
-        }}
-      >
-        <Field label="当前密码">
-          <PasswordInput autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
-        </Field>
-        <Field label="新密码" hint="至少 10 个字符">
-          <PasswordInput autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
-        </Field>
-        <Field label="确认新密码" error={mismatch ? "两次输入不一致" : undefined}>
-          <PasswordInput autoComplete="new-password" value={repeat} aria-invalid={mismatch} onChange={(e) => setRepeat(e.target.value)} />
-        </Field>
-        {change.error && <Notice tone="err">{change.error.message}</Notice>}
-        <div>
-          <Button type="submit" variant="primary" loading={change.isPending} disabled={!current || next.length < 10 || next !== repeat}>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        change.mutate();
+      }}
+    >
+      <Panel
+        index="05"
+        title="管理员密码"
+        flush
+        actions={
+          <Button size="sm" type="submit" variant="primary" loading={change.isPending} disabled={!current || next.length < 10 || next !== repeat}>
             修改密码
           </Button>
-        </div>
-      </form>
-    </Panel>
+        }
+      >
+        <Row label="当前密码">
+          <PasswordInput className="w-64 max-w-full" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} aria-label="当前密码" />
+        </Row>
+        <Row label="新密码" hint="至少 10 个字符">
+          <PasswordInput className="w-64 max-w-full" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} aria-label="新密码" />
+        </Row>
+        <Row label="确认新密码" hint={mismatch ? <span className="text-err">两次输入不一致</span> : undefined}>
+          <PasswordInput className="w-64 max-w-full" autoComplete="new-password" value={repeat} aria-invalid={mismatch} onChange={(e) => setRepeat(e.target.value)} aria-label="确认新密码" />
+        </Row>
+        {change.error && (
+          <div className="px-4 py-2.5">
+            <Notice tone="err">{change.error.message}</Notice>
+          </div>
+        )}
+      </Panel>
+    </form>
   );
 }

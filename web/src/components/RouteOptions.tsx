@@ -22,7 +22,7 @@ export function RouteOptions({ tool, index }: { tool: RoutedTool; index: number 
   const { config, update } = useConfig();
   const route = config[tool].routes[index];
   return (
-    <div className="-mx-4 -mb-3 mt-1 basis-full border-t border-line bg-sunken/35 px-4 py-3.5">
+    <div className="-mx-4 -mb-2 mt-1 basis-full border-t border-line bg-sunken/35 px-4 py-3.5">
       <OptionFields
         tool={tool}
         provider={route.provider}
