@@ -106,8 +106,43 @@ export function SidePanel({ label, onClose, className, children }: { label: stri
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // The panel takes no scroll lock, so the page behind stays usable. While the
+  // pointer is over the panel the page cannot scroll at all, so a wheel there
+  // moves only the panel, whatever the browser would chain or latch.
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = panel.current;
+    if (!el) return;
+    const root = document.documentElement;
+    let locked = false;
+    const lock = (e: PointerEvent | WheelEvent) => {
+      if (locked || ("pointerType" in e && e.pointerType === "touch")) return;
+      locked = true;
+      root.style.scrollbarGutter = "stable";
+      root.style.overflow = "hidden";
+    };
+    const unlock = () => {
+      if (!locked) return;
+      locked = false;
+      root.style.overflow = "";
+      root.style.scrollbarGutter = "";
+    };
+    el.addEventListener("pointerenter", lock);
+    el.addEventListener("pointerleave", unlock);
+    // The panel may open under a pointer that has not moved yet.
+    el.addEventListener("wheel", lock, { passive: true });
+    return () => {
+      el.removeEventListener("pointerenter", lock);
+      el.removeEventListener("pointerleave", unlock);
+      el.removeEventListener("wheel", lock);
+      unlock();
+    };
+  }, []);
+
   return createPortal(
     <section
+      ref={panel}
       aria-label={label}
       className={cx(
         "fixed inset-y-0 right-0 z-30 flex w-full animate-slide flex-col border-l border-line bg-overlay pb-[env(safe-area-inset-bottom)] shadow-overlay",
