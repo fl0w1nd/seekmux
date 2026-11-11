@@ -5,7 +5,7 @@ import { duration } from "../../lib/format";
 import { useNow } from "../../lib/motion";
 import { attr } from "../../lib/trace";
 import { Button, CodeBlock, cx, Dot } from "../../ui/primitives";
-import { ProviderName } from "../ProviderName";
+import { ProviderKind } from "../ProviderName";
 import { candidateReason, candidates, conclusion, factsOf, kindLabel, statusLabel, statusTone, subject, titleOf } from "./wording";
 
 const barColor: Record<TraceNode["status"], string> = {
@@ -86,7 +86,7 @@ export function NodeDetail({ node, text, total, origin = 0, onClose, closeClassN
           <div className="tag">{kindLabel[node.kind] ?? node.kind}</div>
           <div className="mt-0.5 flex min-w-0 items-center text-base font-medium">
             {node.kind === "attempt" ? (
-              <ProviderName id={node.name ?? ""} icon="size-4" />
+              <ProviderKind id={node.name ?? ""} icon="size-4" />
             ) : node.kind === "llm" || node.kind === "agent" ? (
               <span className="num min-w-0 truncate">{node.name}</span>
             ) : node.kind === "query" || node.kind === "worker" ? (
@@ -145,7 +145,7 @@ export function NodeDetail({ node, text, total, origin = 0, onClose, closeClassN
               return (
                 <li key={c.provider} className="flex h-7 items-center gap-2 border-b border-line text-xs last:border-b-0">
                   <span className="num w-4 shrink-0 text-ink-3">{rank || "—"}</span>
-                  <ProviderName id={c.provider} className={cx("min-w-0 flex-1", !c.eligible && "text-ink-3")} />
+                  <ProviderKind id={c.provider} className={cx("min-w-0 flex-1", !c.eligible && "text-ink-3")} />
                   <span className="flex shrink-0 items-center gap-1.5 text-ink-3">
                     <Dot tone={c.eligible ? "ok" : "neutral"} />
                     {c.eligible ? "可用" : (candidateReason[c.reason ?? ""] ?? c.reason ?? "不可用")}
@@ -162,7 +162,7 @@ export function NodeDetail({ node, text, total, origin = 0, onClose, closeClassN
           <dl>
             {group.rows.map((row) => (
               <Fact key={row.key} label={row.label} known={row.known}>
-                {row.key === "provider" || row.key === "winner" || row.key === "engine" ? <ProviderName id={row.value} className="justify-end" /> : row.value}
+                {row.key === "provider" || row.key === "winner" || row.key === "engine" ? <ProviderKind id={row.value} className="justify-end" /> : row.value}
               </Fact>
             ))}
           </dl>

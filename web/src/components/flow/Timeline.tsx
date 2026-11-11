@@ -4,7 +4,7 @@ import { duration } from "../../lib/format";
 import { useNow } from "../../lib/motion";
 import { buildTree, type TreeNode } from "../../lib/trace";
 import { cx, Empty } from "../../ui/primitives";
-import { ProviderName } from "../ProviderName";
+import { ProviderKind } from "../ProviderName";
 import { conclusion, kindLabel, statusLabel, titleOf } from "./wording";
 
 const bar: Record<NodeStatus, string> = {
@@ -121,7 +121,7 @@ export function Timeline({
                 <span className="flex w-64 shrink-0 items-center gap-1.5 pr-3 max-lg:w-52" style={{ paddingLeft: `${1 + Math.min(depth, 6) * 0.625}rem` }}>
                   <span className={cx("tag shrink-0", active && "text-ink")}>{kind}</span>
                   {node.kind === "attempt" ? (
-                    <ProviderName id={node.name ?? ""} icon="size-3" className="text-ink" />
+                    <ProviderKind id={node.name ?? ""} icon="size-3" className="text-ink" />
                   ) : node.kind === "llm" || node.kind === "agent" ? (
                     <span className="num min-w-0 truncate text-ink">{node.name}</span>
                   ) : node.kind === "query" || node.kind === "worker" ? (

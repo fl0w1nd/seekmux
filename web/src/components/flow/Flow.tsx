@@ -5,7 +5,7 @@ import { duration } from "../../lib/format";
 import { useNow } from "../../lib/motion";
 import { attr, buildTree, type TreeNode } from "../../lib/trace";
 import { cx, Dot } from "../../ui/primitives";
-import { ProviderName } from "../ProviderName";
+import { ProviderKind } from "../ProviderName";
 import { candidateReason, candidates, conclusion, isPill, statusLabel, statusTone, subject, titleOf } from "./wording";
 
 /*
@@ -306,7 +306,7 @@ function Glyph({ node }: { node: TraceNode }) {
 }
 
 function Name({ node }: { node: TraceNode }) {
-  if (node.kind === "attempt") return <ProviderName id={node.name ?? ""} className="font-medium" />;
+  if (node.kind === "attempt") return <ProviderKind id={node.name ?? ""} className="font-medium" />;
   if (node.kind === "llm" || node.kind === "agent") return <span className="num min-w-0 truncate font-medium">{node.name}</span>;
   if (node.kind === "query") return <span className="min-w-0 truncate font-medium">{node.name}</span>;
   if (node.kind === "worker") return <span className="min-w-0 truncate font-medium">{node.name}</span>;
@@ -404,7 +404,7 @@ function RouteCard({ node, fill }: { node: TreeNode; fill?: boolean }) {
               )}
             >
               {c.eligible && <span className="num text-ink-3">{++order}</span>}
-              <ProviderName id={c.provider} icon="size-3" className={cx(!c.eligible && "opacity-60")} />
+              <ProviderKind id={c.provider} icon="size-3" className={cx(!c.eligible && "opacity-60")} />
               {!c.eligible && c.reason && <span className="shrink-0">{candidateReason[c.reason] ?? c.reason}</span>}
             </li>
           ))}

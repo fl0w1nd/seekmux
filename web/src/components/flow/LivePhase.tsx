@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import type { ActiveNode, LiveCall, TraceNode } from "../../lib/api";
-import { ProviderName } from "../ProviderName";
+import { ProviderKind } from "../ProviderName";
 import { titleOf } from "./wording";
 
 function Doing({ node }: { node: ActiveNode }) {
@@ -8,7 +8,7 @@ function Doing({ node }: { node: ActiveNode }) {
     case "attempt":
       return (
         <span className="inline-flex min-w-0 items-center gap-1">
-          请求 <ProviderName id={node.name ?? ""} icon="size-3" />
+          请求 <ProviderKind id={node.name ?? ""} icon="size-3" />
         </span>
       );
     case "llm":

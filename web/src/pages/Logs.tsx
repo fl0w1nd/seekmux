@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Mous
 import { Link, useSearch } from "wouter";
 import { LivePhase } from "../components/flow/LivePhase";
 import { stoppedHere } from "../components/flow/wording";
-import { ProviderName } from "../components/ProviderName";
-import { api, type Hop, type LiveCall, type LogEntry } from "../lib/api";
+import { fetcherNames, ProviderKind, ProviderName } from "../components/ProviderName";
+import { api, type Hop, type LiveCall, type LogEntry, type Meta, type ProviderInfo } from "../lib/api";
 import { useConfig } from "../lib/config";
 import { compact, dateTime, duration, logTime, toolLabel } from "../lib/format";
 import { useNow } from "../lib/motion";
@@ -33,8 +33,14 @@ const positive = (value: string | null) => {
 
 const callerName = (entry: LogEntry) => (entry.source === "webui" ? "调试台" : entry.api_key_name || "—");
 
+/** A fetcher in a list of plain labels: its type first, as a call's flow names it. */
+function fetcherLabel(meta: Meta, info: ProviderInfo): string {
+  const { type, name } = fetcherNames(meta, info);
+  return name ? `${type} · ${name}` : type;
+}
+
 export function LogsPage() {
-  const { config, meta } = useConfig();
+  const { config, meta, provider: providerInfo } = useConfig();
   const client = useQueryClient();
   const toast = useToast();
   const confirm = useConfirm();
@@ -243,7 +249,8 @@ export function LogsPage() {
           aria-label="按提供商筛选"
           options={[
             { value: "", label: "全部提供商" },
-            ...[...meta.catalog, ...config.fetchers].map((p) => ({ value: p.id, label: p.name })),
+            ...meta.catalog.map((p) => ({ value: p.id, label: p.name })),
+            ...config.fetchers.map((f) => ({ value: f.id, label: fetcherLabel(meta, providerInfo(f.id)) })),
             ...(provider && ![...meta.catalog, ...config.fetchers].some((p) => p.id === provider) ? [{ value: provider, label: provider }] : []),
           ]}
         />
@@ -424,7 +431,7 @@ function Route({ hops }: { hops: Hop[] }) {
         <span key={i} className="flex items-center gap-1.5">
           {i > 0 && <span className="text-ink-3">{hops[i - 1].kind === hop.kind ? "→" : "·"}</span>}
           <span className={cx("inline-flex items-center", hopClass[hop.status])} title={`${toolLabel[hop.kind] ?? hop.kind} · ${hopTitle[hop.status]}${hop.count > 1 ? ` × ${hop.count}` : ""}`}>
-            <ProviderName id={hop.provider} kind={hop.kind} />
+            {hop.kind === "llm" ? <ProviderName id={hop.provider} kind={hop.kind} /> : <ProviderKind id={hop.provider} />}
             {hop.count > 1 && <span className="num text-ink-3 no-underline"> ×{hop.count}</span>}
           </span>
         </span>
