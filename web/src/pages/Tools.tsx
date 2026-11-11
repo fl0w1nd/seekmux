@@ -6,11 +6,13 @@ import { DevSearchPage } from "./DevSearch";
 import { FetchPage } from "./Fetch";
 import { ResearchPage } from "./Research";
 import { SearchPage } from "./Search";
+import { SocialPage } from "./Social";
 
 const pages: Record<string, () => ReactNode> = {
   search: SearchPage,
   "dev-search": DevSearchPage,
   fetch: FetchPage,
+  social: SocialPage,
   research: ResearchPage,
 };
 

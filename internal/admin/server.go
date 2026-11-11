@@ -184,6 +184,7 @@ func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
 		"version":           s.version,
 		"catalog":           config.Catalog,
 		"fetcher_types":     config.FetcherTypes,
+		"social_platforms":  config.SocialPlatforms,
 		"rules":             config.BuiltinRules(),
 		"tools":             config.Tools,
 		"defaults":          config.Default(),

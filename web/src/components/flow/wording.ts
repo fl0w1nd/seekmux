@@ -85,7 +85,7 @@ export const candidateReason: Record<string, string> = {
 const routeMode: Record<string, string> = { auto: "自动", pinned: "指定引擎", rule: "命中规则" };
 const skipReason: Record<string, string> = { auth: "鉴权失败后停用", quota: "额度用尽后停用", provider: "连续失败，熔断中" };
 const sourceName: Record<string, string> = { mcp: "MCP 客户端", webui: "调试台", playground: "调试台" };
-const toolName: Record<string, string> = { search: "网页搜索", dev_search: "开发搜索", fetch: "网页抓取", read_page: "翻页阅读", research: "深度研究" };
+const toolName: Record<string, string> = { search: "网页搜索", dev_search: "开发搜索", fetch: "网页抓取", x_search: "X 搜索", read_page: "翻页阅读", research: "深度研究" };
 
 export interface Candidate {
   provider: string;

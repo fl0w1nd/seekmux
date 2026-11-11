@@ -6,12 +6,16 @@
 //
 // Every frame is one JSON Message. The worker speaks first:
 //
-//	worker → server  hello   {protocol, token, version, slots, state}
+//	worker → server  hello   {protocol, token, version, slots, features, state}
 //	server → worker  welcome {}                    or a close frame (see Close*)
 //	worker → server  state   {state}               whenever it changes
 //	server → worker  fetch   {id, url, adapter, profile, timeout_ms}
+//	server → worker  search  {id, site, query, sort, limit, profile, timeout_ms}
 //	server → worker  cancel  {id}                  the caller left
-//	worker → server  result  {id, page} or {id, error}
+//	worker → server  result  {id, page}, {id, posts} or {id, error}
+//
+// A search is only sent to a worker whose hello announced the feature for
+// its site (FeatureXSearch); a worker from before searches announces none.
 package worker
 
 import (
@@ -28,9 +32,14 @@ const (
 	TypeWelcome = "welcome"
 	TypeState   = "state"
 	TypeFetch   = "fetch"
+	TypeSearch  = "search"
 	TypeCancel  = "cancel"
 	TypeResult  = "result"
 )
+
+// FeatureXSearch is announced by a worker that searches X (TypeSearch with
+// site "x").
+const FeatureXSearch = "x_search"
 
 // Close codes the server ends a connection with, besides the standard ones.
 const (
@@ -52,6 +61,8 @@ type Message struct {
 	Version  string `json:"version,omitempty"`
 	// Slots is how many fetches the worker runs at once.
 	Slots int `json:"slots,omitempty"`
+	// Features lists what the worker can do beyond reading pages.
+	Features []string `json:"features,omitempty"`
 
 	// hello, state
 	State *State `json:"state,omitempty"`
@@ -70,9 +81,37 @@ type Message struct {
 	Profile   string `json:"profile,omitempty"`
 	TimeoutMs int64  `json:"timeout_ms,omitempty"`
 
-	// result
+	// search
+	Site  string `json:"site,omitempty"`
+	Query string `json:"query,omitempty"`
+	// Sort is "top" or "latest".
+	Sort  string `json:"sort,omitempty"`
+	Limit int    `json:"limit,omitempty"`
+
+	// result: a page for a fetch, posts for a search (none when nothing
+	// matched), or an error.
 	Page  *Page  `json:"page,omitempty"`
+	Posts []Post `json:"posts,omitempty"`
 	Error *Error `json:"error,omitempty"`
+}
+
+// Post is a post a search found.
+type Post struct {
+	ID     string `json:"id"`
+	URL    string `json:"url"`
+	Author string `json:"author"`
+	// Name is the author's display name, when the site gave it.
+	Name string `json:"name,omitempty"`
+	Text string `json:"text"`
+	// CreatedAt is in RFC 3339, or as the site wrote it when it could not
+	// be read.
+	CreatedAt string   `json:"created_at,omitempty"`
+	Likes     int64    `json:"likes"`
+	Reposts   int64    `json:"reposts"`
+	Replies   int64    `json:"replies"`
+	Views     int64    `json:"views,omitempty"`
+	Media     []string `json:"media,omitempty"`
+	Quoted    *Post    `json:"quoted,omitempty"`
 }
 
 // State is what the worker reports about its browser.
@@ -164,11 +203,14 @@ const (
 	CodeBrowserUnavailable = "browser_unavailable"
 	// Every slot of the worker is taken.
 	CodeBusy = "busy"
+	// The worker is too old for the request: it did not announce the
+	// feature.
+	CodeOutdated = "outdated"
 	// The worker failed in a way that says nothing about the page.
 	CodeInternal = "internal"
 )
 
-// Error is a failed fetch as the worker reports it.
+// Error is a failed fetch or search as the worker reports it.
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

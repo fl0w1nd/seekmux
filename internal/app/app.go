@@ -24,6 +24,7 @@ import (
 	"github.com/fl0w1nd/seekmux/internal/llm"
 	"github.com/fl0w1nd/seekmux/internal/research"
 	"github.com/fl0w1nd/seekmux/internal/search"
+	"github.com/fl0w1nd/seekmux/internal/social"
 	"github.com/fl0w1nd/seekmux/internal/store"
 	"github.com/fl0w1nd/seekmux/internal/worker"
 )
@@ -639,6 +640,31 @@ func (a *App) DevSearch(ctx context.Context, caller Caller, args search.DevArgs,
 		entry.Status = store.StatusError
 	}
 	a.logCall(ctx, s, caller, config.ToolDevSearch, trace, entry, args, result)
+	return result, nil
+}
+
+// XSearch serves the x_search tool. The error is an invalid-arguments
+// error. The upstream calls land in the trace of ctx when it carries one.
+func (a *App) XSearch(ctx context.Context, caller Caller, args social.XArgs, o Override) (social.XResult, error) {
+	s, err := a.view(caller, config.ToolXSearch, o)
+	if err != nil {
+		return social.XResult{}, err
+	}
+	if err := args.Validate(s.Config); err != nil {
+		return social.XResult{}, err
+	}
+	ctx, trace, cancel := a.startCall(ctx, s, caller, config.ToolXSearch, args.Query, "", args, o)
+	defer cancel()
+	result := social.RunX(ctx, s.Config, a.Limits, a.Workers, args)
+	if ctx.Err() != nil {
+		result.Error = context.Cause(ctx).Error()
+	}
+
+	entry := store.LogEntry{Status: store.StatusOK, Summary: args.Query, Provider: result.Fetcher, Error: result.Error}
+	if result.Error != "" {
+		entry.Status = store.StatusError
+	}
+	a.logCall(ctx, s, caller, config.ToolXSearch, trace, entry, args, result)
 	return result, nil
 }
 

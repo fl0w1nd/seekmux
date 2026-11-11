@@ -1,4 +1,4 @@
-import { BookOpen, Bot, Braces, ChevronLeft, ChevronRight, CornerDownLeft, Globe, LogIn, Microscope, ScanText, type LucideIcon } from "lucide-react";
+import { AtSign, BookOpen, Bot, Braces, ChevronLeft, ChevronRight, CornerDownLeft, Globe, LogIn, Microscope, ScanText, type LucideIcon } from "lucide-react";
 import { createContext, memo, useContext, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import type { NodeStatus, TraceNode } from "../../lib/api";
 import { duration } from "../../lib/format";
@@ -298,7 +298,7 @@ function Pill({ node, fill }: { node: TreeNode; fill?: boolean }) {
 
 /* ---------- Card: something that took time ---------- */
 
-const toolIcon: Record<string, LucideIcon> = { search: Globe, dev_search: Braces, fetch: ScanText, read_page: BookOpen, research: Microscope };
+const toolIcon: Record<string, LucideIcon> = { search: Globe, dev_search: Braces, fetch: ScanText, x_search: AtSign, read_page: BookOpen, research: Microscope };
 
 function Glyph({ node }: { node: TraceNode }) {
   const Icon = node.kind === "call" ? LogIn : node.kind === "llm" ? Bot : node.kind === "agent" ? Microscope : node.kind === "tool" ? (toolIcon[node.name ?? ""] ?? Globe) : undefined;

@@ -17,6 +17,7 @@ It is one small Go binary with a single SQLite file, meant for a cheap server.
 | `search` | AnySearch, Brave, Exa, Firecrawl, Parallel, Perplexity, Tavily | Tried in your priority order; a provider that is rate limited or failing is skipped. |
 | `dev_search` | Firecrawl | Searches issues, merged pull requests, READMEs and documentation sites instead of the web, and returns the passages that matched. |
 | `fetch` | AnySearch, Exa, Firecrawl, Jina Reader, Parallel, Tavily, and self-hosted fetchers | A slow provider is raced by the next one. Given a prompt, a model answers from the page instead of returning all of it. |
+| `x_search` | self-hosted fetchers | Searches posts on X through OpenCLI in a Chrome signed in to X, with X's own search operators. |
 | `research` | any configured model | An agent searches and reads on its own and returns a sourced report.¹ |
 
 ¹ Also as `research_start` / `research_result` / `research_cancel`, for agents
@@ -137,6 +138,16 @@ profiles or on several machines; to the routes it is still one provider. A
 page goes to the first worker that can take it. A page that cannot be read
 (not signed in, not found, blocked) is not retried on another worker; the
 fetch moves on to the next provider.
+
+### Searching X
+
+`x_search` runs X's own search in a worker's Chrome. Under **工具 → 社交媒体**
+(Tools → Social media), add X, choose the OpenCLI fetcher and the workers
+that search it; their Chrome profiles must be signed in to X. Workers are
+tried in the fetcher's order, the next only when one cannot take the search
+(offline, busy, browser unavailable). Searches share the fetcher's rate limit
+and concurrency with the pages it reads. A worker older than 0.0.4 cannot
+search and cannot be chosen; update it with `npx seekmux@latest`.
 
 ## Deploying
 

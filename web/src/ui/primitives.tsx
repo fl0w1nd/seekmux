@@ -513,10 +513,10 @@ export function Section({ title, summary, defaultOpen, children }: { title: Reac
 
 /* ---------- Choice ---------- */
 
-/** A short list of options read top to bottom, one of which is chosen; each row can carry a status. */
-export function ChoiceList({ label, children }: { label: string; children: ReactNode }) {
+/** A short list of options read top to bottom, one of which is chosen (or, `multi`, any of them); each row can carry a status. */
+export function ChoiceList({ label, multi, children }: { label: string; multi?: boolean; children: ReactNode }) {
   return (
-    <div role="radiogroup" aria-label={label} className="overflow-hidden rounded-ctl border border-line">
+    <div role={multi ? "group" : "radiogroup"} aria-label={label} className="overflow-hidden rounded-ctl border border-line">
       {children}
     </div>
   );
@@ -530,6 +530,7 @@ export function Choice({
   mono,
   status,
   detail,
+  multi,
 }: {
   checked: boolean;
   disabled?: boolean;
@@ -539,12 +540,14 @@ export function Choice({
   status?: ReactNode;
   /** A line under the title, such as what the option stands for. */
   detail?: ReactNode;
+  /** One of several that can be chosen together: a box that ticks, and onSelect toggles it. */
+  multi?: boolean;
 }) {
   return (
     <div className={cx("border-b border-line transition-colors last:border-b-0", checked && "bg-fill")}>
       <button
         type="button"
-        role="radio"
+        role={multi ? "checkbox" : "radio"}
         aria-checked={checked}
         disabled={disabled}
         onClick={onSelect}
@@ -552,11 +555,12 @@ export function Choice({
       >
         <span
           className={cx(
-            "grid size-4 shrink-0 place-items-center rounded-full border transition-colors",
+            "grid size-4 shrink-0 place-items-center border transition-colors",
+            multi ? "rounded-tag" : "rounded-full",
             checked ? "border-signal-text bg-signal-text" : "border-line-strong bg-surface",
           )}
         >
-          {checked && <span className="size-1.5 rounded-full bg-surface" />}
+          {checked && (multi ? <Check className="size-3 text-surface" strokeWidth={3} /> : <span className="size-1.5 rounded-full bg-surface" />)}
         </span>
         <span className={cx("min-w-0 truncate", checked && "font-medium", mono && "num")}>{title}</span>
         {status && <span className="ml-auto shrink-0">{status}</span>}

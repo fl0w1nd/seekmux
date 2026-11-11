@@ -5,7 +5,7 @@ import { toolLabel } from "../lib/format";
 import { Logo } from "../Shell";
 import { Button, Empty, Notice, Spinner, Switch } from "../ui/primitives";
 
-const tools: Tool[] = ["search", "dev_search", "fetch", "research"];
+const tools: Tool[] = ["search", "dev_search", "fetch", "x_search", "research"];
 
 /** The request as the MCP client put it in this page's address. */
 function requestFromLocation(): OAuthRequest {

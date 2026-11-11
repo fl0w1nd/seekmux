@@ -240,6 +240,12 @@ function KeyDialog({
     return route.enabled && Boolean(creds?.api_key || (creds?.api_key_hint && !creds.clear_api_key));
   });
 
+  // As the gateway decides it (Config.SocialAvailable): the source is on and names a worker that is switched on.
+  const xSource = config.social.sources.find((s) => s.platform === "x");
+  const xReady = Boolean(
+    xSource?.enabled && config.fetchers.find((f) => f.id === xSource.fetcher)?.workers.some((w) => w.enabled && xSource.workers.includes(w.id)),
+  );
+
   const submit = useMutation({
     mutationFn: async () => {
       const body = {
@@ -302,6 +308,7 @@ function KeyDialog({
           </div>
         </Field>
         {scopes.includes("dev_search") && !devSearchReady && <Notice tone="warn">开发搜索暂无可用的提供商，该密钥暂时无法调用。</Notice>}
+        {scopes.includes("x_search") && !xReady && <Notice tone="warn">X 搜索未添加或未选择 Worker，该密钥暂时无法调用。</Notice>}
         {scopes.includes("research") && !config.research.enabled && <Notice tone="warn">深度研究未启用，该密钥暂时无法调用。</Notice>}
         <Field label="调用限流" info="该密钥所有工具调用合计">
           <RateLimitInput value={rateLimit} onChange={setRateLimit} fallback="60/m" />

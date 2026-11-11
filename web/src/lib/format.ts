@@ -63,6 +63,6 @@ export function clientName(ua: string | undefined): string {
 }
 
 /** Where the settings of a routed tool live in the console. */
-export const toolPage = (tool: string) => `/tools/${tool === "dev_search" ? "dev-search" : tool}`;
+export const toolPage = (tool: string) => `/tools/${tool === "dev_search" ? "dev-search" : tool === "x_search" ? "social" : tool}`;
 
-export const toolLabel: Record<string, string> = { search: "搜索", dev_search: "开发搜索", fetch: "抓取", research: "研究", llm: "模型" };
+export const toolLabel: Record<string, string> = { search: "搜索", dev_search: "开发搜索", fetch: "抓取", x_search: "X 搜索", research: "研究", llm: "模型" };

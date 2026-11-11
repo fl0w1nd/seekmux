@@ -372,3 +372,55 @@ func TestACanceledFetchKeepsTheWorkerConnected(t *testing.T) {
 		}
 	}
 }
+
+func TestHubSearchNeedsTheFeature(t *testing.T) {
+	hub, server := newHub(t)
+	old, err := dial(t, server.URL, hello("secret", ready("p1")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return hub.Online("w1") })
+	_, err = hub.Search(context.Background(), "w1", SearchRequest{Site: "x", Feature: FeatureXSearch, Query: "q", Limit: 5})
+	var e *Error
+	if !errors.As(err, &e) || e.Code != CodeOutdated || !strings.Contains(e.Message, "version test") {
+		t.Fatalf("a worker without the feature must be refused as outdated, got %v", err)
+	}
+	if got := hub.Status()["w1"].Features; got == nil || len(got) != 0 {
+		t.Fatalf("features of a worker that announced none = %#v, want an empty list", got)
+	}
+	_ = old.ws.Close(websocket.StatusNormalClosure, "")
+	waitFor(t, func() bool { return !hub.Online("w1") })
+
+	m := hello("secret", ready("p1"))
+	m.Features = []string{FeatureXSearch}
+	w, err := dial(t, server.URL, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return hub.Online("w1") })
+	go func() {
+		req, err := w.read()
+		if err != nil || req.Type != TypeSearch || req.Site != "x" || req.Query != "mcp since:2026-11-01" || req.Sort != "latest" || req.Limit != 3 {
+			w.send(Message{Type: TypeResult, ID: req.ID, Error: &Error{Code: CodeFailed, Message: "unexpected request"}})
+			return
+		}
+		w.send(Message{Type: TypeResult, ID: req.ID, Posts: []Post{{ID: "1", URL: "https://x.com/a/status/1", Author: "a", Text: "hi", Likes: 2}}})
+	}()
+	posts, err := hub.Search(context.Background(), "w1", SearchRequest{Site: "x", Feature: FeatureXSearch, Query: "mcp since:2026-11-01", Sort: "latest", Limit: 3})
+	if err != nil || len(posts) != 1 || posts[0].Author != "a" || posts[0].Likes != 2 {
+		t.Fatalf("posts = %+v, err = %v", posts, err)
+	}
+	if got := hub.Status()["w1"].Features; len(got) != 1 || got[0] != FeatureXSearch {
+		t.Fatalf("features = %v", got)
+	}
+
+	// A search that matched nothing is an answer, not an error.
+	go func() {
+		req, _ := w.read()
+		w.send(Message{Type: TypeResult, ID: req.ID})
+	}()
+	posts, err = hub.Search(context.Background(), "w1", SearchRequest{Site: "x", Feature: FeatureXSearch, Query: "nothing", Limit: 3})
+	if err != nil || len(posts) != 0 {
+		t.Fatalf("posts = %+v, err = %v", posts, err)
+	}
+}

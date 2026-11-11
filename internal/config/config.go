@@ -17,6 +17,7 @@ const (
 	ToolSearch    = "search"
 	ToolDevSearch = "dev_search"
 	ToolFetch     = "fetch"
+	ToolXSearch   = "x_search"
 	ToolResearch  = "research"
 
 	LLMOpenAICompatible = "openai-compatible"
@@ -24,7 +25,7 @@ const (
 )
 
 // Tools lists every tool an API key can be scoped to.
-var Tools = []string{ToolSearch, ToolDevSearch, ToolFetch, ToolResearch}
+var Tools = []string{ToolSearch, ToolDevSearch, ToolFetch, ToolXSearch, ToolResearch}
 
 type Config struct {
 	Providers map[string]*Provider `json:"providers"`
@@ -33,6 +34,7 @@ type Config struct {
 	Search    Search    `json:"search"`
 	DevSearch DevSearch `json:"dev_search"`
 	Fetch     Fetch     `json:"fetch"`
+	Social    Social    `json:"social"`
 	Routing   Routing   `json:"routing"`
 	LLM       LLM       `json:"llm"`
 	Research  Research  `json:"research"`
@@ -492,6 +494,7 @@ func (c *Config) Normalize() {
 	}
 	c.migrateLimits()
 	c.normalizeFetchers()
+	c.normalizeSocial()
 
 	c.Search.Country = cleanFormat(FormatCountry, c.Search.Country)
 	c.Search.Language = cleanFormat(FormatLanguage, c.Search.Language)
@@ -704,6 +707,9 @@ func (c *Config) Validate() error {
 		}
 	}
 	if err := c.validateFetchers(); err != nil {
+		return err
+	}
+	if err := c.validateSocial(); err != nil {
 		return err
 	}
 	if err := c.validateRouting(); err != nil {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -56,12 +57,13 @@ type session struct {
 	ws *websocket.Conn
 	// token is the one the worker signed in with, to drop it when the
 	// configured token changes.
-	token   string
-	version string
-	slots   int
-	addr    string
-	since   time.Time
-	done    chan struct{}
+	token    string
+	version  string
+	features []string
+	slots    int
+	addr     string
+	since    time.Time
+	done     chan struct{}
 
 	mu      sync.Mutex
 	state   State
@@ -79,9 +81,11 @@ type Request struct {
 type Status struct {
 	Connected bool   `json:"connected"`
 	Version   string `json:"version,omitempty"`
-	Slots     int    `json:"slots,omitempty"`
-	Active    int    `json:"active"`
-	Addr      string `json:"addr,omitempty"`
+	// Features is what the worker announced it can do beyond reading pages.
+	Features []string `json:"features"`
+	Slots    int      `json:"slots,omitempty"`
+	Active   int      `json:"active"`
+	Addr     string   `json:"addr,omitempty"`
 	// Since is when it connected, in Unix milliseconds.
 	Since int64  `json:"since,omitempty"`
 	State *State `json:"state,omitempty"`
@@ -123,7 +127,7 @@ func (h *Hub) Status() map[string]Status {
 		state := s.state
 		state.Profiles = append([]Profile{}, s.state.Profiles...)
 		out[s.id] = Status{
-			Connected: true, Version: s.version, Slots: s.slots, Active: len(s.pending),
+			Connected: true, Version: s.version, Features: append([]string{}, s.features...), Slots: s.slots, Active: len(s.pending),
 			Addr: s.addr, Since: s.since.UnixMilli(), State: &state,
 		}
 		s.mu.Unlock()
@@ -163,6 +167,47 @@ func (h *Hub) lookup(token string) (string, bool) {
 // reports is an *Error; one of the connection is ErrOffline or
 // ErrDisconnected.
 func (h *Hub) Fetch(ctx context.Context, id string, req Request) (*Page, error) {
+	m, err := h.ask(ctx, id, req.Profile, "", func(m *Message) {
+		m.Type, m.URL, m.Adapter = TypeFetch, req.URL, req.Adapter
+	})
+	if err != nil {
+		return nil, err
+	}
+	if m.Page == nil {
+		return nil, &Error{Code: CodeInternal, Message: "the worker answered with neither a page nor an error"}
+	}
+	return m.Page, nil
+}
+
+// SearchRequest is a search to run on a site through the worker.
+type SearchRequest struct {
+	// Site is the site's id, e.g. "x"; Feature is what the worker must have
+	// announced to search it.
+	Site    string
+	Feature string
+	Query   string
+	Sort    string
+	Limit   int
+	Profile string
+}
+
+// Search has the worker with the given id search a site. A worker that did
+// not announce req.Feature is refused with CodeOutdated before anything is
+// sent. Errors are as Fetch's.
+func (h *Hub) Search(ctx context.Context, id string, req SearchRequest) ([]Post, error) {
+	m, err := h.ask(ctx, id, req.Profile, req.Feature, func(m *Message) {
+		m.Type, m.Site, m.Query, m.Sort, m.Limit = TypeSearch, req.Site, req.Query, req.Sort, req.Limit
+	})
+	if err != nil {
+		return nil, err
+	}
+	return m.Posts, nil
+}
+
+// ask sends the worker a request that fill describes and waits for its
+// result. The worker must be connected, reach its browser and profile,
+// have a free slot and, when feature is set, have announced it.
+func (h *Hub) ask(ctx context.Context, id, profile, feature string, fill func(*Message)) (*Message, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -175,14 +220,16 @@ func (h *Hub) Fetch(ctx context.Context, id string, req Request) (*Page, error) 
 	s.mu.Lock()
 	var refused *Error
 	switch {
+	case feature != "" && !slices.Contains(s.features, feature):
+		refused = &Error{Code: CodeOutdated, Message: fmt.Sprintf("the worker (version %s) cannot do %s: update it with npx seekmux@latest", cmp.Or(s.version, "unknown"), feature)}
 	case !s.state.Ready:
 		refused = &Error{Code: CodeBrowserUnavailable, Message: cmp.Or(s.state.Problem, "the worker's browser is not reachable")}
-	case s.state.Route(req.Profile) != nil:
+	case s.state.Route(profile) != nil:
 		// Refused by the profiles the worker reported, not by what OpenCLI's
 		// message says once it fails.
-		refused = s.state.Route(req.Profile)
+		refused = s.state.Route(profile)
 	case len(s.pending) >= s.slots:
-		refused = &Error{Code: CodeBusy, Message: fmt.Sprintf("the worker is already running %d fetches", s.slots)}
+		refused = &Error{Code: CodeBusy, Message: fmt.Sprintf("the worker is already running %d requests", s.slots)}
 	}
 	if refused != nil {
 		s.mu.Unlock()
@@ -201,18 +248,17 @@ func (h *Hub) Fetch(ctx context.Context, id string, req Request) (*Page, error) 
 		// Leave the answer time to come back before the caller gives up.
 		timeout = max(time.Until(deadline)-500*time.Millisecond, time.Second)
 	}
-	if err := s.send(&Message{Type: TypeFetch, ID: rid, URL: req.URL, Adapter: req.Adapter, Profile: req.Profile, TimeoutMs: timeout.Milliseconds()}); err != nil {
+	m := &Message{ID: rid, Profile: profile, TimeoutMs: timeout.Milliseconds()}
+	fill(m)
+	if err := s.send(m); err != nil {
 		return nil, ErrDisconnected
 	}
 	select {
 	case m := <-reply:
-		switch {
-		case m.Error != nil:
+		if m.Error != nil {
 			return nil, m.Error
-		case m.Page == nil:
-			return nil, &Error{Code: CodeInternal, Message: "the worker answered with neither a page nor an error"}
 		}
-		return m.Page, nil
+		return m, nil
 	case <-ctx.Done():
 		_ = s.send(&Message{Type: TypeCancel, ID: rid})
 		return nil, ctx.Err()
@@ -287,7 +333,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(readLimit)
 
 	s := &session{
-		id: id, ws: ws, token: hello.Token, version: hello.Version, slots: min(max(hello.Slots, 1), MaxSlots), addr: addr,
+		id: id, ws: ws, token: hello.Token, version: hello.Version, features: hello.Features, slots: min(max(hello.Slots, 1), MaxSlots), addr: addr,
 		since: time.Now(), done: make(chan struct{}), pending: map[string]chan *Message{},
 	}
 	if hello.State != nil {

@@ -9,6 +9,7 @@ export const toolPages = [
   { value: "search", label: "网页搜索" },
   { value: "dev-search", label: "开发搜索" },
   { value: "fetch", label: "网页抓取" },
+  { value: "social", label: "社交媒体" },
   { value: "research", label: "深度研究" },
 ];
 

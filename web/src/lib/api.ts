@@ -159,6 +159,7 @@ export interface Config {
     routes: Route[];
     extract: Extract;
   };
+  social: Social;
   /** `rules` are tried in order, ahead of the built-in ones; `builtin` is keyed by rule id. */
   routing: { rules: Rule[]; builtin?: Record<string, BuiltinRule> };
   llm: { providers: LLMProvider[] };
@@ -171,7 +172,33 @@ export interface Config {
   oauth: { disabled?: boolean };
 }
 
-export type Tool = "search" | "dev_search" | "fetch" | "research";
+/** The social platforms the x_search tool and its kin search, each through the workers of a self-hosted fetcher. */
+export interface Social {
+  timeout_seconds: number;
+  sources: SocialSource[];
+}
+
+export interface SocialSource {
+  /** One of Meta.social_platforms. */
+  platform: string;
+  enabled: boolean;
+  /** The self-hosted fetcher whose workers search the platform; "" while none is chosen. */
+  fetcher: string;
+  /** Its workers that search the platform, tried in the fetcher's order. */
+  workers: string[];
+}
+
+export interface SocialPlatform {
+  id: string;
+  name: string;
+  tool: Tool;
+  fetcher_type: string;
+  /** What a worker announces when it can search the platform, from version min_worker on. */
+  feature: string;
+  min_worker: string;
+}
+
+export type Tool = "search" | "dev_search" | "fetch" | "x_search" | "research";
 
 /** The tools served by a priority list of providers. */
 export type RoutedTool = "search" | "dev_search" | "fetch";
@@ -210,6 +237,7 @@ export interface Meta {
   version: string;
   catalog: ProviderInfo[];
   fetcher_types: FetcherType[];
+  social_platforms: SocialPlatform[];
   /** The built-in routing rules, before the configuration changes them. */
   rules: Rule[];
   tools: Tool[];
@@ -520,6 +548,8 @@ export interface WorkerProfile {
 export interface WorkerStatus {
   connected: boolean;
   version?: string;
+  /** What it announced it can do beyond reading pages, such as x_search. */
+  features?: string[];
   slots?: number;
   active: number;
   addr?: string;

@@ -7,7 +7,7 @@ import { endpoint, run } from "./worker.ts";
 
 const version: string = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
-const usage = `seekmux ${version} — read pages for a SeekMux gateway in your logged-in Chrome
+const usage = `seekmux ${version} — read pages and search X for a SeekMux gateway in your logged-in Chrome
 
 Usage:
   npx seekmux --server <url> --token <token> [--slots 1]

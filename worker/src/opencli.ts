@@ -126,6 +126,9 @@ function failure(out: Output): FetchError {
     // An HTML page where JSON was expected: a login wall, a rate limit or a
     // WAF challenge, OpenCLI cannot tell which. The message says as much.
     LOGIN_WALL: "blocked",
+    // The site's own security filter, or its rate limit.
+    SECURITY_BLOCK: "blocked",
+    RATE_LIMITED: "blocked",
     EMPTY_RESULT: "empty",
     TIMEOUT: "timeout",
     SESSION_BUSY: "busy",
@@ -173,7 +176,8 @@ function lastLine(text: string): string {
 /**
  * Runs an OpenCLI command and returns the data of the JSON it prints. Site
  * commands are asked for JSON; built-in ones such as doctor print only JSON
- * and refuse the flag (format: false).
+ * and refuse the flag, and a command whose arguments end in "--" places the
+ * flag itself (format: false).
  */
 export async function json(args: string[], opts: RunOptions, format = true): Promise<unknown> {
   const out = await run(format ? [...args, "-f", "json"] : args, opts);

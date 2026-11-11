@@ -3,7 +3,8 @@
 The worker of a [SeekMux](https://github.com/fl0w1nd/seekmux) self-hosted
 fetcher. It reads pages for the gateway in a Chrome where you are signed in,
 through [OpenCLI](https://github.com/jackwener/opencli): X and Reddit posts
-through OpenCLI's site adapters, other pages as they render.
+through OpenCLI's site adapters, other pages as they render. It also runs the
+gateway's `x_search` tool: X's own search, in that Chrome.
 
 ## Use
 

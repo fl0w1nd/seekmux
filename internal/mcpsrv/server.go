@@ -23,6 +23,7 @@ import (
 	"github.com/fl0w1nd/seekmux/internal/oauth"
 	"github.com/fl0w1nd/seekmux/internal/research"
 	"github.com/fl0w1nd/seekmux/internal/search"
+	"github.com/fl0w1nd/seekmux/internal/social"
 	"github.com/fl0w1nd/seekmux/internal/store"
 )
 
@@ -141,6 +142,10 @@ const devSearchDescription = "Search an index of public code repositories and do
 	"- Use it for questions about a library, framework or tool: how to use or configure it, what an error means, whether a bug is known or fixed.\n" +
 	"- Ask in natural language and name the library. For anything else, and for news or recent releases, use `search`.\n" +
 	"- The index holds no source code; to read a file, `fetch` its URL."
+
+const xSearchDescription = "Search posts on X (Twitter) and return each with its author, time, text, engagement counts and link.\n" +
+	"- Use it for what people are saying right now: reactions, announcements, discussion of a release or an event.\n" +
+	"- To read a post's full thread or replies, `fetch` its URL."
 
 const researchDescription = "Hand a question to a research agent that searches and reads the web on its own, then returns a sourced report. " +
 	"Use it for questions that need many searches and pages to answer; for a quick lookup use `search` and `fetch` yourself. " +
@@ -269,6 +274,40 @@ func newServer(a *app.App, key store.APIKey, version string, r *http.Request) *m
 				return failure(err), nil, nil
 			}
 			return text(result, false), nil, nil
+		})
+	}
+
+	if allowed(config.ToolXSearch) && social.XAvailable(snap.Config) {
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "x_search",
+			Title:       "X search",
+			Annotations: readOnly,
+			Description: xSearchDescription,
+			InputSchema: schema(`{
+				"type": "object",
+				"required": ["query"],
+				"properties": {
+					"query": {"type": "string", "minLength": 1,
+						"description": "An X search query. X's operators work, e.g. from:user, \"exact phrase\", lang:en, -filter:replies, min_faves:100, until:2026-01-31."},
+					"sort": {"type": "string", "enum": ` + enum(social.Sorts) + `, "default": "` + social.SortTop + `",
+						"description": "top: X's most relevant posts. latest: newest first."},
+					"maxResults": {"type": "integer", "minimum": 1, "maximum": ` + strconv.Itoa(social.MaxResults) + `, "default": ` + strconv.Itoa(social.DefaultMaxResults) + `, "description": "Max posts"},
+					"time_range": {"type": "string", "enum": ` + enum(search.TimeRanges) + `,
+						"description": "Only posts from the last day, week, month or year."}
+				}
+			}`),
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, args social.XArgs) (*mcp.CallToolResult, any, error) {
+			if err := rateLimited(a, key); err != nil {
+				return failure(err), nil, nil
+			}
+			result, err := a.XSearch(ctx, caller, args, app.Override{})
+			if err != nil {
+				return failure(err), nil, nil
+			}
+			if result.Error != "" {
+				return failure(errors.New(result.Error)), nil, nil
+			}
+			return text(result, true), nil, nil
 		})
 	}
 

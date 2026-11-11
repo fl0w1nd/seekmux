@@ -1,9 +1,11 @@
 // The connection to the gateway: says hello, reports the browser's state,
-// runs the fetches it is handed and reconnects when the connection drops.
+// runs the fetches and searches it is handed and reconnects when the
+// connection drops.
 
 import { diagnose } from "./diagnose.ts";
 import { Canceled, readState } from "./opencli.ts";
 import { CloseCode, FetchError, PROTOCOL_VERSION, type ServerMessage, type State, type WorkerMessage } from "./protocol.ts";
+import { features, search } from "./search.ts";
 import { read } from "./sites.ts";
 
 export interface Options {
@@ -103,7 +105,7 @@ function session(opts: Options, initial: State, setState: (s: State) => void): P
 
     ws.addEventListener("open", () => {
       opened = true;
-      send({ type: "hello", protocol: PROTOCOL_VERSION, token: opts.token, version: opts.version, slots: opts.slots, state });
+      send({ type: "hello", protocol: PROTOCOL_VERSION, token: opts.token, version: opts.version, slots: opts.slots, features, state });
     });
 
     ws.addEventListener("message", async (event) => {
@@ -122,31 +124,41 @@ function session(opts: Options, initial: State, setState: (s: State) => void): P
           running.get(m.id)?.abort();
           return;
         case "fetch":
+        case "search":
           break;
         default:
           return;
       }
-      const { id, url } = m;
+      const { id } = m;
+      // What the log calls the request.
+      const label = m.type === "fetch" ? m.url : `search ${m.site}: ${m.query}`;
       if (running.size >= opts.slots) {
-        send({ type: "result", id, error: { code: "busy", message: `the worker is already running ${running.size} fetches` } });
+        send({ type: "result", id, error: { code: "busy", message: `the worker is already running ${running.size} requests` } });
         return;
       }
       const controller = new AbortController();
       running.set(id, controller);
       const started = Date.now();
-      opts.log(`→ ${url}${m.adapter ? " (adapter)" : ""}`);
+      const run = { timeoutMs: m.timeout_ms, signal: controller.signal, profile: m.profile || undefined };
+      opts.log(`→ ${label}${m.type === "fetch" && m.adapter ? " (adapter)" : ""}`);
       try {
-        const page = await read(url, Boolean(m.adapter), { timeoutMs: m.timeout_ms, signal: controller.signal, profile: m.profile || undefined });
-        send({ type: "result", id, page });
-        opts.log(`✓ ${url} · ${page.source} · ${page.content.length} chars · ${seconds(started)}`);
+        if (m.type === "fetch") {
+          const page = await read(m.url, Boolean(m.adapter), run);
+          send({ type: "result", id, page });
+          opts.log(`✓ ${label} · ${page.source} · ${page.content.length} chars · ${seconds(started)}`);
+        } else {
+          const posts = await search({ site: m.site, query: m.query, sort: m.sort, limit: m.limit }, run);
+          send({ type: "result", id, posts });
+          opts.log(`✓ ${label} · ${posts.length} posts · ${seconds(started)}`);
+        }
       } catch (err) {
         if (err instanceof Canceled) {
-          opts.log(`· ${url} · canceled by the gateway · ${seconds(started)}`);
+          opts.log(`· ${label} · canceled by the gateway · ${seconds(started)}`);
           return;
         }
         const failure = err instanceof FetchError ? err : new FetchError("internal", err instanceof Error ? err.message : String(err));
         send({ type: "result", id, error: failure.toWire() });
-        opts.log(`✗ ${url} · ${failure.code}: ${failure.message} · ${seconds(started)}`);
+        opts.log(`✗ ${label} · ${failure.code}: ${failure.message} · ${seconds(started)}`);
         if (failure.code === "browser_unavailable" || failure.code === "profile_missing") void check();
       } finally {
         running.delete(id);
