@@ -23,6 +23,7 @@ import { useLiveCall } from "../../lib/trace";
 import { Markdown } from "../../ui/markdown";
 import { Drawer, Popover, useConfirm, useToast } from "../../ui/overlays";
 import { Button, CodeBlock, CopyButton, cx, Dot, Empty, Notice, NumberInput, Segmented, Spinner, TabList, Tabs, Tooltip, type Tone } from "../../ui/primitives";
+import { budgetInfo, readingText } from "../../lib/research";
 import { Chip, CodeButton, Composer, Examples, Group, host, LocalNotice, LocalTag, onModEnter, OptionGroup, ResetButton, RunButton, Stage, TabPanel } from "./kit";
 
 /** Where the task on show is remembered, so a reload returns to it. */
@@ -31,11 +32,11 @@ const taskKey = "seekmux-play-research-task";
 type LimitKey = "max_steps" | "max_duration_seconds" | "max_tokens" | "max_context_tokens";
 
 // What a run may be given; the ceilings match the server's (app.maxResearchSteps, app.maxResearchDuration).
-const limits: { key: LimitKey; label: string; suffix: string; min: number; max: number; hint: string }[] = [
-  { key: "max_steps", label: "最大步数", suffix: "步", min: 1, max: 200, hint: "一步为模型的一轮推理，可并行发起多次搜索和抓取" },
-  { key: "max_duration_seconds", label: "最长用时", suffix: "秒", min: 30, max: 3600, hint: "达到 80% 时开始收尾并撰写报告" },
-  { key: "max_tokens", label: "Token 上限", suffix: "token", min: 1000, max: 1e9, hint: "各步输入与输出的累计值，约束总花费" },
-  { key: "max_context_tokens", label: "上下文上限", suffix: "token", min: 1000, max: 1e9, hint: "单次请求的输入规模，应低于模型的上下文窗口" },
+const limits: { key: LimitKey; label: string; suffix: string; min: number; max: number }[] = [
+  { key: "max_steps", label: "最大步数", suffix: "步", min: 1, max: 200 },
+  { key: "max_duration_seconds", label: "最长用时", suffix: "秒", min: 30, max: 3600 },
+  { key: "max_tokens", label: "Token 上限", suffix: "token", min: 1000, max: 1e9 },
+  { key: "max_context_tokens", label: "上下文上限", suffix: "token", min: 1000, max: 1e9 },
 ];
 
 const limitLabel: Record<ResearchLimit, string> = { steps: "步数", duration: "用时", tokens: "Token", context: "上下文" };
@@ -122,7 +123,7 @@ export function ResearchPlay() {
   };
   const stop = async () => {
     if (!data) return;
-    if (!(await confirm({ title: "停止这次研究？", body: "已消耗的额度不会退回，也不会生成报告；已写出的草稿会保留。", confirm: "停止", danger: true }))) return;
+    if (!(await confirm({ title: "停止这次研究？", body: "不会生成报告。", confirm: "停止", danger: true }))) return;
     try {
       await api.cancelResearch(data.id);
     } catch (err) {
@@ -146,7 +147,6 @@ export function ResearchPlay() {
     <Stage
       tool="research"
       title="深度研究"
-      description="调用 research 工具：研究 Agent 调用网关的搜索与抓取工具多轮查证，最终生成附带引用出处的深度报告。"
       history={<Tasks tasks={tasks.data} pending={tasks.isPending} days={config.logs.retention_days} active={taskId} onPick={show} onReuse={reuse} />}
       output={
         taskId !== null && !gone ? (
@@ -160,20 +160,17 @@ export function ResearchPlay() {
           )
         ) : (
           <section className="grid min-h-[26rem] place-items-center rounded-panel border border-line bg-surface">
-            <Empty icon={<Workflow />} title="研究的过程会画在这里">
-              每一步模型决定查什么、并行发出的搜索和抓取各自怎么走、预算用到哪里，运行时逐步出现；报告写完后在「报告」里。也可以从右上角的「历史」里选一次回看。
-            </Empty>
+            <Empty icon={<Workflow />} title="运行后显示研究过程" />
           </section>
         )
       }
     >
       {!saved.enabled && (
         <Notice tone="warn">
-          深度研究尚未启用。请前往{" "}
+          深度研究未启用，
           <Link href="/tools/research" className="text-ink underline underline-offset-2">
-            深度研究
-          </Link>{" "}
-          选择模型并启用。
+            去启用
+          </Link>
         </Notice>
       )}
       <Composer
@@ -231,7 +228,7 @@ export function ResearchPlay() {
               {limits.map((limit) => {
                 const base = saved[limit.key];
                 return (
-                  <Group key={limit.key} label={limit.label} hint={limit.hint}>
+                  <Group key={limit.key} label={limit.label} info={budgetInfo[limit.key]}>
                     <div className="flex items-center gap-1">
                       <NumberInput
                         className="min-w-0 flex-1"
@@ -252,19 +249,10 @@ export function ResearchPlay() {
               })}
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-xs text-ink-3">
-              <span>
-                {budget.reading === "raw"
-                  ? "读原文：研究模型直接读取网页 Markdown 原文，最接近一手材料，上下文消耗较大。"
-                  : config.fetch.extract.models.length > 0
-                    ? "读归纳：由提取模型先按问题提炼各网页，仅将提炼结果交给研究模型，显著节省上下文。"
-                    : "尚未配置提取模型，网页仍按原文返回。"}
-              </span>
-              <span>
-                永久修改请前往{" "}
-                <Link href="/tools/research" className="text-ink-2 underline underline-offset-2 hover:text-ink">
-                  深度研究设置
-                </Link>
-              </span>
+              <span>{readingText(budget.reading, config.fetch.extract.models.length > 0)}</span>
+              <Link href="/tools/research" className="text-ink-2 underline underline-offset-2 hover:text-ink">
+                修改已保存的设置
+              </Link>
             </div>
           </OptionGroup>
         }
@@ -548,7 +536,7 @@ function Run({ task, skew, onStop, onReuse, onClose }: { task: ResearchTask; ske
               className="flex-1 overflow-hidden rounded-b-panel"
             />
           ) : (
-            <div className="grid place-items-center px-6 py-16 text-center text-xs text-ink-3">{loading ? <Spinner /> : "这次研究没有留下流程，只有「流程」里的步骤记录。"}</div>
+            <div className="grid place-items-center px-6 py-16 text-center text-xs text-ink-3">{loading ? <Spinner /> : "没有流程记录"}</div>
           )}
         </TabPanel>
         <TabPanel value="report">
@@ -711,7 +699,7 @@ function StepList({ rows, live, phase, elapsed }: { rows: Row[]; live: boolean; 
     if (el && live && pinned.current) el.scrollTop = el.scrollHeight;
   }, [rows.length, live, phase]);
 
-  if (rows.length === 0 && !live) return <Empty title="这次运行没有留下步骤">Agent 未调用任何工具，或运行在第一步之前就已结束。</Empty>;
+  if (rows.length === 0 && !live) return <Empty title="没有步骤记录" />;
 
   // Rows of one model round sit under its number; an old task has no rounds.
   const groups: { step: number | undefined; rows: Row[] }[] = [];
@@ -814,9 +802,9 @@ function Report({ task, draft, spent, rendered }: { task: ResearchTask; draft: s
       {(task.status === "failed" || task.status === "canceled" || exhausted) && (
         <div className="flex flex-col gap-2 px-4 pt-4">
           {task.status === "failed" && <Notice tone="err">{task.error}</Notice>}
-          {task.status === "canceled" && <Notice tone="warn">这次研究已被停止，没有生成报告。</Notice>}
+          {task.status === "canceled" && <Notice tone="warn">已停止，未生成报告</Notice>}
           {exhausted && task.status !== "canceled" && (
-            <Notice tone="warn">{spent.exhausted ? `${limitLabel[spent.exhausted]}预算已用尽` : "预算已用尽"}，Agent 停止检索并基于现有材料撰写报告。</Notice>
+            <Notice tone="warn">{spent.exhausted ? `${limitLabel[spent.exhausted]}预算已用尽` : "预算已用尽"}，报告基于已收集的材料。</Notice>
           )}
         </div>
       )}
@@ -837,7 +825,7 @@ function Report({ task, draft, spent, rendered }: { task: ResearchTask; draft: s
       {!task.result && draft && (
         <div className="flex items-center gap-2 px-5 pt-4 text-xs text-ink-3">
           {live && <Dot tone="signal" live />}
-          {live ? "草稿 · 模型正在输出；若这一步接着调用工具，这段文字只是它的中间说明" : "未完成的草稿"}
+          {live ? "草稿 · 输出中" : "未完成的草稿"}
         </div>
       )}
       {body ? (
@@ -851,7 +839,7 @@ function Report({ task, draft, spent, rendered }: { task: ResearchTask; draft: s
           )}
         </article>
       ) : (
-        live && <Empty title="报告尚未开始">Agent 完成检索后在此撰写报告，文字会随输出逐步出现。</Empty>
+        live && <Empty title="检索完成后开始撰写" />
       )}
     </>
   );
@@ -888,10 +876,10 @@ function Tasks({
         width="w-[min(30rem,100vw)]"
         bodyClassName=""
         title="最近的研究"
-        description={`点一条，在下方看它的流程和报告；↻ 只把课题和设置载入输入框。与请求日志一同保留 ${days} 天，经 MCP 发起的也在这里。`}
+        description={`含经 MCP 发起的研究 · 保留 ${days} 天`}
       >
         {list.length === 0 ? (
-          <div className="px-4 py-8 text-center text-xs text-ink-3">{pending ? "正在读取…" : "还没有研究任务。"}</div>
+          <div className="px-4 py-8 text-center text-xs text-ink-3">{pending ? "正在读取…" : "暂无记录"}</div>
         ) : (
           <ol className="divide-y divide-line">
             {list.map((task) => {

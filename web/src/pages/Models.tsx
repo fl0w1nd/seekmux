@@ -1,5 +1,5 @@
 import { Bot, Pencil, Plus, Trash2, Zap } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { api, type Config, type LLMProvider, type LLMType, type Model, type Reasoning } from "../lib/api";
 import { Tripped, useStatus } from "../components/Health";
 import { useConfig } from "../lib/config";
@@ -7,7 +7,7 @@ import { compact, duration } from "../lib/format";
 import { PageHeader } from "../Shell";
 import { JSONInput, RateLimitInput, SecretInput } from "../ui/inputs";
 import { Dialog, useConfirm } from "../ui/overlays";
-import { Badge, Button, Empty, Field, Input, Notice, NumberInput, Panel, Segmented, Select, Table, Td, Th, Tooltip } from "../ui/primitives";
+import { Badge, Button, Empty, Field, Info, Input, Notice, NumberInput, Panel, Segmented, Select, Table, Td, Th, Tooltip } from "../ui/primitives";
 
 const typeLabel: Record<LLMType, string> = { "openai-compatible": "OpenAI 兼容", anthropic: "Anthropic" };
 
@@ -56,7 +56,6 @@ export function ModelsPage() {
     <>
       <PageHeader
         title="模型接口"
-        description="配置大模型接口与模型参数。网页抓取与深度研究按模型 ID 引用并共享模型限流。"
         actions={
           <Button variant="primary" icon={<Plus />} onClick={() => setEditing({ kind: "provider", index: -1 })}>
             添加接口
@@ -67,7 +66,7 @@ export function ModelsPage() {
       {providers.length === 0 ? (
         <Panel>
           <Empty icon={<Bot />} title="尚无模型接口">
-            添加 OpenAI 兼容或 Anthropic 格式的接口，并在其下添加模型。完成后，网页抓取可用模型提取内容，深度研究也才能运行
+            用于网页提取与深度研究
           </Empty>
         </Panel>
       ) : (
@@ -111,22 +110,24 @@ export function ModelsPage() {
                     <Button size="sm" variant="ghost" icon={<Pencil />} onClick={() => setEditing({ kind: "provider", index: pi })}>
                       编辑接口
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      icon={<Trash2 />}
-                      aria-label={`删除接口 ${p.name || p.id}`}
-                      disabled={inUse}
-                      title={inUse ? "该接口下有模型已被关联，请先在「工具」的网页抓取或深度研究中解除关联" : undefined}
-                      onClick={async () => {
-                        if (await confirm({ title: `删除接口 ${p.name || p.id}？`, body: "接口及其下属模型将一并删除，立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers.splice(pi, 1));
-                      }}
-                    />
+                    <InUse when={inUse}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<Trash2 />}
+                        aria-label={`删除接口 ${p.name || p.id}`}
+                        disabled={inUse}
+                        onClick={async () => {
+                          if (await confirm({ title: `删除接口 ${p.name || p.id}？`, body: p.models.length > 0 ? `其下 ${p.models.length} 个模型一并删除。` : undefined, confirm: "删除", danger: true }))
+                            update((d) => void d.llm.providers.splice(pi, 1));
+                        }}
+                      />
+                    </InUse>
                   </>
                 }
               >
                 {p.models.length === 0 ? (
-                  <div className="px-4 py-5 text-xs text-ink-3">该接口下尚无模型，添加后即可关联到提取或研究</div>
+                  <div className="px-4 py-5 text-xs text-ink-3">尚无模型</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
@@ -191,17 +192,18 @@ export function ModelsPage() {
                               <Td className="w-0">
                                 <span className="flex justify-end gap-1">
                                   <Button size="sm" variant="ghost" icon={<Pencil />} aria-label={`编辑模型 ${m.id}`} onClick={() => setEditing({ kind: "model", provider: pi, index: mi })} />
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    icon={<Trash2 />}
-                                    aria-label={`删除模型 ${m.id}`}
-                                    disabled={roles.length > 0}
-                                    title={roles.length > 0 ? "已被关联，请先在「工具」的网页抓取或深度研究中解除关联" : undefined}
-                                    onClick={async () => {
-                                      if (await confirm({ title: `删除模型 ${m.id}？`, body: "立即生效。", confirm: "删除", danger: true })) update((d) => void d.llm.providers[pi].models.splice(mi, 1));
-                                    }}
-                                  />
+                                  <InUse when={roles.length > 0}>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      icon={<Trash2 />}
+                                      aria-label={`删除模型 ${m.id}`}
+                                      disabled={roles.length > 0}
+                                      onClick={async () => {
+                                        if (await confirm({ title: `删除模型 ${m.id}？`, confirm: "删除", danger: true })) update((d) => void d.llm.providers[pi].models.splice(mi, 1));
+                                      }}
+                                    />
+                                  </InUse>
                                 </span>
                               </Td>
                             </tr>
@@ -310,9 +312,9 @@ function ProviderDialog({
         <Field
           label="Base URL"
           error={urlError || undefined}
-          hint={form.type === "anthropic" ? "留空则使用 https://api.anthropic.com；中转服务填写到域名为止，不含 /v1" : "填写到 /v1 为止，例如 https://api.openai.com/v1"}
+          hint={form.type === "anthropic" ? "不含 /v1" : "含 /v1"}
         >
-          <Input mono value={form.base_url} placeholder={form.type === "anthropic" ? "https://api.anthropic.com" : "https://…/v1"} onChange={(e) => set({ base_url: e.target.value.trim() })} />
+          <Input mono value={form.base_url} placeholder={form.type === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com/v1"} onChange={(e) => set({ base_url: e.target.value.trim() })} />
         </Field>
         <Field label="API Key">
           <SecretInput value={form} onChange={setForm} />
@@ -387,7 +389,7 @@ function ModelDialog({
     >
       <div className="flex flex-col gap-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="上游模型名" hint="按接口方的模型名原样填写">
+          <Field label="上游模型名">
             <Input
               mono
               autoFocus={isNew}
@@ -399,7 +401,7 @@ function ModelDialog({
               }}
             />
           </Field>
-          <Field label="模型 ID" hint={isNew ? "各功能通过该 ID 引用模型，创建后不可修改" : undefined} error={form.id ? idError : undefined}>
+          <Field label="模型 ID" hint={isNew ? "创建后不可修改" : undefined} error={form.id ? idError : undefined}>
             <Input
               mono
               value={form.id}
@@ -415,27 +417,21 @@ function ModelDialog({
 
         <div className="rounded-ctl border border-line">
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-line px-3 py-2.5">
-            <div>
-              <div className="text-sm">限流</div>
-              <div className="text-xs text-ink-3">由使用该模型的所有功能共用</div>
-            </div>
+            <div className="text-sm">限流</div>
             <RateLimitInput value={form.rate_limit} fallback="60/m" onChange={(rate_limit) => set({ rate_limit })} />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-3 py-2.5">
-            <div>
-              <div className="text-sm">并发上限</div>
-              <div className="text-xs text-ink-3">同时进行的请求数，0 为不限</div>
-            </div>
-            <NumberInput className="w-20" value={form.concurrency} onChange={(n) => set({ concurrency: Math.round(n) })} aria-label="并发上限" />
+            <div className="text-sm">并发上限</div>
+            <NumberInput className="w-24" zero="不限" value={form.concurrency} onChange={(n) => set({ concurrency: Math.round(n) })} aria-label="并发上限" />
           </div>
         </div>
 
         <ReasoningEditor type={provider.type} value={form.reasoning} onChange={(reasoning) => set({ reasoning })} />
 
-        <Field label="最大输出 Token" hint={provider.type === "anthropic" ? "单次响应的最大输出上限，0 默认按 32000 发送；抓取工具可单独设置更小上限" : "单次响应的最大输出上限，0 为不限制；抓取工具可单独设置更小上限"}>
-          <NumberInput value={form.max_output_tokens ?? 0} onChange={(n) => set({ max_output_tokens: Math.round(n) || undefined })} />
+        <Field label="最大输出 Token">
+          <NumberInput zero={provider.type === "anthropic" ? "默认 32000" : "不限"} value={form.max_output_tokens ?? 0} onChange={(n) => set({ max_output_tokens: Math.round(n) || undefined })} />
         </Field>
-        <Field label="附加请求字段" hint="原样并入请求体的 JSON；最后合并，会覆盖上方的同名设置。用于界面未提供的参数">
+        <Field label="附加请求字段" hint="合并进请求体，覆盖同名字段">
           <JSONInput value={form.extra_body} onChange={(extra_body) => set({ extra_body })} placeholder={'{ "top_p": 0.9 }'} />
         </Field>
 
@@ -450,10 +446,10 @@ function ReasoningEditor({ type, value, onChange }: { type: LLMType; value: Reas
   const { meta } = useConfig();
   const efforts = meta.reasoning_efforts[type];
   const hints: Record<Reasoning["mode"], string> = {
-    "": "不发送任何推理参数，采用模型的默认行为。",
-    off: type === "anthropic" ? "发送 thinking: disabled。" : "发送 reasoning_effort: none；不支持该取值的模型会报错，可改用「模型默认」。",
-    effort: type === "anthropic" ? "自适应思考，并用 effort 控制投入程度。" : "发送 reasoning_effort。",
-    budget: "固定的思考 Token 预算；只接受自适应思考的新模型会自动改用自适应。",
+    "": "",
+    off: type === "anthropic" ? "thinking: disabled" : "reasoning_effort: none，部分模型不支持",
+    effort: type === "anthropic" ? "自适应思考 + effort" : "reasoning_effort",
+    budget: "只支持自适应思考的模型会改用自适应",
   };
   return (
     <div className="rounded-ctl border border-line px-3 py-2.5">
@@ -485,7 +481,18 @@ function ReasoningEditor({ type, value, onChange }: { type: LLMType; value: Reas
           {value.mode === "budget" && <NumberInput className="w-32" min={1024} suffix="Token" value={value.budget_tokens ?? 4096} onChange={(n) => onChange({ mode: "budget", budget_tokens: Math.round(n) })} aria-label="思考预算" />}
         </div>
       </div>
-      <div className="mt-1 text-xs text-ink-3">{hints[value.mode]}</div>
+      {hints[value.mode] && <div className="mt-1 text-xs text-ink-3">{hints[value.mode]}</div>}
     </div>
+  );
+}
+
+/** A control that cannot be used while the model is assigned; hover or tap gives the reason. */
+function InUse({ when, children }: { when: boolean; children: ReactNode }) {
+  if (!when) return children;
+  return (
+    // The disabled control takes no pointer events, so they reach the wrapper.
+    <Info trigger={<span tabIndex={0} className="inline-flex rounded-ctl [&>*]:pointer-events-none">{children}</span>}>
+      使用中，先在网页抓取或深度研究中移除
+    </Info>
   );
 }

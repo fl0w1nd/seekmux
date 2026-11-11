@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Secret } from "../lib/api";
+import { codeGroups, codeText, type CodeKind } from "../lib/codes";
 import { useConfirm } from "./overlays";
 import { Button, cx, NumberInput, PasswordInput, Select, Textarea } from "./primitives";
 
@@ -71,7 +72,7 @@ export function SecretInput<T extends Secret>({ value, onChange, placeholder }: 
         <Button
           variant="ghost"
           onClick={async () => {
-            if (await confirm({ title: "清空此 API Key？", body: "清空后立即生效，恢复需重新填入密钥。", confirm: "确认清空", danger: true })) onChange({ ...value, api_key: "", clear_api_key: true });
+            if (await confirm({ title: "清空此 API Key？", body: "恢复需重新填入密钥。", confirm: "确认清空", danger: true })) onChange({ ...value, api_key: "", clear_api_key: true });
           }}
         >
           清空
@@ -230,5 +231,52 @@ export function JSONInput({
       />
       {error && <span className="text-xs text-err">{error}</span>}
     </div>
+  );
+}
+
+/* ---------- Country and language ---------- */
+
+/**
+ * Picks a country or language code from the list, named in Chinese. `empty`
+ * words the choice of none; `allowed` limits the list to what a provider takes.
+ */
+export function CodeSelect({
+  kind,
+  value,
+  onChange,
+  empty,
+  allowed,
+  className,
+  "aria-label": label,
+}: {
+  kind: CodeKind;
+  value: string;
+  onChange: (code: string) => void;
+  empty: string;
+  allowed?: string[];
+  className?: string;
+  "aria-label"?: string;
+}) {
+  const groups = codeGroups(kind, allowed);
+  const listed = value === "" || groups.common.includes(value) || groups.rest.includes(value);
+  return (
+    <Select className={className} value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+      <option value="">{empty}</option>
+      {!listed && <option value={value}>{value}（不支持）</option>}
+      <optgroup label="常用">
+        {groups.common.map((code) => (
+          <option key={code} value={code}>
+            {codeText(kind, code)}
+          </option>
+        ))}
+      </optgroup>
+      <optgroup label="全部">
+        {groups.rest.map((code) => (
+          <option key={code} value={code}>
+            {codeText(kind, code)}
+          </option>
+        ))}
+      </optgroup>
+    </Select>
   );
 }

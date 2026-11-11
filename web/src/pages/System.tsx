@@ -31,16 +31,16 @@ export function SystemPage() {
 
   return (
     <>
-      <PageHeader title="系统" description="日志保留、自动熔断、网络、配置的备份与迁移，以及管理员密码。" />
+      <PageHeader title="系统" />
       <div className="flex flex-col gap-4">
-        <Panel index="01" title="请求日志" description="历史请求日志与研究记录的清理策略，每小时自动执行。" flush>
-          <Row label="保留天数" hint="早于该天数的日志将被删除；研究任务及其报告链接按同一期限失效">
+        <Panel index="01" title="请求日志" flush>
+          <Row label="保留天数" hint="研究报告链接同期失效">
             <NumberInput className="w-24" min={1} suffix="天" value={config.logs.retention_days} onChange={(v) => update((d) => void (d.logs.retention_days = Math.round(v)))} />
           </Row>
-          <Row label="最多保留条数" hint="超出后从最早的记录开始删除，用于限制数据库体积">
+          <Row label="最多保留条数">
             <NumberInput className="w-32" min={100} suffix="条" value={config.logs.max_rows} onChange={(v) => update((d) => void (d.logs.max_rows = Math.round(v)))} />
           </Row>
-          <Row label="记录返回内容" hint="在日志中保存每次调用的响应正文（超长截断）">
+          <Row label="记录返回内容" info="在日志中保存响应正文，过长截断">
             <Switch checked={config.logs.capture_body} onCheckedChange={(v) => update((d) => void (d.logs.capture_body = v))} aria-label="记录返回内容" />
           </Row>
         </Panel>
@@ -48,48 +48,48 @@ export function SystemPage() {
         <Panel
           index="02"
           title="自动熔断"
-          description="对搜索、抓取提供商与提取模型生效：连续失败达阈值后暂时跳过，冷却期满自动试探恢复。"
+          info="对搜索、抓取提供商与提取模型生效：连续失败达到阈值后暂时跳过，冷却期满放行一次试探请求"
           flush
         >
-          <Row label="启用自动熔断" hint="关闭后会立即恢复所有已熔断的提供商和模型">
+          <Row label="启用自动熔断" hint="关闭即恢复所有已熔断项">
             <Switch checked={config.breaker.enabled} onCheckedChange={(v) => update((d) => void (d.breaker.enabled = v))} aria-label="启用自动熔断" />
           </Row>
-          <Row label="触发条件" hint="仅统计超时、连接失败、限流、鉴权失败和 5xx 错误；期间成功一次即重新计数">
+          <Row label="触发条件" info="只统计超时、连接失败、限流、鉴权失败和 5xx；成功一次即重新计数">
             <NumberInput className="w-24" min={10} suffix="秒内" disabled={!config.breaker.enabled} value={config.breaker.window_seconds} onChange={(v) => update((d) => void (d.breaker.window_seconds = Math.round(v)))} aria-label="统计窗口" />
             <span className="text-xs text-ink-3">连续失败</span>
             <NumberInput className="w-20" min={1} suffix="次" disabled={!config.breaker.enabled} value={config.breaker.failures} onChange={(v) => update((d) => void (d.breaker.failures = Math.round(v)))} aria-label="连续失败次数" />
           </Row>
-          <Row label="禁用时长" hint="熔断后的冷却时长。期满后放行一次试探请求，也可在概览页手动恢复">
+          <Row label="冷却时长">
             <NumberInput className="w-24" min={5} suffix="秒" disabled={!config.breaker.enabled} value={config.breaker.cooldown_seconds} onChange={(v) => update((d) => void (d.breaker.cooldown_seconds = Math.round(v)))} />
           </Row>
         </Panel>
 
         <Panel index="03" title="网络" flush>
-          <Row label="对外地址" hint="研究报告链接与 OAuth 登录地址以此开头。留空则沿用请求到达时的地址；Agent 经内网地址接入时需要填写">
+          <Row label="对外地址" hint="留空取请求到达的地址" info="研究报告链接与 OAuth 登录地址以此开头。Agent 经内网地址接入时需要填写。">
             <Input mono className="w-72" value={config.network.public_url ?? ""} placeholder="https://seekmux.example.com" onChange={(e) => update((d) => void (d.network.public_url = e.target.value.trim() || undefined))} />
           </Row>
-          <Row label="OAuth 登录" hint="允许支持 OAuth 的 MCP 客户端通过浏览器登录授权接入；关闭后仅接受 API Key，已签发令牌立即失效">
+          <Row label="OAuth 登录" hint="关闭后已签发的令牌立即失效">
             <Switch checked={!config.oauth.disabled} onCheckedChange={(on) => update((d) => void (d.oauth.disabled = on ? undefined : true))} aria-label="允许 MCP 客户端通过 OAuth 登录" />
           </Row>
-          <Row label="出站代理" hint="访问搜索、抓取和模型接口时使用。留空则直连">
+          <Row label="出站代理">
             <Input mono className="w-72" value={config.network.proxy ?? ""} placeholder="http://127.0.0.1:7890" onChange={(e) => update((d) => void (d.network.proxy = e.target.value.trim() || undefined))} />
           </Row>
-          <Row label="页面缓存" hint="抓取的页面在内存中缓存一段时间，供针对同一页面的后续请求复用">
+          <Row label="页面缓存">
             <Button loading={clearCache.isPending} onClick={() => clearCache.mutate()}>
               清空缓存
             </Button>
           </Row>
         </Panel>
 
-        <Panel index="04" title="配置文件" description="导入或导出 YAML 格式的网关配置，用于备份与迁移。" flush>
-          <Row label="导出为 YAML" hint="导出的文件包含明文 API Key，请妥善保管">
+        <Panel index="04" title="配置文件" flush>
+          <Row label="导出为 YAML" hint="含明文 API Key">
             <a href="/api/config/export" download>
               <Button icon={<Download />} tabIndex={-1}>
                 导出
               </Button>
             </a>
           </Row>
-          <Row label="从 YAML 导入" hint="以文件内容整体替换当前配置并立即生效；文件中留空的密钥沿用现有值">
+          <Row label="从 YAML 导入" hint="整体替换当前配置，留空的密钥保留现值">
             <input
               ref={file}
               type="file"

@@ -11,7 +11,7 @@ import { routingRules } from "../lib/routing";
 import { PageHeader } from "../Shell";
 import { BrandIcon } from "../ui/brand";
 import { RateLimitInput, SecretInput } from "../ui/inputs";
-import { Badge, Button, cx, Dot, Input, Notice, NumberInput, Tooltip, type Tone } from "../ui/primitives";
+import { Badge, Button, cx, Dot, Info, Input, Notice, NumberInput, type Tone } from "../ui/primitives";
 import { addFetcher, CreateFetcherDialog, FetcherDetail, fetcherState } from "./Fetchers";
 
 type Status = ReturnType<typeof useStatus>;
@@ -78,6 +78,8 @@ export function ProvidersPage() {
   const { config, meta, update } = useConfig();
   const [, navigate] = useLocation();
   const [creating, setCreating] = useState(false);
+  // The fetcher just created here, whose setup guide opens by itself.
+  const [created, setCreated] = useState<string>();
   // A token generated here is shown in its worker's command until the page
   // is left; the saved one comes back only as a hint.
   const [fresh, setFresh] = useState<Record<string, string>>({});
@@ -93,7 +95,6 @@ export function ProvidersPage() {
     <>
       <PageHeader
         title="提供商"
-        description="搜索与抓取服务的凭据、配额与接口地址，以及在自己设备上运行的抓取器。同一提供商的密钥、限流和并发由其支持的所有工具共用（并发 0 为不限）；路由顺序在各工具页面与服务路由中设置。"
         actions={
           <Button icon={<Plus />} onClick={() => setCreating(true)}>
             新建抓取器
@@ -110,7 +111,15 @@ export function ProvidersPage() {
             全部提供商
           </Link>
           {selected?.fetcher ? (
-            <FetcherDetail key={selected.id} fetcher={selected.fetcher} fresh={fresh} remember={remember} onRemoved={() => navigate("/providers", { replace: true })} />
+            <FetcherDetail
+              key={selected.id}
+              fetcher={selected.fetcher}
+              fresh={fresh}
+              remember={remember}
+              created={created === selected.id}
+              onGuideClosed={() => setCreated(undefined)}
+              onRemoved={() => navigate("/providers", { replace: true })}
+            />
           ) : (
             selected && <BuiltinDetail key={selected.id} id={selected.id} />
           )}
@@ -122,6 +131,7 @@ export function ProvidersPage() {
         onCreate={(type, name) => {
           const { id: created, worker } = addFetcher(config, meta, update, type, name);
           remember(worker);
+          setCreated(created);
           setCreating(false);
           navigate(`/providers/${created}`);
         }}
@@ -141,13 +151,13 @@ function ProviderList({ groups, selected, fallback }: { groups: ReturnType<typeo
         {groups.cloud.map((e) => (
           <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} />
         ))}
-        {groups.cloud.length === 0 && <p className="px-3 pb-3 text-xs text-ink-3">尚未配置任何服务，从下方未配置中选择一个。</p>}
+        {groups.cloud.length === 0 && <p className="px-3 pb-3 text-xs text-ink-3">尚未配置</p>}
       </Group>
       <Group label="自托管">
         {groups.self.map((e) => (
           <EntryRow key={e.id} entry={e} active={e.id === active} soft={!selected} />
         ))}
-        {groups.self.length === 0 && <p className="px-3 pb-3 text-xs text-ink-3">在自己的设备上运行 Worker，用已登录的浏览器读取页面。点击「新建抓取器」开始。</p>}
+        {groups.self.length === 0 && <p className="px-3 pb-3 text-xs text-ink-3">用自己已登录的浏览器读取页面</p>}
       </Group>
       {groups.idle.length > 0 && (
         <RadixCollapsible.Root open={idleOpen} onOpenChange={setOpen} className="group/idle border-t border-line">
@@ -255,12 +265,12 @@ function BuiltinDetail({ id }: { id: string }) {
                     </span>
                     <p className="mt-0.5">
                       {route.disabled_reason === "auth"
-                        ? "接口拒绝了该密钥，网关已停止向其发送请求。更换密钥后自动恢复；确认密钥有效时也可直接重新启用。"
+                        ? "更换密钥后自动恢复。"
                         : route.disabled_reason === "quota"
                           ? route.disabled_ms > 0
-                            ? "接口报告额度已用尽并给出了重置时间，届时自动恢复。充值后可直接重新启用。"
-                            : "接口报告额度已用尽，网关已停止向其发送请求。充值后可在此重新启用。"
-                          : "短时间内连续失败，暂时跳过，冷却后自动重试。"}
+                            ? "到重置时间自动恢复。"
+                            : "充值后重新启用。"
+                          : "冷却后自动重试。"}
                     </p>
                     {route.disabled_detail && <p className="num mt-1 break-all text-ink-3">{route.disabled_detail}</p>}
                   </div>
@@ -275,7 +285,7 @@ function BuiltinDetail({ id }: { id: string }) {
       <CardRow label="API Key" aside={!info.key_required && "可选"}>
         <SecretInput
           value={creds}
-          placeholder={info.key_required ? "粘贴 API Key" : "留空亦可使用，填写后额度更高"}
+          placeholder={info.key_required ? "粘贴 API Key" : "填写后额度更高"}
           onChange={(next) => update((d) => void (d.providers[info.id] = next))}
         />
       </CardRow>
@@ -284,9 +294,10 @@ function BuiltinDetail({ id }: { id: string }) {
         label="配额限流"
         aside={
           tools.length > 1 && (
-            <Tooltip content={`${tools.map((tool) => toolLabel[tool]).join("、")}的调用合并计数`}>
-              <div className="cursor-help text-2xs text-ink-3 underline decoration-line-strong decoration-dotted underline-offset-2">{tools.length} 工具共用</div>
-            </Tooltip>
+            <div className="flex items-center gap-1 text-2xs text-ink-3">
+              {tools.length} 工具共用
+              <Info>{`${tools.map((tool) => toolLabel[tool]).join("、")}的调用合并计数`}</Info>
+            </div>
           )
         }
       >
@@ -297,7 +308,7 @@ function BuiltinDetail({ id }: { id: string }) {
             <NumberInput
               className="w-20"
               min={0}
-              suffix={creds.concurrency === 0 ? "不限" : undefined}
+              zero="不限"
               value={creds.concurrency}
               onChange={(concurrency) => set((p) => (p.concurrency = Math.max(0, Math.round(concurrency))))}
               aria-label={`${info.name} 并发上限`}

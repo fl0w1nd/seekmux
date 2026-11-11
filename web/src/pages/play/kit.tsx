@@ -14,7 +14,7 @@ import { useNow } from "../../lib/motion";
 import { activeOf, legacyTrace } from "../../lib/trace";
 import { Markdown } from "../../ui/markdown";
 import { Dialog, Drawer, Popover, useToast } from "../../ui/overlays";
-import { Badge, Button, CodeBlock, cx, Dot, Empty, Notice, Segmented, Spinner, TabList, TabPanel, Tabs, Tooltip } from "../../ui/primitives";
+import { Badge, Button, CodeBlock, cx, Dot, Empty, Info, Notice, Segmented, Spinner, TabList, TabPanel, Tabs, Tooltip } from "../../ui/primitives";
 
 const mod = /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
@@ -36,7 +36,7 @@ export function Stage({
 }: {
   tool?: string;
   title: string;
-  description: ReactNode;
+  description?: ReactNode;
   actions?: ReactNode;
   /** The way to the past runs, at the end of the head. */
   history?: ReactNode;
@@ -54,7 +54,7 @@ export function Stage({
             {tool && <span className="tag">· {tool}</span>}
           </div>
           <h1 className="mt-0.5 text-xl font-medium tracking-tight">{title}</h1>
-          <p className="mt-1 max-w-2xl text-sm text-ink-3">{description}</p>
+          {description && <p className="mt-1 max-w-2xl text-sm text-ink-3">{description}</p>}
         </div>
         {(actions || history) && (
           <div className="flex items-center gap-2">
@@ -271,7 +271,7 @@ export function Examples({
 /** Marks a setting the MCP tool does not have. */
 export function LocalTag() {
   return (
-    <Tooltip content="MCP 工具没有这项参数：仅对调试台发起的调用生效，不修改配置。">
+    <Tooltip content="只随调试台的调用发出，不修改配置">
       <span className="tag cursor-help rounded-[3px] border border-line px-1 normal-case">仅调试台</span>
     </Tooltip>
   );
@@ -292,11 +292,12 @@ export function OptionGroup({ title, local, action, children }: { title: ReactNo
 }
 
 /** A labelled control that is not a single form field, so it must not sit in a <label>. */
-export function Group({ label, hint, local, children }: { label: ReactNode; hint?: ReactNode; local?: boolean; children: ReactNode }) {
+export function Group({ label, hint, info, local, children }: { label: ReactNode; hint?: ReactNode; info?: ReactNode; local?: boolean; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="flex items-center gap-2 text-xs font-medium text-ink-2">
+      <span className="flex items-center gap-1 text-xs font-medium text-ink-2">
         {label}
+        {info && <Info>{info}</Info>}
         {local && <LocalTag />}
       </span>
       {children}
@@ -335,7 +336,6 @@ export function ProviderChip({ tool, value, onChange, changed }: { tool: RoutedT
           setOpen(false);
         }}
       />
-      <p className="px-1 pt-2 pb-0.5 text-xs text-ink-3">「自动」按路由顺序尝试并在失败时切换；固定一个提供商后，可在「参数」中临时调整它的参数。</p>
     </Popover>
   );
 }
@@ -397,13 +397,7 @@ export function ProviderParams({ tool, engine, tuning, note }: { tool: RoutedToo
   if (engine === "auto") {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 bg-sunken/35 px-4 py-2.5 text-xs text-ink-3">
-        <span>
-          当前提供商为「自动」，各提供商使用{" "}
-          <Link href={page} className="text-ink-2 underline underline-offset-2 hover:text-ink">
-            已保存的路由参数
-          </Link>
-          。在顶栏固定某一提供商后，可在此临时微调其专有参数。
-        </span>
+        <span>固定一个提供商后可调整它的参数</span>
         <LocalTag />
       </div>
     );
@@ -411,12 +405,11 @@ export function ProviderParams({ tool, engine, tuning, note }: { tool: RoutedToo
   return (
     <OptionGroup title={`${provider(engine).name} 专有参数`} local action={tuning.changed && <ResetButton onClick={tuning.reset} />}>
       <OptionFields key={tuning.version} tool={tool} provider={engine} value={tuning.value} onChange={tuning.set} columns="@lg:grid-cols-2 @4xl:grid-cols-3" />
-      <p className="text-xs text-ink-3">
-        {tuning.changed ? "已自定义参数，" : "初始值取自配置，"}改动只随调试台的调用发出。{note} 要让 MCP 调用也生效，请到{" "}
+      <p className="flex flex-wrap gap-x-3 text-xs text-ink-3">
+        {note}
         <Link href={page} className="text-ink-2 underline underline-offset-2 hover:text-ink">
-          路由页
-        </Link>{" "}
-        保存。
+          修改已保存的参数
+        </Link>
       </p>
     </OptionGroup>
   );
@@ -493,7 +486,6 @@ export function Output({
   actions,
   strip,
   banner,
-  hint,
   children,
 }: {
   run: RunState;
@@ -506,8 +498,6 @@ export function Output({
   strip?: ReactNode;
   /** Shown above the tabs, as when a past run is on show. */
   banner?: ReactNode;
-  /** What a call of this tool answers with, said before the first one. */
-  hint: ReactNode;
   /** The result view, once there is a call. */
   children: ReactNode;
 }) {
@@ -585,9 +575,7 @@ export function Output({
         <TabPanel value="result" className="flex flex-col">
           {idle ? (
             <div className="grid flex-1 place-items-center">
-              <Empty icon={<CornerDownLeft />} title="结果会出现在这里">
-                {hint}
-              </Empty>
+              <Empty icon={<CornerDownLeft />} title="运行后显示结果" />
             </div>
           ) : (
             children
@@ -596,15 +584,13 @@ export function Output({
         <TabPanel value="flow" className="flex flex-col">
           {idle ? (
             <div className="grid flex-1 place-items-center">
-              <Empty icon={<Workflow />} title="这里会画出调用的流程">
-                从入口到返回：缓存命中没有、路由怎么选、请求了哪些提供商、谁被跳过、模型带什么参数、各用了多久。运行时它是活的。
-              </Empty>
+              <Empty icon={<Workflow />} title="运行后显示调用流程" />
             </div>
           ) : nodes.length === 0 ? (
-            <div className="grid flex-1 place-items-center py-16">{live ? <Spinner /> : <span className="text-xs text-ink-3">这次调用没有留下流程。</span>}</div>
+            <div className="grid flex-1 place-items-center py-16">{live ? <Spinner /> : <span className="text-xs text-ink-3">没有流程记录</span>}</div>
           ) : (
             <>
-              {entry && !entry.trace?.length && <div className="border-b border-line px-4 py-2 text-xs text-ink-3">这条记录来自升级之前：只记下了请求过哪些上游，没有记下判断过程。</div>}
+              {entry && !entry.trace?.length && <div className="border-b border-line px-4 py-2 text-xs text-ink-3">旧版记录，只有上游请求，没有判断过程</div>}
               <FlowView
                 key={stamp}
                 nodes={nodes}
@@ -620,7 +606,7 @@ export function Output({
         </TabPanel>
         <TabPanel value="timeline" className="flex flex-col">
           {nodes.length === 0 ? (
-            <div className="grid place-items-center px-6 py-16 text-center text-xs text-ink-3">{idle ? "运行后，这里按时间轴排出这次调用里每一段耗时。" : "这次调用没有留下流程。"}</div>
+            <div className="grid place-items-center px-6 py-16 text-center text-xs text-ink-3">{idle ? "运行后显示各段耗时" : "没有流程记录"}</div>
           ) : (
             <TimelineView
               key={stamp}
@@ -680,14 +666,14 @@ export function Failure({ error }: { error: Error }) {
   const stopped = error instanceof APIError && error.status === 499;
   return (
     <div className="p-4">
-      {stopped ? <Notice tone="neutral">已停止这次调用。已经发出的上游请求不会撤回，「流程」里能看到它停在哪一步。</Notice> : <Notice tone="err">{error.message}</Notice>}
+      {stopped ? <Notice tone="neutral">已停止</Notice> : <Notice tone="err">{error.message}</Notice>}
     </div>
   );
 }
 
 /** What a result says went wrong; a call stopped from here or the logs did not fail. */
 export function ResultError({ error, children }: { error: string; children?: ReactNode }) {
-  if (error === stoppedHere) return <Notice tone="neutral">{children}已停止这次调用，没有拿到结果。</Notice>;
+  if (error === stoppedHere) return <Notice tone="neutral">{children}已停止</Notice>;
   return (
     <Notice tone="err">
       {children}
@@ -723,17 +709,16 @@ export function HistoricalFallback({
   return (
     <div className="flex flex-col gap-4 p-4">
       {entry.error === stoppedHere ? (
-        <Notice tone="neutral">这次调用被从控制台中止。「流程」里能看到它停在哪一步。</Notice>
+        <Notice tone="neutral">已从控制台中止</Notice>
       ) : entry.error ? (
         <Notice tone="err">{entry.error}</Notice>
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-ctl border border-line bg-sunken/50 px-3.5 py-2.5 text-xs text-ink-2">
           <span>
-            该次历史运行未记录返回正文（可在{" "}
+            未记录返回内容 ·{" "}
             <Link href="/system" className="text-ink underline underline-offset-2 hover:text-signal-text">
-              系统设置
-            </Link>{" "}
-            中开启「记录返回内容」）。可载入当时参数重新运行，或切换至「流程」查看当时怎么走的。
+              开启记录
+            </Link>
           </span>
           <Button size="sm" variant="secondary" icon={<Play />} onClick={onRerun}>
             以此参数重新运行
@@ -805,11 +790,7 @@ export function CodeButton({ tool, args, notices }: { tool: string; args: object
         onOpenChange={setOpen}
         width="max-w-2xl"
         title="MCP 请求"
-        description={
-          <>
-            MCP 客户端调用 <span className="num text-ink-2">{tool}</span> 工具时发送的请求，取自当前的输入与参数；未列出的参数取默认值。
-          </>
-        }
+        description="未列出的参数取默认值"
       >
         <div className="flex flex-col gap-3">
           {notices}
@@ -824,7 +805,7 @@ export function CodeButton({ tool, args, notices }: { tool: string; args: object
 export function LocalNotice({ items }: { items: (string | false | undefined)[] }) {
   const list = items.filter(Boolean);
   if (list.length === 0) return null;
-  return <Notice tone="info">以下设置仅在调试台生效，MCP 调用无法携带，Agent 始终使用已保存的配置：{list.join("；")}。</Notice>;
+  return <Notice tone="info">以下设置不会随 MCP 请求发出：{list.join("；")}</Notice>;
 }
 
 /* ---------- Recent runs ---------- */
@@ -906,7 +887,7 @@ export function Recent<R = unknown>({
       }
       setOpen(false);
     } catch {
-      toast("无法读取这次调用的记录：记录已被清理，或请求参数被截断。", "err");
+      toast("无法读取这次调用的记录：已被清理或参数被截断", "err");
     }
   };
 
@@ -920,7 +901,6 @@ export function Recent<R = unknown>({
         width="w-[min(28rem,100vw)]"
         bodyClassName=""
         title="最近运行"
-        description="点一条，在下方看它的结果和流程；↻ 只把参数载入输入框。"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-line bg-overlay px-4 py-2">
           <Segmented
@@ -938,7 +918,7 @@ export function Recent<R = unknown>({
         </div>
         {entries.length === 0 ? (
           <div className="px-4 py-8 text-center text-xs text-ink-3">
-            {recent.isPending ? "正在读取…" : scope === "webui" ? "调试台还没有运行过这个工具。" : "这个工具还没有被调用过。"}
+            {recent.isPending ? "正在读取…" : "暂无记录"}
           </div>
         ) : (
           <ol className="divide-y divide-line">

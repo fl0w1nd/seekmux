@@ -44,14 +44,14 @@ export function ReportPage({ id }: { id: string }) {
         }
         title={report.question}
       >
-        Agent 正在检索并阅读资料，通常需要几分钟。报告写完后，本页会自动显示全文，无需刷新。
+        通常需要几分钟，完成后本页自动显示报告。
       </Message>
     );
   }
   if (report) {
     return (
       <Message tag="深度研究报告" title="这次研究没有生成报告">
-        {report.status === "canceled" ? "研究在完成前被停止。" : "研究在完成前中断。"}请向发来链接的人确认，或重新发起一次研究。
+        {report.status === "canceled" ? "研究在完成前被停止。" : "研究在完成前中断。"}
       </Message>
     );
   }
@@ -65,7 +65,7 @@ export function ReportPage({ id }: { id: string }) {
   const gone = query.error instanceof APIError && query.error.status === 404;
   return (
     <Message tag="深度研究报告" title={gone ? "报告不存在，或已过期" : "报告暂时无法读取"}>
-      {gone ? "报告只保留一段时间，到期后链接随之失效。请确认链接完整，或向发来链接的人索取新的报告。" : `${query.error?.message ?? "未知错误"}。请稍后刷新重试。`}
+      {gone ? "请确认链接完整，或向发来链接的人索取新的报告。" : `${query.error?.message ?? "未知错误"}。请稍后刷新重试。`}
     </Message>
   );
 }
@@ -246,10 +246,10 @@ function Document({ report }: { report: PublicReport }) {
   }, [toc]);
 
   const sites = new Set(report.read.map((url) => parts(url).host)).size;
-  const figures: { label: string; value: ReactNode; unit?: string; foot: string }[] = [
-    { label: "检索", value: report.searches, unit: "次", foot: "换用不同措辞的搜索" },
-    { label: "阅读", value: report.read.length, unit: "页", foot: "打开并读过正文的页面" },
-    { label: "来源", value: sites, unit: "个站点", foot: "上述页面所属的站点" },
+  const figures: { label: string; value: ReactNode; unit?: string; foot?: string }[] = [
+    { label: "检索", value: report.searches, unit: "次" },
+    { label: "阅读", value: report.read.length, unit: "页" },
+    { label: "来源", value: sites, unit: "个站点" },
     { label: "用时", value: stopwatch(report.finished_at - report.created_at), foot: `完成于 ${dateTime(report.finished_at).slice(5, 16)}` },
   ];
 
@@ -291,7 +291,7 @@ function Document({ report }: { report: PublicReport }) {
                   <span className="text-2xl font-medium text-ink lg:text-3xl">{figure.value}</span>
                   {figure.unit && <span className="font-sans text-sm text-ink-3">{figure.unit}</span>}
                 </dd>
-                <dd className="truncate text-xs text-ink-3">{figure.foot}</dd>
+                {figure.foot && <dd className="truncate text-xs text-ink-3">{figure.foot}</dd>}
               </div>
             ))}
           </dl>
@@ -331,7 +331,7 @@ function Document({ report }: { report: PublicReport }) {
         <article ref={article} className="min-w-0">
           {(report.cut_short || report.unread.length > 0) && (
             <div className="mb-10 flex flex-col gap-2">
-              {report.cut_short && <Notice tone="warn">研究预算在 Agent 查证完毕之前用尽，这份报告基于当时已收集到的材料写成，可能不完整。</Notice>}
+              {report.cut_short && <Notice tone="warn">研究预算在查证完成前用尽，报告可能不完整。</Notice>}
               {report.unread.length > 0 && (
                 <Notice tone="warn">
                   报告引用了 {report.unread.length} 个 Agent 没有读过正文的链接，相关论断未经原文核对：
@@ -353,12 +353,11 @@ function Document({ report }: { report: PublicReport }) {
 
         <aside className="max-xl:mt-14 lg:max-xl:col-start-2">
           <div className="rounded-panel border border-line xl:sticky xl:top-10">
-            <dl className="grid max-xl:sm:grid-cols-3 max-xl:sm:[&>div]:border-b-0">
+            <dl className="grid max-xl:sm:grid-cols-2 max-xl:sm:[&>div]:border-b-0">
               <Fact label="生成时间">{dateTime(report.finished_at).slice(0, 16)}</Fact>
-              <Fact label="链接有效期至">{dateTime(report.expires_at).slice(0, 10)}</Fact>
               <Fact label="报告编号">{report.id.slice(0, 11)}</Fact>
             </dl>
-            <p className="border-t border-line px-4 py-3 text-xs text-ink-3">本报告由 AI 研究 Agent 自动检索、阅读并撰写。数字、版本与结论请对照文中出处核实。</p>
+            <p className="border-t border-line px-4 py-3 text-xs text-ink-3">由 AI 自动检索并撰写，请对照出处核实。</p>
           </div>
         </aside>
       </div>
@@ -373,7 +372,7 @@ function Document({ report }: { report: PublicReport }) {
                   Agent 读过的 <span className="num">{report.read.length}</span> 个页面
                 </h2>
               </div>
-              <p className="max-w-md text-sm text-ink-3">按阅读顺序排列。标有「已引用」的页面在报告中被直接引用，其余用于交叉核对或了解背景。</p>
+              <p className="max-w-md text-sm text-ink-3">按阅读顺序排列，「已引用」为报告直接引用的页面。</p>
             </div>
             <ol className="mt-8 grid border-t border-l border-line sm:grid-cols-2 xl:grid-cols-3">
               {report.read.map((url, i) => {

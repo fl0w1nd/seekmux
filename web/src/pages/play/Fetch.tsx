@@ -141,7 +141,6 @@ export function FetchPlay() {
     <Stage
       tool="fetch"
       title="网页抓取"
-      description="调用 fetch 工具：读取页面并由提取模型按问题提炼回答，或直接返回 Markdown 原文。"
       history={
         <Recent<FetchResult>
           tool="fetch"
@@ -160,7 +159,6 @@ export function FetchPlay() {
           inspected={inspected}
           view={views.view}
           onView={views.pick}
-          hint="提取回答会随模型的输出逐字出现，原文按段返回。「流程」里是缓存、路由、各提供商的请求和提取模型的参数。"
           banner={
             inspected && (
               <HistoryBanner
@@ -309,25 +307,24 @@ export function FetchPlay() {
             <OptionGroup title="调用参数">
               {!canExtract && (
                 <Notice tone="warn">
-                  尚未配置模型，仅可返回原文。请前往{" "}
+                  尚无模型，只能返回原文。
                   <Link href="/models" className="text-ink underline underline-offset-2">
-                    模型接口
-                  </Link>{" "}
-                  页添加。
+                    去添加
+                  </Link>
                 </Notice>
               )}
-              {canExtract && chain.length === 0 && <Notice tone="info">抓取工具尚未关联提取模型，Agent 仅能获得原文。此处用所选模型试用提取。</Notice>}
+              {canExtract && chain.length === 0 && <Notice tone="info">未配置提取模型，这里可临时试用。</Notice>}
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <Group
                   label="绕过缓存"
                   local
-                  hint={tuning.changed ? "已调整提供商参数，这次抓取本就不读写缓存。" : "重新向提供商请求页面，不读取也不写入页面缓存与回答缓存。"}
+                  hint={tuning.changed ? "临时参数下始终绕过" : undefined}
                 >
                   <Switch checked={fresh} disabled={tuning.changed} onCheckedChange={setNoCache} aria-label="绕过缓存" />
                 </Group>
               </div>
             </OptionGroup>
-            <ProviderParams tool="fetch" engine={engine} tuning={tuning} note="带临时参数的抓取不读写缓存。" />
+            <ProviderParams tool="fetch" engine={engine} tuning={tuning} />
           </>
         }
         footer={
@@ -380,7 +377,7 @@ export function FetchPlay() {
         ) : (
           <div className="flex items-center gap-3 px-3.5 py-2.5 text-xs text-ink-3">
             <span className="tag w-12 shrink-0">模式</span>
-            <span>直接返回页面的 Markdown 原文；较长的页面分段返回，可通过顶部「偏移」或结果底部的「继续读取」翻页。</span>
+            <span>返回 Markdown 原文，长页面分段</span>
           </div>
         )}
       </Composer>

@@ -94,12 +94,12 @@ export function AuthorizePage() {
           </div>
           <Notice>
             {prompt.data.key
-              ? `该客户端此前已获授权，将沿用密钥「${prompt.data.key}」及其用量、限流与策略，可用工具以这次的选择为准。`
-              : "授权后将在「访问密钥」页生成一把同名密钥，可在该页设置限流与策略，或随时吊销。"}
+              ? `沿用此前的密钥「${prompt.data.key}」及其限流与策略，可用工具以本次选择为准。`
+              : "授权后生成同名访问密钥，可随时吊销。"}
           </Notice>
           {decide.error && <Notice tone="err">{decide.error.message}</Notice>}
           {answered ? (
-            <Notice tone="ok">已答复客户端。如果页面没有自动跳转，可以直接关闭。</Notice>
+            <Notice tone="ok">已答复客户端，可以关闭此页。</Notice>
           ) : (
             <div className="flex justify-end gap-2">
               <Button disabled={decide.isPending} onClick={() => decide.mutate(false)}>

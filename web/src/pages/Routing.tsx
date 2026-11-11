@@ -35,7 +35,6 @@ export function RoutingPage() {
     <>
       <PageHeader
         title="服务路由"
-        description="按 URL 匹配规则指定抓取提供商，并按域名统计各提供商的抓取表现。"
         actions={
           tab === "rules" && (
             <Button variant="primary" icon={<Plus />} onClick={() => setForm({ id: newRuleID(), name: "", enabled: true, match: [], providers: [] })}>
@@ -98,7 +97,7 @@ function Rules({ onEdit }: { onEdit: (rule: Rule) => void }) {
     <Panel
       index="01"
       title="路由规则"
-      description="自上而下匹配，命中后仅在规则指定的提供商中依次尝试（优先于默认抓取路由，显式指定 fetch_engine 时除外）。"
+      info="自上而下匹配，命中即停。命中的 URL 只由规则的提供商抓取，调用方用 fetch_engine 指定时除外。"
       flush
     >
       <ol>
@@ -203,7 +202,6 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
       open
       onOpenChange={(open) => !open && onClose()}
       title={builtin ? `内置规则「${rule.name}」` : stored >= 0 ? "编辑规则" : "新建规则"}
-      description={builtin ? "匹配范围随版本更新，这里只调整由哪些提供商抓取。" : undefined}
       footer={
         <>
           {!builtin && stored >= 0 && (
@@ -211,7 +209,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
               className="mr-auto"
               variant="danger"
               onClick={async () => {
-                if (await confirm({ title: `删除规则「${rule.name}」？`, body: "匹配的 URL 将重新按抓取工具的路由优先级处理。", confirm: "删除", danger: true })) {
+                if (await confirm({ title: `删除规则「${rule.name}」？`, body: "匹配的 URL 改按抓取路由处理。", confirm: "删除", danger: true })) {
                   update((draft) => void draft.routing.rules.splice(stored, 1));
                   onClose();
                 }
@@ -229,7 +227,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
     >
       <div className="flex flex-col gap-4">
         {!builtin && (
-          <Field label="名称" hint="出现在规则列表与报错信息中，例如站点名">
+          <Field label="名称">
             <Input autoFocus value={name} maxLength={64} placeholder="Example Docs" onChange={(e) => setName(e.target.value)} />
           </Field>
         )}
@@ -243,7 +241,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
           {invalid.length > 0 ? (
             <span className="text-xs text-err">{invalid.join("、")} 不是有效的域名</span>
           ) : (
-            !builtin && <span className="text-xs text-ink-3">域名包含其全部子域名；加上路径前缀则只匹配该路径下的页面。可直接粘贴完整 URL。</span>
+            !builtin && <span className="text-xs text-ink-3">含子域名</span>
           )}
         </div>
         <div className="flex flex-col gap-1.5">
@@ -282,7 +280,7 @@ function RuleDialog({ rule, onClose }: { rule: Rule; onClose: () => void }) {
               );
             })}
           </ol>
-          <span className="text-xs text-ink-3">只在选中的提供商中按顺序尝试，全部失败即报错，不会退回其它提供商。</span>
+          <span className="text-xs text-ink-3">按顺序尝试，全部失败即报错，不回退</span>
         </div>
       </div>
     </Dialog>
@@ -351,7 +349,7 @@ function Domains({ onRoute }: { onRoute: (rule: Rule) => void }) {
     <Panel
       index="01"
       title="域名统计"
-      description={`按域名统计各提供商的抓取结果与正文长度，数据保留 ${query.data?.retention_days ?? 90} 天（不含缓存命中与取消请求）。`}
+      info={`保留 ${query.data?.retention_days ?? 90} 天，不含缓存命中与取消的请求`}
       actions={
         <>
           <Segmented
@@ -378,7 +376,7 @@ function Domains({ onRoute }: { onRoute: (rule: Rule) => void }) {
             variant="danger"
             disabled={all.length === 0}
             onClick={async () => {
-              if (await confirm({ title: "清空域名统计？", body: "全部域名的统计将被删除，且无法恢复。路由规则不受影响。", confirm: "清空", danger: true })) clear.mutate();
+              if (await confirm({ title: "清空域名统计？", body: "此操作不可撤销。", confirm: "清空", danger: true })) clear.mutate();
             }}
           >
             清空
@@ -390,9 +388,7 @@ function Domains({ onRoute }: { onRoute: (rule: Rule) => void }) {
       {!query.data ? (
         <div className="grid place-items-center py-16">{query.error ? <span className="text-sm text-err">{query.error.message}</span> : <Spinner />}</div>
       ) : rows.length === 0 ? (
-        <Empty icon={<Radar />} title={all.length === 0 ? "尚无统计" : "所选时间内没有抓取失败的域名"}>
-          {all.length === 0 && "通过 fetch 工具抓取页面后，这里按域名列出各提供商的成功与失败。"}
-        </Empty>
+        <Empty icon={<Radar />} title={all.length === 0 ? "尚无统计" : "所选时间内没有抓取失败的域名"} />
       ) : (
         <div className="overflow-x-auto">
           <Table>

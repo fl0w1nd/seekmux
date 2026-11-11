@@ -13,11 +13,10 @@ export function allModels(config: Config): (Model & { provider: string })[] {
 function NoModels() {
   return (
     <Notice tone="warn">
-      尚无可用模型。请先前往{" "}
+      尚无模型，
       <Link href="/models" className="text-ink underline underline-offset-2">
-        模型接口
-      </Link>{" "}
-      页添加接口和模型。
+        去添加
+      </Link>
     </Notice>
   );
 }

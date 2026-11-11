@@ -22,8 +22,42 @@ components in `src/ui/`.
 4. **State is a dot plus a word.** Never color alone. A breathing dot means
    "happening at this moment" and nothing else.
 5. **Settings are rows, data is tables.** A setting says what it is on the
-   left and holds its control on the right. Explanations sit next to the thing
-   they explain, in one sentence.
+   left and holds its control on the right.
+6. **The interface shows; it does not explain.** A label, a value and a
+   control carry the meaning. Text that explains is the exception (see
+   Writing).
+
+## Writing
+
+- A label stands on its own. By default a setting has no hint, a panel no
+  description and a page no description.
+- Show the value instead of describing it: a field at 0 says what 0 means in
+  place of its suffix (`不限`, `沿用模型`, `全局 24 步`), a field that inherits
+  shows the inherited value as its placeholder, an example goes in the
+  placeholder.
+- A value from a fixed set (a country, a language, a model) is picked from a
+  list that holds only what the provider takes, never typed. Free text shows
+  a real example in its placeholder, and an invalid value says the rule
+  (`1 – 100 的整数`), not only a red border.
+- A setup that happens outside the console (installing an extension,
+  running a worker) is a guide of numbered steps, each checked against what
+  the gateway can see.
+- An inline hint is for what the user would otherwise get wrong: a unit, a
+  format, a consequence that cannot be undone. One short clause, no `；`.
+- A mechanism that is worth knowing but not needed to set the value goes
+  behind `Info` (the ⓘ next to a label). How the gateway works inside belongs
+  in the README.
+- Another page is a link or a button, never "前往「X」中设置".
+- A control that cannot be used is disabled, with the reason on `Info` or a
+  tooltip, instead of a warning below it.
+- An empty state is a title, and an action button when there is something to
+  do. It does not describe what will appear.
+- A `Notice` is for something that is wrong now, and offers the fix. It is not
+  for background.
+- A confirmation says the consequence the user would not expect. Everything
+  applies at once, so "立即生效" is never said.
+- Each fact is said in one place.
+- Console text is Chinese, terse and neutral. No chatty asides.
 
 ## Tokens
 
@@ -44,119 +78,66 @@ signal color instead of sitting next to it as plain gray.
 
 **Type.** Seven sizes, each with a fixed line height: `2xs` 11, `xs` 12,
 `sm` 13, `base` 14, `lg` 16, `xl` 20, `2xl` 28. Body is `base`; controls and
-tables are `sm`. Two display sizes, `3xl` 36 and `4xl` 52, exist for the report
-page alone: its title and its figures. Nothing in the console uses them. Two utilities: `num` (mono, tabular) and `tag` (mono, 11px,
+tables are `sm`. Two display sizes, `3xl` 36 and `4xl` 52, are for the report
+page only. Two utilities: `num` (mono, tabular) and `tag` (mono, 11px,
 uppercase, tracked — the micro label on panels, columns and lanes).
 
 **Shape.** Two radii only: `rounded-ctl` (5px) for controls, `rounded-panel`
 (10px) for containers. Controls are 32px tall, 28px in dense places.
 
-**Motion.** 140ms ease-out for entering layers, 200ms for the drawer. A region
-that folds open (`animate-fold-down` / `animate-fold-up`) and a quantity that
-moves to a new value (a gauge bar, a number followed with `useTween` from
-`lib/motion.ts`) use `ease-settle`, which arrives fast and comes to rest
-without overshoot. Bars drawn for the first time grow from their baseline
-(`animate-grow-x` / `animate-grow-y`; the lines of a flow are drawn the same
-way, in the order the call ran), and a row that arrives in a live list
-fades in tinted with the signal color once (`animate-arrive`). Motion only
-ever shows a change of state; nothing loops
-except the dot of something that is live. All of it is disabled under
+**Motion.** 140ms ease-out for entering layers, 200ms for the drawer. Folding
+regions (`animate-fold-down` / `animate-fold-up`) and moving quantities
+(`useTween` in `lib/motion.ts`) use `ease-settle`. New bars grow from their
+baseline (`animate-grow-x` / `animate-grow-y`); a row arriving in a live list
+fades in once (`animate-arrive`). Motion only shows a change of state; nothing
+loops except the dot of something live. All of it is off under
 `prefers-reduced-motion`.
 
 ## Components
 
 - `primitives.tsx` — `Button` (primary / secondary / ghost / danger), `Input`,
   `Textarea`, `Select`, `NumberInput`, `Switch`, `Segmented`, `Field`, `Dot`,
-  `Badge`, `Panel`, `Row`, `Section` (a group that folds away and shows its
-  current values in the header), `Tabs` / `TabList` / `TabPanel`,
-  `ChoiceList` / `Choice` (a short list of options, one chosen, each with a
-  status), `Empty`,
-  `Notice`, `Meter`, `CodeBlock`, `Tooltip`, `Table`.
-- `overlays.tsx` — `Dialog`, `Drawer`, `Popover` (a few choices or a note
-  anchored to the control that opens it), toasts (`useToast`), confirmation
-  (`useConfirm`). Behavior and accessibility come from unstyled Radix
-  primitives; every pixel of styling is ours.
-- `inputs.tsx` — `RateLimitInput`, `SecretInput`, `JSONInput`, `ChipInput`
-  (a short list of words such as domains).
-- `brand.tsx` — `BrandIcon`, the logo of a provider (or of a built-in rule's
-  site, such as YouTube) by id. The one place colors outside the tokens
-  are allowed: a logo keeps its own color. Add a mark here when a provider is
-  added to the catalog; an id without one renders nothing.
-- `markdown.tsx` — `Markdown`, for long text from providers and models. It
-  never renders raw HTML and turns images into links, since the text is
-  untrusted.
-- `pages/Report.tsx` — the report page, the one screen that is read rather
-  than operated and the one a visitor sees without signing in. It keeps the
-  tokens and changes the scale: a display title on a ruled ground
-  (`report-backdrop`), the run's figures as a band, the report in `md-report`
-  (the Markdown styles at reading size, with a link written out as its own
-  address drawn as a short citation marker), its contents alongside, and the
-  pages the agent read as a numbered grid.
-- `components/` — `ProviderName` (a provider's logo and name, or a model's
-  id; use it wherever a provider is named), `RouteList` (numbered priority lanes), `ModelRefEditor`,
-  `ProviderPicker` (auto or one provider, with its health), `ModelOverride`
-  (the assigned models or another one, for a single call).
-- `components/flow/` — how one call was decided and served, drawn from its
-  trace (`lib/trace.ts`). The same components show a stored call, a call in
-  flight and a call made in the playground.
-  - `Flow` reads top to bottom along one axis, on a dotted ground
-    (`flow-canvas`) that sets it apart from the panels around it. A **pill**
-    with a diamond is a decision or an outcome that took no time of its own
-    (cache, routing mode, what to do with the page, the result); a **card** is
-    something that was called and timed (a provider, a model, a query, a
-    tool), with its status, its duration and a hairline showing where on the
-    call's time axis it ran. Things that ran at once fork into columns and
-    join again; a branch that was dropped (a hedge that lost, a provider that
-    was passed over) is drawn dashed and does not rejoin. The steps of a
-    research run are numbered lanes, and a tool call of a step opens in place
-    into the flow of that call.
-  - Lines carry state the way dots do: solid for the path taken, the signal
-    color for what is running now, dashed for what was not taken. Nothing
-    else in the flow uses the signal color.
-  - `FlowView` puts the facts of the picked node beside the flow
-    (`NodeDetail`): in a column where the view is wide, as a sheet over the
-    flow where it is narrow. Its wording lives in `wording.ts`; a fact the
-    gateway reports that has no wording yet is shown under its own key rather
-    than dropped.
-  - `Timeline` is the same call on a shared time axis, indented by what each
-    part belonged to. `LivePhase` says in a few words what a call in flight
-    is doing.
-- `pages/Log.tsx` — the inspector of one call (`/logs/:id`): its flow, its
-  time axis, what it was asked and what it answered. A call in flight has the
-  same page under its call id and becomes its log entry when it ends.
-- `pages/play/kit.tsx` — what the playground pages are built from: `Stage`
-  (the page head and the workbench: what goes into a call in a left column
-  that stays in sight, the pane it answers into on the right; the two stack
-  below `xl`), `Composer` (a top instrument bar of `Chip`s and quick controls,
-  a parameter panel that folds open, the structured input area, and a bottom
-  bar with examples and the primary run action, which stops the call while it
-  runs), `Output` (the pane a call answers into; it is always there, opens on
-  the live flow when a call is made and turns to the result when it ends),
-  `Recent` (past runs, a click inspects the run in `Output`, with an action to
-  restore its arguments). The composer and the lists are containers: what is
-  inside them lays itself out by `@` variants, never by the window, since the
-  same composer is a narrow column on a wide screen and full width on a
-  narrow one. A chip carries a signal dot when its value is not the
-  configured one, and whatever applies to one call only is marked `仅调试台`.
+  `Badge`, `Panel`, `Row`, `Section` (folds away, shows its values in the
+  header), `Tabs`, `ChoiceList` / `Choice`, `Empty`, `Notice`, `Meter`,
+  `CodeBlock`, `Tooltip`, `Info`, `Table`.
+  - `Info` is the ⓘ beside a label (`Row`, `Field` and `Panel` take it as
+    `info`). It opens on hover with a mouse and on tap on a touch screen;
+    `Tooltip` does not open on touch, so anything the user needs to read goes
+    in `Info`. With `trigger` it opens on another element instead of an ⓘ,
+    such as a disabled control whose reason it gives.
+- `overlays.tsx` — `Dialog`, `Drawer`, `Popover`, toasts (`useToast`),
+  confirmation (`useConfirm`). Behavior comes from unstyled Radix primitives;
+  the styling is ours.
+- `inputs.tsx` — `RateLimitInput`, `SecretInput`, `JSONInput`, `ChipInput`,
+  `CodeSelect` (a country or language, named in Chinese).
+- `brand.tsx` — `BrandIcon`, a provider's (or a built-in rule's site) logo.
+  The one place colors outside the tokens are allowed.
+- `markdown.tsx` — `Markdown` for untrusted long text: no raw HTML, images
+  become links.
+- `components/` — `ProviderName` (use it wherever a provider is named),
+  `RouteList` (numbered priority lanes), `ProviderPicker`, `ModelPicker`.
+- `components/flow/` — one call drawn from its trace (`lib/trace.ts`), the
+  same for a stored call, a call in flight and a playground call. A pill is a
+  decision that took no time; a card is something called and timed. Parallel
+  work forks into columns; a dropped branch is dashed. The signal color marks
+  only what is running now. Wording lives in `wording.ts`.
+- `pages/Report.tsx` — the public report page: the same tokens at reading
+  scale (`report-backdrop`, `md-report`).
+- `pages/play/kit.tsx` — the playground: `Stage` (input column and output
+  pane, stacked below `xl`), `Composer`, `Output`, `Recent`. Composer contents
+  lay out by container (`@` variants), not by window width. A chip whose
+  value differs from the configuration carries a signal dot, and a section of
+  settings that only the playground can send carries one `仅调试台` tag;
+  nothing else repeats it.
 
 ## Rules
 
 - At most one primary button per view.
 - Do not add a color, radius, font size or shadow outside the tokens. If a
   design needs one, add a token and document it here.
-- Panels are numbered (`01`, `02`…) in reading order; the number is a `tag` in
-  the signal text color.
+- Panels are numbered (`01`, `02`…) in reading order.
 - Destructive actions use the `danger` button and go through `useConfirm`.
-- A control made of several buttons (`Segmented`, `ChipInput`,
-  `ProviderPicker`) is never put inside `Field`: `Field` is a `<label>`, and a
-  click on its text would press the first button.
 - Secrets are never rendered; `SecretInput` shows only the stored hint.
-- Every state has copy: empty states say what will appear and how to get it
-  there, errors say what happened and what to do.
-- The console is installable (`public/manifest.webmanifest`, `public/sw.js`)
-  and is used on a phone. Below `md` the sidebar gives way to a top bar and a
-  menu drawer; the page keeps clear of the notch and home bar with
-  `env(safe-area-inset-*)`, and heights use `dvh`, not `vh`. Fields are 16px
-  on a touch screen (`index.css`), because a phone zooms the page into any
-  field set smaller. Never shrink them back, and let a header or a row wrap
-  rather than overflow: `scrollWidth` of the page must equal its width.
+- The console is used on a phone: below `md` the sidebar becomes a top bar
+  and a drawer, heights use `dvh`, fields are 16px on touch screens so the
+  page does not zoom, and nothing overflows horizontally.

@@ -126,7 +126,6 @@ export function DevSearchPlay() {
     <Stage
       tool="dev_search"
       title="开发搜索"
-      description="调用 dev_search 工具。检索范围是公开代码仓库的 Issue、已合并 PR、README 与技术文档站，返回匹配段落。"
       history={
         <Recent<DevSearchResult>
           tool="dev_search"
@@ -145,7 +144,6 @@ export function DevSearchPlay() {
           inspected={inspected}
           view={views.view}
           onView={views.pick}
-          hint="匹配的段落按来源分组列出。「流程」里是请求了哪个提供商、它被跳过或失败时换了谁。"
           banner={
             inspected && (
               <HistoryBanner
@@ -263,7 +261,7 @@ export function DevSearchPlay() {
               title="仓库过滤"
               action={repos.length > 0 && <ResetButton label="清空仓库" onClick={() => setRepos([])} />}
             >
-              <Group label="限定仓库" hint="仅检索这些 GitHub 仓库（owner/repo）的 Issue、PR 与 README；对文档站结果无效，最多 10 个">
+              <Group label="限定仓库" info="只检索这些 GitHub 仓库的 Issue、PR 与 README，对文档站结果无效">
                 <ChipInput value={repos} onChange={setRepos} max={devMaxRepos} normalize={repo} placeholder="modelcontextprotocol/go-sdk" aria-label="限定仓库" />
               </Group>
             </OptionGroup>
@@ -299,7 +297,7 @@ export function DevSearchPlay() {
 }
 
 function DevResults({ items }: { items: DevSearchItem[] }) {
-  if (items.length === 0) return <Empty title="没有结果">可放宽类型或仓库限定后重试。</Empty>;
+  if (items.length === 0) return <Empty title="没有结果" />;
   return (
     <ol className="divide-y divide-line">
       {items.map((item, i) => (

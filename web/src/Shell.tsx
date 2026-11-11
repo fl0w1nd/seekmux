@@ -232,11 +232,6 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-/** The sentence under a tab that says what the tool does; the page heading is the tab strip's. */
-export function ToolIntro({ children }: { children: ReactNode }) {
-  return <p className="mb-6 max-w-2xl text-sm text-ink-3">{children}</p>;
-}
-
 /** The heading every page starts with. */
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (

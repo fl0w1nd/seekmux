@@ -17,7 +17,10 @@ It is one small Go binary with a single SQLite file, meant for a cheap server.
 | `search` | AnySearch, Brave, Exa, Firecrawl, Parallel, Perplexity, Tavily | Tried in your priority order; a provider that is rate limited or failing is skipped. |
 | `dev_search` | Firecrawl | Searches issues, merged pull requests, READMEs and documentation sites instead of the web, and returns the passages that matched. |
 | `fetch` | AnySearch, Exa, Firecrawl, Jina Reader, Parallel, Tavily, and self-hosted fetchers | A slow provider is raced by the next one. Given a prompt, a model answers from the page instead of returning all of it. |
-| `research` | any configured model | An agent searches and reads on its own and returns a sourced report. Also available as `research_start` / `research_result`, for agents with other work to do meanwhile and for clients with short timeouts; `research_cancel` stops a started run. |
+| `research` | any configured model | An agent searches and reads on its own and returns a sourced report.¹ |
+
+¹ Also as `research_start` / `research_result` / `research_cancel`, for agents
+with other work to do meanwhile and for clients with short timeouts.
 
 Around the tools:
 
@@ -52,14 +55,18 @@ docker compose logs seekmux
 The log prints a one-time setup token. Open `http://127.0.0.1:8787`, use the
 token to set the admin password, then:
 
-1. **Providers** — paste the API keys of the services you use and set their
-   rate limits.
-2. **Search / Developer search / Fetch** — order the providers of each tool.
-3. **Models** (optional) — add a model endpoint to enable prompt-based
-   extraction and research.
-4. **Access keys** — create a key for your agent, or let it sign in (below).
-5. **Self-hosted fetchers** (optional) — read logged-in pages through your
-   own Chrome (below).
+The console is in Chinese; its pages are named below with their English
+meaning.
+
+1. **提供商** (Providers) — paste the API keys of the services you use and
+   set their rate limits.
+2. **工具** (Tools) — order the providers of each tool.
+3. **模型接口** (Models, optional) — add a model endpoint to enable
+   prompt-based extraction and research.
+4. **访问密钥** (Access keys) — create a key for your agent, or let it sign
+   in (below).
+5. **新建抓取器** (New fetcher, on 提供商, optional) — read logged-in pages
+   through your own Chrome (below).
 
 Images for `linux/amd64` and `linux/arm64` are published at
 `ghcr.io/fl0w1nd/seekmux`. All state lives in the `./data` volume.
@@ -78,9 +85,9 @@ claude mcp add --transport http seekmux https://your-host/mcp
 
 On its first connection the client opens the console in your browser; sign in
 with the admin password, choose the tools it may call, and approve. It then
-shows up under **Access keys** as a key of its own, where you can limit or
+shows up under **访问密钥** as a key of its own, where you can limit or
 revoke it. This works for clients that register themselves (OAuth 2.1 with
-PKCE and dynamic client registration); it can be switched off under **System**.
+PKCE and dynamic client registration); it can be switched off under **系统** (System).
 
 Or create an access key and send it as a bearer token:
 
@@ -91,7 +98,7 @@ claude mcp add --transport http seekmux https://your-host/mcp --header "Authoriz
 Any MCP client that supports Streamable HTTP and custom headers works that
 way; `X-API-Key: smx_...` is accepted as well.
 
-Behind a reverse proxy, set the public address under **System** when the proxy
+Behind a reverse proxy, set the public address under **系统 → 对外地址** when the proxy
 does not pass `X-Forwarded-Proto`: the sign-in endpoints a client is told about
 start with it.
 
@@ -103,32 +110,33 @@ them in a Chrome where you are signed in, on a machine of yours, through
 OpenCLI's site adapters, which return the post as data; other pages are read as
 they render.
 
-1. Under **自托管抓取器** (Self-hosted fetchers), create a fetcher. It comes
+1. On **提供商** (Providers), choose **新建抓取器** (New fetcher). It comes
    with one worker and its token.
-2. On the machine with Chrome, install the OpenCLI Browser Bridge extension in
-   the Chrome profile to read with, and run the worker (Node.js 22.4 or later):
+2. On the machine with Chrome, install the OpenCLI Browser Bridge extension
+   ([Chrome Web Store](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk),
+   or unpacked from [OpenCLI's releases](https://github.com/jackwener/opencli/releases))
+   in the Chrome profile to read with, and run the worker (Node.js 22.4 or later):
 
    ```bash
    npx seekmux --server https://your-host --token <worker token>
    ```
 
-   The console shows the command with the token filled in. The worker
-   connects to the gateway on its own, so the machine needs no open port.
+   The console's **安装指南** (setup guide) on the fetcher shows the command
+   with the token filled in and checks each step as the worker reports in.
+   The worker connects to the gateway on its own, so the machine needs no
+   open port.
 3. Once the worker is online, choose the Chrome profile it reads with. This
    is needed when several profiles are connected and none is OpenCLI's
    default; otherwise OpenCLI picks one.
-4. Switch the fetcher on under **Fetch**, where it is listed with the other
-   providers, or choose it in a routing rule, such as the built-in X
+4. Switch the fetcher on under **工具 → 网页抓取** (Tools → Fetch), where it is
+   listed with the other providers, or choose it in a routing rule, such as the built-in X
    (Twitter) rule, to send it only those pages.
 
 A fetcher can have several workers, on one machine with different Chrome
-profiles or on several machines. To the routes it is one provider, with one
-rate limit and concurrency. A page goes to the first worker in the list that
-can take it. The next worker is tried only when the one before cannot: it is
-offline, every slot is taken, its browser or profile is not available, or it
-fails in itself. A page that cannot be read (not signed in, not found,
-blocked, timed out) is not handed to another worker; the fetch moves on to
-the next provider.
+profiles or on several machines; to the routes it is still one provider. A
+page goes to the first worker that can take it. A page that cannot be read
+(not signed in, not found, blocked) is not retried on another worker; the
+fetch moves on to the next provider.
 
 ## Deploying
 
@@ -157,18 +165,14 @@ Put a TLS-terminating reverse proxy in front of it. The compose file binds to
   default), or have agents use `research_start` / `research_result`. One
   `research_result` call waits up to 50 seconds by default; raise it in the
   console as far as your client's tool timeout allows, so agents call less often.
+- **Forwarding headers**: `X-Forwarded-For` keeps login throttling per
+  client, `X-Forwarded-Proto` marks the session cookie as secure, and `Host`
+  is the address research report links start with. If agents reach the
+  gateway at an internal address, set the public one under **系统 → 对外地址**.
 
-The proxy should send `X-Forwarded-For` and `X-Forwarded-Proto`, as most do by
-default: the first keeps login throttling per client, the second marks the
-session cookie as secure.
-
-Every research report also has a web page, `/report/<task id>`, whose link the
-research tools return with the report and the console shows next to it. Anyone
-who has the link can read the report without signing in; the task id is long
-and random, and the page goes when the task does, after the log retention
-(14 days by default). Links start with the address the request came in on, so
-the proxy should pass the `Host` header through; if agents reach the gateway
-at an internal address, set the public one under System → 网络 → 对外地址.
+Every research report has a page, `/report/<task id>`, that anyone with the
+link can read without signing in. The task id is long and random, and the
+page is removed with the task after the log retention (14 days by default).
 
 ### Without Docker
 

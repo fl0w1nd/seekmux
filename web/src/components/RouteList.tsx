@@ -83,7 +83,7 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
                 {rules
                   .filter((rule) => rule.providers.includes(route.provider))
                   .map((rule) => (
-                    <Tooltip key={rule.id} content={`服务路由规则「${rule.name}」的页面由该提供商抓取，不受此处的顺序与开关影响`}>
+                    <Tooltip key={rule.id} content={`规则「${rule.name}」命中的页面由它抓取，不受此处顺序与开关影响`}>
                       <Link href="/routing/rules">
                         <Badge tone="info">
                           {rule.builtin && <BrandIcon id={rule.id} className="size-3" />}
@@ -102,10 +102,10 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
             <Tooltip
               content={
                 fetcher
-                  ? "抓取器级限流，所有 Worker 共用。在「自托管抓取器」页设置"
+                  ? "所有 Worker 共用，点击修改"
                   : shared.length > 0
-                    ? `提供商级限流，与${shared.map((t) => toolLabel[t]).join("、")}合并计数。在「提供商」页设置`
-                    : "提供商级限流，在「提供商」页设置"
+                    ? `与${shared.map((t) => toolLabel[t]).join("、")}共用，点击修改`
+                    : "点击修改"
               }
             >
               <Link href={home} className="flex flex-col gap-1 text-right hover:text-ink">
@@ -120,10 +120,10 @@ export function RouteList({ tool }: { tool: RoutedTool }) {
               <Tooltip
                 content={
                   !hedging
-                    ? "「行为」中的慢请求对冲已关闭，此开关暂不生效"
+                    ? "慢请求对冲已关闭"
                     : route.no_hedge
-                      ? "不参与对冲：轮到它时独自抓取，不与其他提供商并行，也不被对冲"
-                      : "参与对冲：抓取过慢时与下一个提供商并行，采纳首个成功的结果"
+                      ? "不参与慢请求对冲"
+                      : "参与慢请求对冲"
                 }
               >
                 <span className="flex flex-col items-center gap-1">

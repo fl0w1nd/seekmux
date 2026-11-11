@@ -1,6 +1,7 @@
+import { Link } from "wouter";
 import { ModelSelect } from "../components/ModelPicker";
 import { useConfig } from "../lib/config";
-import { ToolIntro } from "../Shell";
+import { budgetInfo, readingText } from "../lib/research";
 import { Field, Notice, NumberInput, Panel, Row, Segmented, Switch, Textarea } from "../ui/primitives";
 
 export function ResearchPage() {
@@ -10,71 +11,75 @@ export function ResearchPage() {
   const extractReady = config.fetch.extract.models.length > 0;
 
   return (
-    <>
-      <ToolIntro>将问题整体交由云端的研究 Agent 处理：Agent 使用本网关的搜索与抓取反复查证，最终返回附带出处的报告。启用后 MCP 将新增 research、research_start、research_result、research_cancel 四个工具。</ToolIntro>
-      <div className="flex flex-col gap-4">
-        <Panel index="01" title="开关" flush>
-          <Row label="启用研究工具" hint="需先选定下方的研究模型">
-            <Switch checked={research.enabled} onCheckedChange={(v) => update((d) => void (d.research.enabled = v))} aria-label="启用研究工具" />
-          </Row>
-        </Panel>
+    <div className="flex flex-col gap-4">
+      <Panel index="01" title="研究模型" info="需支持工具调用" flush>
+        {research.enabled && !configured && <Notice tone="err" className="m-4 mb-0">未选择研究模型，配置无法保存。</Notice>}
+        <Row label="模型">
+          <ModelSelect value={research.model} onChange={(id) => update((d) => void (d.research.model = id))} />
+        </Row>
+        <Row label="启用研究工具" hint={!configured && !research.enabled ? "先选择研究模型" : undefined} info="启用后提供 research、research_start、research_result、research_cancel 四个工具">
+          <Switch
+            checked={research.enabled}
+            disabled={!configured && !research.enabled}
+            onCheckedChange={(v) => update((d) => void (d.research.enabled = v))}
+            aria-label="启用研究工具"
+          />
+        </Row>
+      </Panel>
 
-        <Panel index="02" title="研究模型" description="驱动多轮检索与报告撰写的主模型（需支持工具调用，单次研究固定使用同一模型）。">
-          <div className="flex flex-col gap-4">
-            {research.enabled && !configured && <Notice tone="err">已启用研究但未选择模型，配置无法保存。</Notice>}
-            <ModelSelect value={research.model} onChange={(id) => update((d) => void (d.research.model = id))} />
-          </div>
-        </Panel>
+      <Panel index="02" title="网页读取" flush>
+        <Row
+          label="读取方式"
+          hint={
+            research.reading === "extract" && !extractReady ? (
+              <>
+                {readingText("extract", false)}，
+                <Link href="/tools/fetch" className="underline underline-offset-2 hover:text-ink">
+                  去设置
+                </Link>
+              </>
+            ) : (
+              readingText(research.reading, extractReady)
+            )
+          }
+        >
+          <Segmented
+            value={research.reading}
+            onChange={(reading) => update((d) => void (d.research.reading = reading))}
+            options={[
+              { value: "raw", label: "原文" },
+              { value: "extract", label: "归纳" },
+            ]}
+          />
+        </Row>
+      </Panel>
 
-        <Panel index="03" title="内容读取模式" description="研究 Agent 读取网页时获得的内容形式" flush>
-          <Row
-            label="网页内容"
-            hint={
-              research.reading === "raw"
-                ? "研究模型直接读取网页原文，长页面分段读取；最接近一手材料，但上下文消耗最大"
-                : extractReady
-                  ? "由「网页抓取」的提取模型先按研究模型的提问提炼各网页，仅将结果交给研究模型；需要代码或原话时仍可按页读取原文。节省上下文，准确度取决于提取模型"
-                  : "尚未配置提取模型，网页将按原文返回；请先在「工具」的「网页抓取」中选定提取模型"
-            }
-          >
-            <Segmented
-              value={research.reading}
-              onChange={(reading) => update((d) => void (d.research.reading = reading))}
-              options={[
-                { value: "raw", label: "原文" },
-                { value: "extract", label: "归纳" },
-              ]}
-            />
-          </Row>
-        </Panel>
+      <Panel index="03" title="预算" info="任一项用尽时，Agent 停止检索，基于已有材料撰写报告" flush>
+        <Row label="最大步数" info={budgetInfo.max_steps}>
+          <NumberInput className="w-24" min={1} suffix="步" value={research.max_steps} onChange={(v) => update((d) => void (d.research.max_steps = Math.round(v)))} />
+        </Row>
+        <Row label="最长用时" info={budgetInfo.max_duration_seconds}>
+          <NumberInput className="w-24" min={30} suffix="秒" value={research.max_duration_seconds} onChange={(v) => update((d) => void (d.research.max_duration_seconds = Math.round(v)))} />
+        </Row>
+        <Row label="Token 上限" info={budgetInfo.max_tokens}>
+          <NumberInput className="w-32" min={1000} suffix="Token" value={research.max_tokens} onChange={(v) => update((d) => void (d.research.max_tokens = Math.round(v)))} />
+        </Row>
+        <Row label="上下文上限" info={budgetInfo.max_context_tokens}>
+          <NumberInput className="w-32" min={1000} suffix="Token" value={research.max_context_tokens} onChange={(v) => update((d) => void (d.research.max_context_tokens = Math.round(v)))} />
+        </Row>
+      </Panel>
 
-        <Panel index="04" title="预算" description="任一项耗尽时，Agent 将停止检索并基于现有材料撰写报告。" flush>
-          <Row label="最大步数" hint="一步为模型的一轮推理，可并行发起多次搜索和抓取">
-            <NumberInput className="w-24" min={1} suffix="步" value={research.max_steps} onChange={(v) => update((d) => void (d.research.max_steps = Math.round(v)))} />
-          </Row>
-          <Row label="最长用时" hint="达到 80% 时开始收尾并撰写报告">
-            <NumberInput className="w-24" min={30} suffix="秒" value={research.max_duration_seconds} onChange={(v) => update((d) => void (d.research.max_duration_seconds = Math.round(v)))} />
-          </Row>
-          <Row label="Token 上限" hint="各步输入与输出 Token 的累计值，用于约束总花费">
-            <NumberInput className="w-32" min={1000} suffix="Token" value={research.max_tokens} onChange={(v) => update((d) => void (d.research.max_tokens = Math.round(v)))} />
-          </Row>
-          <Row label="上下文上限" hint="单次请求的输入规模上限，应低于模型的上下文窗口并留出余量">
-            <NumberInput className="w-32" min={1000} suffix="Token" value={research.max_context_tokens} onChange={(v) => update((d) => void (d.research.max_context_tokens = Math.round(v)))} />
-          </Row>
-        </Panel>
+      <Panel index="04" title="后台任务" flush>
+        <Row label="单次等待时长" hint="应低于客户端的工具超时" info="research_result 在任务未完成时最多等待这么久，超时返回进度，由调用方再次调用">
+          <NumberInput className="w-24" min={5} suffix="秒" value={research.result_wait_seconds} onChange={(v) => update((d) => void (d.research.result_wait_seconds = Math.round(v)))} />
+        </Row>
+      </Panel>
 
-        <Panel index="05" title="后台任务" description="通过 research_start 发起的研究，由 research_result 取回报告，research_cancel 可提前停止。" flush>
-          <Row label="单次等待时长" hint="research_result 在任务完成前最长挂起的时间，超时则返回进度并由调用方再次调用。越长重复调用越少；应低于 MCP 客户端的工具调用超时">
-            <NumberInput className="w-24" min={5} suffix="秒" value={research.result_wait_seconds} onChange={(v) => update((d) => void (d.research.result_wait_seconds = Math.round(v)))} />
-          </Row>
-        </Panel>
-
-        <Panel index="06" title="系统提示词">
-          <Field label="研究 Agent 的指令" hint="留空则使用内置提示词；{{date}} 将替换为当天日期">
-            <Textarea rows={12} value={research.system_prompt ?? ""} placeholder={meta.prompts.research} onChange={(e) => update((d) => void (d.research.system_prompt = e.target.value || undefined))} />
-          </Field>
-        </Panel>
-      </div>
-    </>
+      <Panel index="05" title="系统提示词">
+        <Field label="研究 Agent 的指令" hint="支持 {{date}}">
+          <Textarea rows={12} value={research.system_prompt ?? ""} placeholder={meta.prompts.research} onChange={(e) => update((d) => void (d.research.system_prompt = e.target.value || undefined))} />
+        </Field>
+      </Panel>
+    </div>
   );
 }

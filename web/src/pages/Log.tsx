@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { FlowView, TimelineView } from "../components/flow/FlowView";
 import { LivePhase } from "../components/flow/LivePhase";
 import { stoppedHere } from "../components/flow/wording";
@@ -104,7 +104,7 @@ export function CallInspector({
   }, [id, streamedText]);
 
   const stop = async () => {
-    if (!(await confirm({ title: "中止这次调用？", body: "调用方会立刻收到一个错误，已经花掉的上游请求和 Token 不会退回。", confirm: "中止", danger: true }))) return;
+    if (!(await confirm({ title: "中止这次调用？", body: "调用方将收到错误。", confirm: "中止", danger: true }))) return;
     setStopping(true);
     try {
       await api.cancelCall(id);
@@ -179,7 +179,7 @@ export function CallInspector({
 
   const body = missing ? (
         <Panel>
-          <Empty title={inFlight ? "这次调用已经结束，没有找到它的记录" : "没有这条日志"}>{inFlight ? "它可能在日志被清空前结束，或者这个地址来自另一次启动。" : "它可能已被清空。"}</Empty>
+          <Empty title={inFlight ? "调用已结束，找不到它的记录" : "没有这条日志"} />
         </Panel>
       ) : loading ? (
         <div className="grid place-items-center py-24">
@@ -259,7 +259,7 @@ export function CallInspector({
               />
               <TabPanel value="flow">
                 {legacy && (
-                  <div className="border-b border-line px-4 py-2 text-xs text-ink-3">这条记录来自升级之前：只记下了请求过哪些上游，没有记下判断过程。</div>
+                  <div className="border-b border-line px-4 py-2 text-xs text-ink-3">旧版记录，只有上游请求，没有判断过程</div>
                 )}
                 {nodes.length > 0 ? (
                   <FlowView
@@ -317,7 +317,12 @@ export function CallInspector({
                     <div className="text-xs text-ink-3">调用结束后显示。</div>
                   )
                 ) : (
-                  <div className="text-xs text-ink-3">未记录。可在「系统」页开启返回内容记录。</div>
+                  <div className="text-xs text-ink-3">
+                    未记录 ·{" "}
+                    <Link href="/system" className="text-ink-2 underline underline-offset-2 hover:text-ink">
+                      开启记录
+                    </Link>
+                  </div>
                 )}
               </TabPanel>
             </Tabs>

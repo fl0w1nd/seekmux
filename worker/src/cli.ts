@@ -16,13 +16,14 @@ Options:
   --server   The gateway's address, e.g. https://seekmux.example.com
              (env SEEKMUX_SERVER)
   --token    This worker's token, from its fetcher on the gateway's
-             Self-hosted fetchers page (env SEEKMUX_WORKER_TOKEN)
+             Providers page (env SEEKMUX_WORKER_TOKEN)
   --slots    Pages read at once, 1 or 2 (default 1)
   --help     Show this help
   --version  Show the version
 
 Chrome needs the OpenCLI extension (Browser Bridge) installed and enabled:
-https://github.com/jackwener/opencli#2-install-the-browser-bridge-extension
+https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk
+(without the Chrome Web Store: https://github.com/jackwener/opencli/releases)
 `;
 
 function log(line: string) {

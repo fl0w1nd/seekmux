@@ -9,7 +9,7 @@ import { ago, compact, dateTime, toolLabel } from "../lib/format";
 import { PageHeader } from "../Shell";
 import { RateLimitInput } from "../ui/inputs";
 import { Dialog, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, CodeBlock, cx, Empty, Field, Input, Notice, NumberInput, Panel, Section, Segmented, Switch, Table, Td, Th } from "../ui/primitives";
+import { Badge, Button, CodeBlock, cx, Empty, Field, Info, Input, Notice, NumberInput, Panel, Section, Segmented, Switch, Table, Td, Th } from "../ui/primitives";
 
 /** The days the list sums the usage of each key over. */
 const usageDays = 30;
@@ -47,7 +47,6 @@ export function KeysPage() {
     <>
       <PageHeader
         title="访问密钥"
-        description="管理 Agent 接入 MCP 端点的访问凭据、工具权限与调用配额。"
         actions={
           <Button variant="primary" icon={<Plus />} onClick={() => setForm("new")}>
             创建密钥
@@ -57,9 +56,7 @@ export function KeysPage() {
       <div className="flex flex-col gap-4">
         <Panel flush>
           {keys.data?.length === 0 ? (
-            <Empty icon={<KeyRound />} title="尚无访问密钥">
-              创建密钥后，Agent 才能连接到本网关。
-            </Empty>
+            <Empty icon={<KeyRound />} title="尚无访问密钥" />
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -140,10 +137,10 @@ export function KeysPage() {
           )}
         </Panel>
 
-        <Panel index="MCP" title="连接方式" description="端点使用 Streamable HTTP 传输。客户端可以通过 OAuth 登录，也可以在 Authorization 请求头中携带密钥。">
+        <Panel index="MCP" title="连接方式">
           <div className="grid gap-4">
             {!config.oauth.disabled && (
-              <Field label="OAuth 登录（Claude Code）" hint="支持 OAuth 动态客户端注册的 MCP 客户端可直接连接端点，首次连接时在浏览器完成授权。">
+              <Field label="Claude Code · OAuth" hint="首次连接时在浏览器授权">
                 <CodeBlock copy wrap>{`claude mcp add --transport http seekmux ${endpoint()}`}</CodeBlock>
               </Field>
             )}
@@ -172,7 +169,7 @@ export function KeysPage() {
 
       <Dialog open={created !== null} onOpenChange={(open) => !open && setCreated(null)} title={`密钥「${created?.name}」已创建`} width="max-w-2xl" footer={<Button variant="primary" onClick={() => setCreated(null)}>完成</Button>}>
         <div className="flex flex-col gap-4">
-          <Notice tone="warn">密钥仅显示一次，关闭后将无法再次查看，请妥善保存。</Notice>
+          <Notice tone="warn">密钥只显示这一次。</Notice>
           <CodeBlock copy wrap>
             {created?.secret ?? ""}
           </CodeBlock>
@@ -187,7 +184,7 @@ function ConnectionGuide({ secret }: { secret: string }) {
   const url = endpoint();
   return (
     <div className="grid gap-4">
-      <Field label="Claude Code">
+      <Field label="Claude Code · 密钥">
         <CodeBlock copy wrap>{`claude mcp add --transport http seekmux ${url} --header "Authorization: Bearer ${secret}"`}</CodeBlock>
       </Field>
       <Field label="通用 MCP 配置（JSON）">
@@ -269,7 +266,7 @@ function KeyDialog({
       }
     >
       <div className="flex flex-col gap-4">
-        <Field label="名称" hint="用于在日志中标识调用方，例如设备或 Agent 名称">
+        <Field label="名称">
           <Input autoFocus value={name} maxLength={64} placeholder="macbook · claude code" onChange={(e) => setName(e.target.value)} />
         </Field>
         <Field label="可用工具">
@@ -294,12 +291,12 @@ function KeyDialog({
             })}
           </div>
         </Field>
-        {scopes.includes("dev_search") && !devSearchReady && <Notice>开发搜索尚无可用的提供商，在「工具」的「开发搜索」中启用路由并为提供商配置密钥前，该密钥无法使用此工具。</Notice>}
-        {scopes.includes("research") && !config.research.enabled && <Notice>研究工具尚未启用，启用前该密钥无法使用此工具。</Notice>}
-        <Field label="调用限流" hint="该密钥全部工具调用合计的频率上限">
+        {scopes.includes("dev_search") && !devSearchReady && <Notice tone="warn">开发搜索暂无可用的提供商，该密钥暂时无法调用。</Notice>}
+        {scopes.includes("research") && !config.research.enabled && <Notice tone="warn">深度研究未启用，该密钥暂时无法调用。</Notice>}
+        <Field label="调用限流" info="该密钥所有工具调用合计">
           <RateLimitInput value={rateLimit} onChange={setRateLimit} fallback="60/m" />
         </Field>
-        <Field label="有效期" hint={expiresAt ? "到期后该密钥的请求会被拒绝，可随时在此延长" : undefined}>
+        <Field label="有效期">
           {expiresAt ? (
             <div className="flex items-center gap-1.5">
               <Input
@@ -327,9 +324,9 @@ function KeyDialog({
         <div className="rounded-ctl border border-line [&>*:first-child]:border-t-0">
           <Section
             title="模型"
-            summary={[ownChain && policy.extract_models?.length && `抽取 ${policy.extract_models.join(" → ")}`, policy.research_model && `研究 ${policy.research_model}`].filter(Boolean).join(" · ") || "按配置"}
+            summary={[ownChain && policy.extract_models?.length && `提取 ${policy.extract_models.join(" → ")}`, policy.research_model && `研究 ${policy.research_model}`].filter(Boolean).join(" · ") || "按配置"}
           >
-            <Field label="抓取抽取模型" hint={ownChain ? "该密钥的抓取只在这条链上故障转移；只留一个模型即不转移" : `当前配置：${config.fetch.extract.models.join(" → ") || "未关联模型"}`}>
+            <Field label="提取模型" hint={ownChain ? undefined : `当前配置：${config.fetch.extract.models.join(" → ") || "未关联模型"}`}>
               <div className="flex flex-col gap-2">
                 <div>
                   <Segmented
@@ -351,32 +348,34 @@ function KeyDialog({
           </Section>
           <Section title="研究限制" summary={bounds.join(" · ") || "按配置"}>
             <div className="flex items-center justify-between gap-4">
-              <div>
-                <div className="text-sm">仅快速研究</div>
-                <div className="mt-0.5 text-xs text-ink-3">每次研究都按 quick 运行，约为预算的三分之一</div>
+              <div className="flex items-center gap-1 text-sm">
+                仅快速研究
+                <Info>每次研究都按 quick 运行，预算约为 1/3</Info>
               </div>
               <Switch checked={Boolean(limits.quick_only)} onCheckedChange={(quick_only) => limit({ quick_only })} aria-label="仅快速研究" />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <Field label="步数上限">
-                <NumberInput value={limits.max_steps ?? 0} onChange={(max_steps) => limit({ max_steps: Math.round(max_steps) })} suffix="步" />
+              <Field label="步数上限" hint={above(limits.max_steps, config.research.max_steps) && `按全局 ${config.research.max_steps} 步`}>
+                <NumberInput value={limits.max_steps ?? 0} onChange={(max_steps) => limit({ max_steps: Math.round(max_steps) })} suffix="步" zero={`全局 ${config.research.max_steps} 步`} />
               </Field>
-              <Field label="时长上限">
-                <NumberInput value={limits.max_duration_seconds ?? 0} onChange={(max_duration_seconds) => limit({ max_duration_seconds: Math.round(max_duration_seconds) })} suffix="秒" />
+              <Field label="时长上限" hint={above(limits.max_duration_seconds, config.research.max_duration_seconds) && `按全局 ${config.research.max_duration_seconds} 秒`}>
+                <NumberInput value={limits.max_duration_seconds ?? 0} onChange={(max_duration_seconds) => limit({ max_duration_seconds: Math.round(max_duration_seconds) })} suffix="秒" zero={`全局 ${config.research.max_duration_seconds} 秒`} />
               </Field>
-              <Field label="Token 上限">
-                <NumberInput value={limits.max_tokens ?? 0} onChange={(max_tokens) => limit({ max_tokens: Math.round(max_tokens) })} />
+              <Field label="Token 上限" hint={above(limits.max_tokens, config.research.max_tokens) && `按全局 ${compact(config.research.max_tokens)}`}>
+                <NumberInput value={limits.max_tokens ?? 0} onChange={(max_tokens) => limit({ max_tokens: Math.round(max_tokens) })} zero={`全局 ${compact(config.research.max_tokens)}`} />
               </Field>
               <Field label="同时运行">
-                <NumberInput value={limits.concurrency ?? 0} onChange={(concurrency) => limit({ concurrency: Math.round(concurrency) })} suffix="个" />
+                <NumberInput value={limits.concurrency ?? 0} onChange={(concurrency) => limit({ concurrency: Math.round(concurrency) })} suffix="个" zero="不限" />
               </Field>
             </div>
-            <span className="text-xs text-ink-3">
-              0 表示不限；实际生效值为此上限与全局研究预算中的较小值（当前全局：{config.research.max_steps} 步 / {config.research.max_duration_seconds} 秒 / {compact(config.research.max_tokens)} Token）。
-            </span>
           </Section>
         </div>
       </div>
     </Dialog>
   );
+}
+
+/** Whether a key's ceiling is above the global one, which then applies instead. */
+function above(own: number | undefined, global: number): boolean {
+  return (own ?? 0) > global;
 }

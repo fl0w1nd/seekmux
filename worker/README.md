@@ -7,10 +7,11 @@ through OpenCLI's site adapters, other pages as they render.
 
 ## Use
 
-1. On the gateway's console, open **自托管抓取器** (Self-hosted fetchers),
-   create a fetcher or add a worker to one, and copy the worker's token.
-2. Install the OpenCLI
-   [Browser Bridge extension](https://github.com/jackwener/opencli#2-install-the-browser-bridge-extension)
+1. On the gateway's console, open **提供商** (Providers), create a fetcher
+   with **新建抓取器** or add a worker to one, and copy the worker's token.
+2. Install the OpenCLI Browser Bridge extension
+   ([Chrome Web Store](https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk),
+   or unpacked from [OpenCLI's releases](https://github.com/jackwener/opencli/releases))
    in the Chrome profile to read with, and keep that Chrome open.
 3. Run the worker (Node.js 22.4 or later):
 

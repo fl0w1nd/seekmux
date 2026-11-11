@@ -1,12 +1,15 @@
 import { clsx, type ClassValue } from "clsx";
-import { Check, ChevronRight, Copy, Eye, EyeOff, LoaderCircle } from "lucide-react";
-import { Collapsible as RadixCollapsible, Switch as RadixSwitch, Tabs as RadixTabs, Tooltip as RadixTooltip } from "radix-ui";
+import { Check, ChevronRight, CircleHelp, Copy, Eye, EyeOff, LoaderCircle } from "lucide-react";
+import { Collapsible as RadixCollapsible, Popover as RadixPopover, Switch as RadixSwitch, Tabs as RadixTabs, Tooltip as RadixTooltip } from "radix-ui";
 import {
   useId,
+  useRef,
   useState,
   type ButtonHTMLAttributes,
   type ComponentProps,
   type InputHTMLAttributes,
+  type PointerEvent,
+  type ReactElement,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -126,21 +129,27 @@ export function NumberInput({
   onChange,
   min = 0,
   suffix,
+  zero,
   className,
   ...rest
 }: Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange"> & {
   value: number;
   onChange: (value: number) => void;
   suffix?: string;
+  /** Shown in place of the suffix while the value is 0, e.g. "不限". */
+  zero?: string;
 }) {
   const [text, setText] = useState<string | null>(null);
+  const shown = zero && value === 0 ? zero : suffix;
+  // Room for the suffix: CJK characters are about twice as wide as Latin ones.
+  const width = shown ? [...shown].reduce((n, c) => n + (c.charCodeAt(0) > 0x2e80 ? 2 : 1), 0) : 0;
   return (
     <div className={cx("relative", className)}>
       <Input
         mono
         inputMode="decimal"
         value={text ?? String(value)}
-        className={cx(suffix && "pr-10")}
+        style={shown ? { paddingRight: `calc(${width}ch * 0.85 + 1rem)` } : undefined}
         onChange={(e) => {
           setText(e.target.value);
           const parsed = Number(e.target.value);
@@ -149,7 +158,7 @@ export function NumberInput({
         onBlur={() => setText(null)}
         {...rest}
       />
-      {suffix && <span className="tag pointer-events-none absolute inset-y-0 right-2.5 flex items-center normal-case">{suffix}</span>}
+      {shown && <span className="tag pointer-events-none absolute inset-y-0 right-2.5 flex items-center normal-case">{shown}</span>}
     </div>
   );
 }
@@ -209,12 +218,16 @@ export function Segmented<T extends string>({
 export function Field({
   label,
   hint,
+  info,
   error,
   children,
   className,
 }: {
   label: ReactNode;
+  /** A short inline note: a unit, a format, a consequence that cannot be undone. */
   hint?: ReactNode;
+  /** What is worth knowing but not needed to fill the field, behind an ⓘ. */
+  info?: ReactNode;
   error?: string;
   children: ReactNode;
   className?: string;
@@ -224,12 +237,15 @@ export function Field({
   const id = useId();
   return (
     <div role="group" aria-labelledby={id} className={cx("flex flex-col gap-1.5", className)}>
-      <span
-        id={id}
-        className="self-start text-xs font-medium text-ink-2"
-        onClick={(e) => e.currentTarget.parentElement?.querySelector<HTMLElement>("input, textarea, select")?.focus()}
-      >
-        {label}
+      <span className="flex items-center gap-1 self-start">
+        <span
+          id={id}
+          className="text-xs font-medium text-ink-2"
+          onClick={(e) => e.currentTarget.closest("[role=group]")?.querySelector<HTMLElement>("input, textarea, select")?.focus()}
+        >
+          {label}
+        </span>
+        {info && <Info label={infoLabel(label)}>{info}</Info>}
       </span>
       {children}
       {error ? <span className="text-xs text-err">{error}</span> : hint ? <span className="text-xs text-ink-3">{hint}</span> : null}
@@ -287,6 +303,7 @@ export function Panel({
   index,
   title,
   description,
+  info,
   actions,
   children,
   className,
@@ -295,6 +312,7 @@ export function Panel({
   index?: string;
   title?: ReactNode;
   description?: ReactNode;
+  info?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -309,6 +327,7 @@ export function Panel({
             <h2 className="flex items-baseline gap-2 text-base font-medium">
               {index && <span className="tag text-signal-text">{index}</span>}
               {title}
+              {info && <Info label={infoLabel(title)} className="self-center">{info}</Info>}
             </h2>
             {description && <p className="mt-0.5 text-xs text-ink-3">{description}</p>}
           </div>
@@ -440,14 +459,17 @@ export function TabPanel({ value, className, children }: { value: string; classN
 }
 
 /** A settings row: what the setting is on the left, its control on the right. */
-export function Row({ label, hint, children, className }: { label: ReactNode; hint?: ReactNode; children: ReactNode; className?: string }) {
+export function Row({ label, hint, info, children, className }: { label: ReactNode; hint?: ReactNode; info?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <div className={cx("flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-line px-4 py-3 last:border-b-0", className)}>
       <div className="min-w-48 flex-1">
-        <div className="text-sm">{label}</div>
+        <div className="flex items-center gap-1 text-sm">
+          {label}
+          {info && <Info label={infoLabel(label)}>{info}</Info>}
+        </div>
         {hint && <div className="mt-0.5 text-xs text-ink-3">{hint}</div>}
       </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
+      <div className="flex min-w-0 max-w-full shrink-0 items-center gap-2">{children}</div>
     </div>
   );
 }
@@ -527,6 +549,78 @@ export function CodeBlock({ children, copy, className, wrap }: { children: strin
         </div>
       )}
     </div>
+  );
+}
+
+/** Names an ⓘ after the label it explains, when the label is plain text. */
+function infoLabel(label: ReactNode): string {
+  return typeof label === "string" ? `${label}说明` : "说明";
+}
+
+/**
+ * The ⓘ beside a label. It opens on hover with a mouse and on tap on a touch
+ * screen, where a tooltip never opens, so anything the user needs to read can
+ * live here instead of under the label.
+ */
+export function Info({
+  children,
+  label = "说明",
+  className,
+  trigger,
+}: {
+  children: ReactNode;
+  label?: string;
+  className?: string;
+  /** Opens on this element instead of an ⓘ, such as a disabled control whose reason it gives. */
+  trigger?: ReactElement;
+}) {
+  const [open, setOpen] = useState(false);
+  const hovered = useRef(false);
+  const timer = useRef<number | undefined>(undefined);
+  const hover = (inside: boolean) => (event: PointerEvent<HTMLElement>) => {
+    if (event.pointerType !== "mouse") return;
+    hovered.current = inside;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setOpen(hovered.current), inside ? 80 : 160);
+  };
+  return (
+    <RadixPopover.Root
+      open={open}
+      // A click on the trigger while the mouse already opened it keeps it open.
+      onOpenChange={(next) => setOpen(next || hovered.current)}
+    >
+      <RadixPopover.Trigger asChild onClick={(e) => e.stopPropagation()} onPointerEnter={hover(true)} onPointerLeave={hover(false)}>
+        {trigger ?? (
+          <button
+            type="button"
+            aria-label={label}
+            className={cx("inline-grid size-4 shrink-0 place-items-center rounded-full text-ink-3 transition-colors hover:text-ink-2 data-[state=open]:text-ink-2", className)}
+          >
+            <CircleHelp className="size-3.5" />
+          </button>
+        )}
+      </RadixPopover.Trigger>
+      <RadixPopover.Portal>
+        <RadixPopover.Content
+          side="top"
+          sideOffset={6}
+          collisionPadding={12}
+          hideWhenDetached
+          // Opening or closing on hover must not move focus: an input being edited would lose it.
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          onEscapeKeyDown={() => {
+            hovered.current = false;
+            setOpen(false);
+          }}
+          onPointerEnter={hover(true)}
+          onPointerLeave={hover(false)}
+          className="z-50 max-w-72 animate-in rounded-ctl border border-line-strong bg-overlay px-2.5 py-1.5 text-xs leading-relaxed font-normal text-ink-2 shadow-overlay"
+        >
+          {children}
+        </RadixPopover.Content>
+      </RadixPopover.Portal>
+    </RadixPopover.Root>
   );
 }
 

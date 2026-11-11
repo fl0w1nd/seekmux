@@ -173,7 +173,7 @@ export function DesignPage() {
 
   return (
     <>
-      <PageHeader title="设计规范" description="Signal：SeekMux 的界面系统。这一页用真实组件渲染全部 token 与控件，改动设计时以这里为准；规则见 web/DESIGN.md。" />
+      <PageHeader title="设计规范" description="Signal 的全部 token 与控件，规则见 web/DESIGN.md。" />
       <div className="flex flex-col gap-4">
         <Panel index="01" title="表面与线" description="层级靠明度差和 1px 线表达，不用阴影；阴影只留给真正浮起的弹层。">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
@@ -278,10 +278,13 @@ export function DesignPage() {
             </div>
           </Specimen>
           <Specimen label="Field">
-            <Field label="字段名" hint="一句话说明它影响什么" className="w-64">
+            <Field label="字段名" className="w-64">
+              <Input placeholder="示例值写在这里" />
+            </Field>
+            <Field label="带说明的字段" info="值本身之外值得知道的机制，放在 ⓘ 里。" className="w-64">
               <Input placeholder="值" />
             </Field>
-            <Field label="出错的字段" error="说明哪里不对、怎么改" className="w-64">
+            <Field label="出错的字段" error="哪里不对" className="w-64">
               <Input aria-invalid defaultValue="abc" />
             </Field>
           </Specimen>
@@ -315,9 +318,8 @@ export function DesignPage() {
           </Specimen>
           <Specimen label="Notice">
             <div className="flex w-full flex-col gap-2">
-              <Notice tone="info">提示：解释一个不明显的行为。</Notice>
-              <Notice tone="warn">注意：功能可用，但结果会打折扣。</Notice>
-              <Notice tone="err">错误：说明发生了什么，以及怎么恢复。</Notice>
+              <Notice tone="warn">未配置提取模型，fetch 只返回原文。</Notice>
+              <Notice tone="err">exa 的密钥被拒。</Notice>
             </div>
           </Specimen>
           <Specimen label="Feedback">
@@ -325,8 +327,7 @@ export function DesignPage() {
             <Button onClick={() => toast("保存失败：exa 缺少 API Key", "err")}>错误提示</Button>
             <Button onClick={() => void confirm({ title: "清空全部日志？", body: "这个操作不能撤销。", confirm: "清空", danger: true })}>确认框</Button>
             <Popover trigger={<Button>浮层</Button>} className="w-72 p-3">
-              <p className="text-sm">锚定在触发它的控件上，用于少量选项或一段说明。</p>
-              <p className="mt-1 text-xs text-ink-3">点击外部或按 Esc 关闭。</p>
+              <p className="text-sm">锚定在触发它的控件上的少量选项。</p>
             </Popover>
           </Specimen>
         </Panel>
@@ -334,11 +335,11 @@ export function DesignPage() {
         <Panel index="06" title="数据" description="设置用行，数据用表；一次调用里每一段的耗时排在同一条时间轴上。">
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-ctl border border-line">
-              <Row label="设置项" hint="左边说明是什么，右边是它的控件">
+              <Row label="设置项">
                 <Switch defaultChecked aria-label="示例" />
               </Row>
-              <Row label="数值设置" hint="单位写在输入框内">
-                <NumberInput className="w-24" suffix="秒" value={count} onChange={setCount} />
+              <Row label="数值设置" info="单位写在输入框内；值为 0 时显示含义。">
+                <NumberInput className="w-24" suffix="秒" zero="不限" value={count} onChange={setCount} />
               </Row>
             </div>
             <div className="overflow-hidden rounded-ctl border border-line">

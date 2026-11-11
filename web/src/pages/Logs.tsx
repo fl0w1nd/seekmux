@@ -198,7 +198,6 @@ export function LogsPage() {
     <>
       <PageHeader
         title="请求日志"
-        description="每次工具调用，及其对各提供商的每次请求。"
         actions={
           <>
             <Button variant={live ? "secondary" : "ghost"} icon={live ? <Dot tone="signal" live /> : <Radio />} onClick={() => setLive(!live)}>
@@ -295,9 +294,7 @@ export function LogsPage() {
             <Spinner />
           </div>
         ) : entries.length === 0 ? (
-          <Empty icon={<ScrollText />} title="没有符合条件的日志">
-            Agent 调用工具或在调试台发起请求后，记录将显示在此处。
-          </Empty>
+          <Empty icon={<ScrollText />} title="没有符合条件的日志" />
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -454,7 +451,6 @@ function InFlight({ calls, origin, onOpen }: { calls: LiveCall[]; origin: (call:
         <Dot tone="signal" live />
         <h2 className="text-sm font-medium">进行中</h2>
         <span className="num text-xs text-ink-3">{calls.length}</span>
-        <span className="ml-auto text-xs text-ink-3 max-sm:hidden">点开可以看它此刻走到哪一步，也可以中止</span>
       </header>
       <ul>
         {calls.map((call) => (

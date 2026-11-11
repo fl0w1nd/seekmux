@@ -147,7 +147,6 @@ export function SearchPlay() {
     <Stage
       tool="search"
       title="网页搜索"
-      description="调用 search 工具。支持最多 3 条查询并行检索，路由、限流与故障转移均与 MCP 调用一致。"
       history={
         <Recent<SearchResult[]>
           tool="search"
@@ -166,7 +165,6 @@ export function SearchPlay() {
           inspected={inspected}
           view={views.view}
           onView={views.pick}
-          hint="每条查询的结果各成一组。「流程」里是每条查询请求了哪个提供商、结果怎么合并去重。"
           banner={
             inspected && (
               <HistoryBanner
@@ -263,7 +261,7 @@ export function SearchPlay() {
                 <>
                   {over && (
                     <Notice tone="warn">
-                      已输入 {queries.length} 条查询，单次最多执行前 {maxQueries} 条，超出部分已被忽略
+                      只执行前 {maxQueries} 条查询
                     </Notice>
                   )}
                   <LocalNotice items={[tuning.changed && `${provider(engine).name} 的临时参数`]} />
@@ -289,10 +287,10 @@ export function SearchPlay() {
               }
             >
               <div className="grid gap-4 @2xl:grid-cols-2">
-                <Group label="限定域名" hint="仅返回这些域名（含子域名）下的结果，最多 10 个">
+                <Group label="限定域名" hint="含子域名">
                   <ChipInput value={include} onChange={setInclude} max={maxDomains} normalize={domain} placeholder="docs.python.org" aria-label="限定域名" />
                 </Group>
-                <Group label="排除域名" hint="从结果中剔除这些域名（含子域名），最多 10 个">
+                <Group label="排除域名" hint="含子域名">
                   <ChipInput value={exclude} onChange={setExclude} max={maxDomains} normalize={domain} placeholder="pinterest.com" aria-label="排除域名" />
                 </Group>
               </div>
@@ -379,7 +377,7 @@ function QueryResult({ result }: { result: SearchResult }) {
       </div>
     );
   }
-  if (items.length === 0) return <Empty title="该查询没有结果">可放宽时间范围或域名过滤后重试。</Empty>;
+  if (items.length === 0) return <Empty title="该查询没有结果" />;
   return (
     <ol className="divide-y divide-line">
       {items.map((item, i) => (

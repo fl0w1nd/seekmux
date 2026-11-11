@@ -17,7 +17,7 @@ import { RoutingPage } from "./pages/Routing";
 import { SystemPage } from "./pages/System";
 import { ToolsPage } from "./pages/Tools";
 import { Logo, Shell } from "./Shell";
-import { Button, Empty, Field, Input, Notice, Spinner, PasswordInput } from "./ui/primitives";
+import { Button, Empty, Field, Input, Spinner, PasswordInput } from "./ui/primitives";
 
 export function App() {
   // A report is read without signing in, so it stands outside the console.
@@ -149,8 +149,7 @@ function Gate({ setup, onDone }: { setup: boolean; onDone: () => unknown }) {
         <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-5">
           {setup && (
             <>
-              <Notice>首次启动需设置管理员密码。设置令牌见服务端启动日志（setup_token）。</Notice>
-              <Field label="设置令牌">
+              <Field label="设置令牌" hint="见服务端启动日志中的 setup_token">
                 <Input mono autoFocus value={token} onChange={(e) => setToken(e.target.value)} placeholder="setup_…" required />
               </Field>
             </>

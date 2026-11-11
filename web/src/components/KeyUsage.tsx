@@ -4,7 +4,7 @@ import { useState } from "react";
 import { api, type APIKey, type KeyUsage, type RoutedTool } from "../lib/api";
 import { compact, percent, toolLabel } from "../lib/format";
 import { Drawer } from "../ui/overlays";
-import { cx, Empty, Segmented, Spinner, Table, Td, Th, Tooltip } from "../ui/primitives";
+import { cx, Empty, Info, Segmented, Spinner, Table, Td, Th, Tooltip } from "../ui/primitives";
 import { ProviderName } from "./ProviderName";
 
 type Days = "7" | "30" | "90" | "365";
@@ -30,7 +30,7 @@ export function KeyUsageDrawer({ apiKey, onClose }: { apiKey: APIKey | null; onC
       open={apiKey !== null}
       onOpenChange={(open) => !open && onClose()}
       title={`「${apiKey?.name ?? ""}」的用量`}
-      description={`该密钥的调用、上游请求与模型 Token，按 UTC 日累计，保留 ${query.data?.retention_days ?? 400} 天，不随请求日志清理。`}
+      description={`按 UTC 日统计 · 保留 ${query.data?.retention_days ?? 400} 天`}
     >
       <div className="flex flex-col gap-6">
         <div>
@@ -51,9 +51,7 @@ export function KeyUsageDrawer({ apiKey, onClose }: { apiKey: APIKey | null; onC
             <Spinner />
           </div>
         ) : usage.total.calls === 0 ? (
-          <Empty icon={<BarChart3 />} title="所选时间范围内没有用量">
-            该密钥在所选时间段内暂无调用记录。
-          </Empty>
+          <Empty icon={<BarChart3 />} title="所选时间范围内没有用量" />
         ) : (
           <Report usage={usage} />
         )}
@@ -78,7 +76,7 @@ function Report({ usage }: { usage: KeyUsage }) {
         <Daily usage={usage} />
       </Group>
 
-      <Group title="工具" hint="研究调用的 Token 包含其过程中的抽取。">
+      <Group title="工具" info="研究的 Token 含其过程中的提取">
         <Table>
           <thead>
             <tr>
@@ -104,7 +102,7 @@ function Report({ usage }: { usage: KeyUsage }) {
       </Group>
 
       {kinds.length > 0 && (
-        <Group title="上游请求" hint="实际发往提供商的请求数，含失败转移与对冲中多发的请求、研究过程中的搜索与抓取；缓存命中不计。">
+        <Group title="上游请求" info="实际发往提供商的请求，含故障转移、对冲与研究中的请求；缓存命中不计">
           <Table>
             <thead>
               <tr>
@@ -144,7 +142,7 @@ function Report({ usage }: { usage: KeyUsage }) {
       )}
 
       {usage.models.length > 0 && (
-        <Group title="模型" hint="一次研究记为对其模型的一次请求，无论其中有多少轮。">
+        <Group title="模型" info="一次研究记为一次请求，无论多少轮">
           <Table>
             <thead>
               <tr>
@@ -185,11 +183,13 @@ function Figure({ label, value, detail }: { label: string; value: string; detail
   );
 }
 
-function Group({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Group({ title, info, children }: { title: string; info?: string; children: React.ReactNode }) {
   return (
     <section>
-      <h3 className="text-sm font-medium">{title}</h3>
-      {hint && <p className="mt-0.5 text-xs text-ink-3">{hint}</p>}
+      <h3 className="flex items-center gap-1 text-sm font-medium">
+        {title}
+        {info && <Info>{info}</Info>}
+      </h3>
       <div className="mt-3 overflow-x-auto">{children}</div>
     </section>
   );

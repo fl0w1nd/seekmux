@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, Check, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { CardRow } from "../components/CardRow";
@@ -8,8 +8,8 @@ import { useConfig } from "../lib/config";
 import { routingRules } from "../lib/routing";
 import { BrandIcon } from "../ui/brand";
 import { RateLimitInput } from "../ui/inputs";
-import { Dialog, useConfirm, useToast } from "../ui/overlays";
-import { Badge, Button, Choice, ChoiceList, CodeBlock, Field, Input, Notice, NumberInput, Select, Switch, TabList, TabPanel, Tabs, type Tone } from "../ui/primitives";
+import { Dialog, Drawer, useConfirm, useToast } from "../ui/overlays";
+import { Badge, Button, Choice, ChoiceList, CodeBlock, cx, Field, Info, Input, Notice, NumberInput, Select, Switch, TabList, TabPanel, Tabs, type Tone } from "../ui/primitives";
 
 /** A token a worker can present: 32 random bytes, URL-safe. */
 function newToken(): string {
@@ -107,7 +107,7 @@ export function CreateFetcherDialog({ open, onClose, onCreate }: { open: boolean
       open={open}
       onOpenChange={(next) => !next && onClose()}
       title="新建抓取器"
-      description="在自己的设备上运行 Worker，用已登录的浏览器读取其他提供商读不到的页面。创建后附带一个 Worker 及其令牌，之后可以继续添加 Worker 并调整顺序。"
+      description="用自己已登录的浏览器读取需要登录的页面"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -140,11 +140,11 @@ export function CreateFetcherDialog({ open, onClose, onCreate }: { open: boolean
                   {t.name}
                 </span>
               }
-              detail={t.id === "opencli" ? "通过 OpenCLI 扩展驱动已登录的 Chrome；X、Reddit 等站点有专属适配器。" : undefined}
+              detail={t.id === "opencli" ? "通过 OpenCLI 扩展驱动 Chrome" : undefined}
             />
           ))}
         </ChoiceList>
-        <Field label="名称" hint="在路由、规则和日志中显示。">
+        <Field label="名称">
           <Input value={name} placeholder={chosen?.name} maxLength={64} onChange={(e) => setName(e.target.value)} />
         </Field>
       </div>
@@ -160,11 +160,16 @@ export function FetcherDetail({
   fresh,
   remember,
   onRemoved,
+  created,
+  onGuideClosed,
 }: {
   fetcher: Fetcher;
   fresh: Record<string, string>;
   remember: (worker: FetcherWorker) => void;
   onRemoved: () => void;
+  /** Just created here: the setup guide opens by itself. */
+  created?: boolean;
+  onGuideClosed?: () => void;
 }) {
   const { config, update, meta } = useConfig();
   const status = useStatus();
@@ -183,16 +188,30 @@ export function FetcherDetail({
   const route = config.fetch.routes.find((r) => r.provider === fetcher.id);
   const rules = routingRules(config, meta).filter((r) => r.enabled && r.providers.includes(fetcher.id));
   const used = Boolean(route?.enabled) || rules.length > 0;
+  const guided = fetcher.type === "opencli";
+  // The worker the setup guide is open for.
+  const [guide, setGuide] = useState<string | undefined>(() => (guided && created ? fetcher.workers[0]?.id : undefined));
+  const guideIndex = fetcher.workers.findIndex((w) => w.id === guide);
+  const openGuide = () => {
+    const waiting = fetcher.workers.find((w) => w.enabled && !workerState(w, status?.workers[w.id]).usable);
+    setGuide((waiting ?? fetcher.workers[0])?.id);
+  };
+  const regenerate = (i: number) => {
+    const worker = fetcher.workers[i];
+    const token = newToken();
+    remember({ ...worker, token });
+    set((f) => (f.workers[i].token = token));
+  };
 
   const remove = async () => {
     const only = config.routing.rules.filter((r) => r.providers.length === 1 && r.providers[0] === fetcher.id);
     if (only.length > 0) {
-      toast(`规则「${only.map((r) => r.name).join("」「")}」只用这个抓取器，先在服务路由中为其换用其他提供商`, "err");
+      toast(`规则「${only.map((r) => r.name).join("」「")}」只用这个抓取器，请先修改规则`, "err");
       return;
     }
     const ok = await confirm({
       title: `删除抓取器 ${fetcher.name}？`,
-      body: "它的 Worker 随之断开，令牌失效；抓取路由与服务路由中对它的引用一并移除。立即生效。",
+      body: "Worker 断开、令牌失效，路由中对它的引用一并移除。",
       confirm: "删除",
       danger: true,
     });
@@ -252,6 +271,11 @@ export function FetcherDetail({
               项目 <ExternalLink className="size-3" />
             </a>
           )}
+          {guided && fetcher.workers.length > 0 && (
+            <Button size="sm" variant="ghost" icon={<BookOpen />} onClick={openGuide}>
+              安装指南
+            </Button>
+          )}
           <Button size="sm" variant="ghost" icon={<Trash2 />} aria-label={`删除 ${fetcher.name}`} onClick={remove} />
         </span>
       </header>
@@ -280,15 +304,15 @@ export function FetcherDetail({
           {!used && (
             <div className="border-b border-line p-3.5">
               <Notice tone="info">
-                尚未投入使用：在{" "}
-                <Link href="/tools/fetch" className="text-ink underline underline-offset-2">
-                  网页抓取的路由
-                </Link>{" "}
-                中启用它作为兜底，或在{" "}
-                <Link href="/routing/rules" className="text-ink underline underline-offset-2">
-                  服务路由
-                </Link>{" "}
-                的规则中选用它。
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>尚未使用</span>
+                  <Link href="/tools/fetch" className="text-ink underline underline-offset-2">
+                    加入抓取路由
+                  </Link>
+                  <Link href="/routing/rules" className="text-ink underline underline-offset-2">
+                    用于路由规则
+                  </Link>
+                </div>
               </Notice>
             </div>
           )}
@@ -303,7 +327,7 @@ export function FetcherDetail({
                 <NumberInput
                   className="w-20"
                   min={0}
-                  suffix={fetcher.concurrency === 0 ? "不限" : undefined}
+                  zero="不限"
                   value={fetcher.concurrency}
                   onChange={(concurrency) => set((f) => (f.concurrency = Math.max(0, Math.round(concurrency))))}
                   aria-label={`${fetcher.name} 并发上限`}
@@ -315,7 +339,7 @@ export function FetcherDetail({
 
         <TabPanel value="workers">
           <p className="border-b border-line px-4 py-2.5 text-2xs text-ink-3">
-            按顺序接手抓取；前一个离线、任务已满或出错时才交给下一个。并发由各 Worker 的 --slots 决定。
+            按顺序使用，前一个不可用时才用下一个
           </p>
           <ol>
             {fetcher.workers.map((worker, i) => (
@@ -332,12 +356,9 @@ export function FetcherDetail({
                     [f.workers[i], f.workers[i + by]] = [f.workers[i + by], f.workers[i]];
                   })
                 }
-                regenerate={() => {
-                  const token = newToken();
-                  remember({ ...worker, token });
-                  set((f) => (f.workers[i].token = token));
-                }}
+                regenerate={() => regenerate(i)}
                 remove={() => set((f) => f.workers.splice(i, 1))}
+                guide={guided ? () => setGuide(worker.id) : undefined}
               />
             ))}
           </ol>
@@ -345,13 +366,25 @@ export function FetcherDetail({
 
         {adapters.length > 0 && (
           <TabPanel value="adapters">
-            <p className="border-b border-line px-4 py-2.5 text-2xs text-ink-3">
-              服务路由把这些站点的帖子交给它时，用站点适配器读取正文与完整的评论回复；其他页面，以及抓取路由中的兜底，按页面渲染结果读取。
-            </p>
             <Adapters fetcher={fetcher.id} ids={adapters} />
           </TabPanel>
         )}
       </Tabs>
+
+      {guideIndex >= 0 && (
+        <SetupGuide
+          worker={fetcher.workers[guideIndex]}
+          status={status?.workers[fetcher.workers[guideIndex].id]}
+          token={fetcher.workers[guideIndex].token || current(fetcher.workers[guideIndex], fresh[fetcher.workers[guideIndex].id])}
+          used={used}
+          setProfile={(profile) => set((f) => (f.workers[guideIndex].profile = profile))}
+          regenerate={() => regenerate(guideIndex)}
+          onClose={() => {
+            setGuide(undefined);
+            onGuideClosed?.();
+          }}
+        />
+      )}
     </section>
   );
 }
@@ -366,6 +399,7 @@ function WorkerItem({
   move,
   regenerate,
   remove,
+  guide,
 }: {
   worker: FetcherWorker;
   index: number;
@@ -377,6 +411,8 @@ function WorkerItem({
   move: (by: -1 | 1) => void;
   regenerate: () => void;
   remove: () => void;
+  /** Opens the setup guide for this worker. */
+  guide?: () => void;
 }) {
   const { config } = useConfig();
   const confirm = useConfirm();
@@ -385,8 +421,7 @@ function WorkerItem({
   const profiles = connected?.state?.profiles ?? [];
   const chosen = worker.profile ?? "";
   const problem = connected?.state?.ready ? profileProblem(profiles, chosen) : undefined;
-  const server = config.network.public_url || window.location.origin;
-  const command = `npx seekmux --server ${server} --token ${token ?? "<Worker 令牌>"}`;
+  const command = workerCommand(config, token);
 
   return (
     <li className="border-b border-line last:border-b-0">
@@ -437,7 +472,7 @@ function WorkerItem({
             onClick={async () => {
               const ok =
                 !connected ||
-                (await confirm({ title: `重新生成 ${worker.name} 的令牌？`, body: "已连接的 Worker 会立即断开，需换用新令牌重新运行。", confirm: "重新生成", danger: true }));
+                (await confirm({ title: `重新生成 ${worker.name} 的令牌？`, body: "已连接的 Worker 会断开，需用新令牌重新运行。", confirm: "重新生成", danger: true }));
               if (ok) regenerate();
             }}
           />
@@ -445,14 +480,21 @@ function WorkerItem({
 
         {!connected && (
           <>
-            <span className="self-start pt-2 text-xs font-medium text-ink-2">运行</span>
+            <span className="flex items-center gap-1 self-start pt-2 text-xs font-medium text-ink-2">
+              运行
+              <Info>网关前有反向代理时，需为 /worker 转发 WebSocket 升级</Info>
+            </span>
             <div className="flex min-w-0 flex-col gap-1.5">
               <CodeBlock copy wrap>
                 {command}
               </CodeBlock>
-              <span className="text-2xs text-ink-3">
-                {token ? "在装有 Chrome 和 OpenCLI 扩展的设备上运行。" : "已保存的令牌不再显示；忘记时可重新生成，旧令牌随之失效。"}
-                网关前有反向代理时，需为 <code className="tag">/worker</code> 转发 WebSocket 升级。
+              <span className="flex flex-wrap items-center gap-x-3 text-2xs text-ink-3">
+                {!token && <span>令牌已隐藏，忘记时重新生成</span>}
+                {guide && (
+                  <button type="button" onClick={guide} className="inline-flex items-center gap-1 text-ink-2 underline underline-offset-2 hover:text-ink">
+                    首次使用看安装指南
+                  </button>
+                )}
               </span>
             </div>
           </>
@@ -482,6 +524,187 @@ function WorkerItem({
             <span className="text-xs text-warn">浏览器未就绪：{connected.state?.problem ?? "未知原因"}</span>
           ) : null}
         </div>
+      </div>
+    </li>
+  );
+}
+
+/** What a worker runs, with its token while it is known. */
+function workerCommand(config: Config, token?: string): string {
+  const server = config.network.public_url || window.location.origin;
+  return `npx seekmux --server ${server} --token ${token ?? "<Worker 令牌>"}`;
+}
+
+const extensionStore = "https://chromewebstore.google.com/detail/opencli/ildkmabpimmkaediidaifkhjpohdnifk";
+const extensionReleases = "https://github.com/jackwener/opencli/releases";
+
+type StepState = { tone: Tone; label: string; done?: boolean };
+const unchecked: StepState = { tone: "neutral", label: "待检测" };
+const doneStep = (label = "完成"): StepState => ({ tone: "ok", label, done: true });
+
+/**
+ * Setting up one OpenCLI worker, step by step. Each step is checked against
+ * what the worker reports, so the list says where the setup stands.
+ */
+function SetupGuide({
+  worker,
+  status,
+  token,
+  used,
+  setProfile,
+  regenerate,
+  onClose,
+}: {
+  worker: FetcherWorker;
+  status?: WorkerStatus;
+  token?: string;
+  used: boolean;
+  setProfile: (profile: string | undefined) => void;
+  regenerate: () => void;
+  onClose: () => void;
+}) {
+  const { config } = useConfig();
+  const connected = status?.connected ? status : undefined;
+  const ready = Boolean(connected?.state?.ready);
+  const profiles = connected?.state?.profiles ?? [];
+  const chosen = worker.profile ?? "";
+  const problem = ready ? profileProblem(profiles, chosen) : undefined;
+  const usable = workerState(worker, status).usable;
+
+  const extension: StepState = ready ? doneStep() : connected ? { tone: "err", label: "未连接" } : unchecked;
+  const node: StepState = connected ? doneStep() : unchecked;
+  const run: StepState = connected ? doneStep("已连接") : !worker.enabled ? { tone: "warn", label: "Worker 已停用" } : { tone: "neutral", label: "等待连接" };
+  const profile: StepState = usable ? doneStep() : problem ? { tone: problem.tone, label: problem.label } : unchecked;
+  const use: StepState = used ? doneStep("已使用") : { tone: "neutral", label: "未使用" };
+
+  return (
+    <Drawer open onOpenChange={(open) => !open && onClose()} title={`安装指南 · ${worker.name}`} description="以下步骤在运行 Chrome 的电脑上完成" width="w-[min(36rem,100vw)]">
+      <ol className="flex flex-col">
+        <Step n={1} title="安装 OpenCLI 浏览器扩展" state={extension}>
+          <p>装进要使用其登录状态的 Chrome Profile，之后保持 Chrome 打开。支持 Chrome 与 Chromium。</p>
+          <div>
+            <a href={extensionStore} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-ctl border border-line-strong px-2.5 py-1 text-sm text-ink transition-colors hover:bg-raised">
+              Chrome 应用商店 <ExternalLink className="size-3.5" />
+            </a>
+          </div>
+          <details className="group">
+            <summary className="cursor-pointer text-ink-2 select-none hover:text-ink">无法访问应用商店</summary>
+            <ol className="mt-2 flex list-decimal flex-col gap-1.5 pl-5">
+              <li>
+                从{" "}
+                <a href={extensionReleases} target="_blank" rel="noreferrer" className="text-ink underline underline-offset-2">
+                  OpenCLI Releases
+                </a>{" "}
+                下载 <span className="num text-ink-2">opencli-extension-v&lt;版本&gt;.zip</span> 并解压
+              </li>
+              <li>
+                在地址栏打开 <span className="num text-ink-2">chrome://extensions</span>，开启右上角「开发者模式」
+              </li>
+              <li>点「加载已解压的扩展程序」，选择解压出的文件夹</li>
+            </ol>
+          </details>
+          {connected && !ready && <p className="text-err">{connected.state?.problem ?? "Chrome 未连接到 OpenCLI"}。确认 Chrome 已打开、扩展已启用。</p>}
+        </Step>
+
+        <Step n={2} title="安装 Node.js" state={node}>
+          <p>
+            需要 22.4 或更高版本，用 <span className="num text-ink-2">node -v</span> 查看。OpenCLI 随 Worker 一起安装，无需单独安装。
+          </p>
+          <div>
+            <a href="https://nodejs.org/zh-cn/download" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-ink underline underline-offset-2">
+              下载 Node.js <ExternalLink className="size-3" />
+            </a>
+          </div>
+        </Step>
+
+        <Step n={3} title="运行 Worker" state={run}>
+          {connected ? (
+            <p>
+              已从 <span className="num text-ink-2">{connected.addr}</span> 连接，seekmux {connected.version}
+            </p>
+          ) : (
+            <>
+              <p>在终端中运行，保持终端打开；断线后会自动重连。</p>
+              <CodeBlock copy wrap>
+                {workerCommand(config, token)}
+              </CodeBlock>
+              {!token && (
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  令牌已隐藏，没有保存时需重新生成。
+                  <Button size="sm" icon={<RefreshCw />} onClick={regenerate}>
+                    重新生成令牌
+                  </Button>
+                </p>
+              )}
+              <p className="flex items-center gap-1">
+                连不上网关
+                <Info label="连不上网关说明">
+                  网关前有反向代理时，需为 /worker 转发 WebSocket 升级（Upgrade、Connection 请求头）。Worker 的终端输出会给出具体原因。
+                </Info>
+              </p>
+            </>
+          )}
+        </Step>
+
+        <Step n={4} title="选择 Chrome Profile" state={profile}>
+          {!ready ? (
+            <p>Chrome 连接后显示可用的 Profile。</p>
+          ) : (
+            <>
+              <p>读取页面时使用所选 Profile 的登录状态。只打开了一个 Profile 时可保持默认。</p>
+              <Select value={chosen} onChange={(e) => setProfile(e.target.value || undefined)} aria-label={`${worker.name} 的 Chrome Profile`}>
+                <option value="">OpenCLI 默认</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.alias ? `${p.alias}（${p.id}）` : p.id}
+                    {p.connected ? "" : " · 未打开"}
+                    {p.default ? " · 默认" : ""}
+                  </option>
+                ))}
+              </Select>
+              {problem && <p className={problem.tone === "err" ? "text-err" : "text-warn"}>{problem.detail}</p>}
+            </>
+          )}
+        </Step>
+
+        <Step n={5} title="用于抓取" state={use} last>
+          <p>加入抓取路由后参与所有抓取；用于路由规则时只读取匹配的网站。</p>
+          <p className="flex flex-wrap gap-x-3">
+            <Link href="/tools/fetch" className="text-ink underline underline-offset-2">
+              加入抓取路由
+            </Link>
+            <Link href="/routing/rules" className="text-ink underline underline-offset-2">
+              用于路由规则
+            </Link>
+          </p>
+        </Step>
+      </ol>
+    </Drawer>
+  );
+}
+
+function Step({ n, title, state, last, children }: { n: number; title: string; state: StepState; last?: boolean; children: ReactNode }) {
+  return (
+    <li className="grid grid-cols-[1.75rem_1fr] gap-x-3">
+      <div className="flex flex-col items-center">
+        <span
+          className={cx(
+            "num grid size-7 shrink-0 place-items-center rounded-full border text-xs",
+            state.done ? "border-ok/40 bg-ok/10 text-ok" : "border-line-strong text-ink-2",
+          )}
+        >
+          {state.done ? <Check className="size-3.5" /> : n}
+        </span>
+        {!last && <span className="my-1 w-px flex-1 bg-line" />}
+      </div>
+      <div className={cx("flex min-w-0 flex-col gap-2.5 text-xs leading-relaxed text-ink-3", !last && "pb-6")}>
+        <div className="flex min-h-7 flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-medium text-ink">{title}</span>
+          <Badge tone={state.tone} dot={state.tone !== "neutral"}>
+            {state.label}
+          </Badge>
+        </div>
+        {children}
       </div>
     </li>
   );

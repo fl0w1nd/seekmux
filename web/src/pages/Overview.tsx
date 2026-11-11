@@ -34,7 +34,6 @@ export function OverviewPage() {
     <>
       <PageHeader
         title="概览"
-        description="网关当前的状态，以及各提供商在所选时间窗内的实际表现。"
         actions={<Segmented value={window} onChange={setWindow} options={(Object.keys(windows) as Window[]).map((w) => ({ value: w, label: windows[w].label }))} />}
       />
       {!data ? (
@@ -43,7 +42,7 @@ export function OverviewPage() {
         <div className="flex flex-col gap-4">
           <InFlight />
           <Kpis data={data} />
-          <Panel index={next()} title="请求量" description={`时间粒度：${stepLabel(windows[window].step)}；点击柱条查看该时段的日志`}>
+          <Panel index={next()} title="请求量" actions={<span className="num text-xs text-ink-3">每柱 {stepLabel(windows[window].step)}</span>}>
             <Histogram key={window} data={data} window={window} />
           </Panel>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -164,9 +163,7 @@ function Histogram({ data, window }: { data: Overview; window: Window }) {
   const used = stack.filter((s) => slots.some((slot) => slot.tools?.[s.tool]));
   if (slots.every((s) => s.calls === 0)) {
     return (
-      <Empty icon={<Activity />} title="所选时间范围内没有请求">
-        接入 Agent，或在调试台发起一次请求。
-      </Empty>
+      <Empty icon={<Activity />} title="所选时间范围内没有请求" />
     );
   }
   return (
@@ -252,7 +249,7 @@ const shortTime = (ts: number) => dateTime(ts).slice(5, 16);
 function Routes({ tool, title, index, routes }: { tool: string; title: string; index: string; routes: RouteStatus[] }) {
   const list = routes.filter((r) => r.tool === tool);
   return (
-    <Panel index={index} title={title} description="按优先级排列，实时显示各提供商状态与共用配额用量。" flush>
+    <Panel index={index} title={title} flush>
       <ol>
         {list.map((route, i) => (
           <li key={route.provider} className={cx("flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0", !route.available && "opacity-55")}>
@@ -283,7 +280,7 @@ const roleLabel = { extract: "提取", research: "研究" } as const;
 
 function Models({ data, index, className }: { data: Overview; index: string; className?: string }) {
   return (
-    <Panel index={index} title="模型" description="已关联功能的模型状态与共享配额用量。" className={className} flush>
+    <Panel index={index} title="模型" className={className} flush>
       <ol>
         {data.models.map((model) => (
           <li key={model.id} className={cx("flex items-center gap-3 border-b border-line px-4 py-2.5 last:border-b-0", model.roles.length === 0 && "opacity-55")}>
@@ -314,7 +311,7 @@ function Models({ data, index, className }: { data: Overview; index: string; cla
 
 function Errors({ data, index }: { data: Overview; index: string }) {
   return (
-    <Panel index={index} title="错误分布" description="对上游的失败请求，按提供商与 HTTP 状态归并，含被回退挽回的失败；点击查看相关日志" flush>
+    <Panel index={index} title="错误分布" info="含已被回退挽回的失败" flush>
       <div className="overflow-x-auto">
         <Table>
           <thead>
@@ -358,7 +355,7 @@ function Errors({ data, index }: { data: Overview; index: string }) {
 function Providers({ data, index }: { data: Overview; index: string }) {
   const rows = data.stats.providers;
   return (
-    <Panel index={index} title="提供商表现" description="按对上游的每次请求统计，包含因故障转移被跳过和在对冲中被取消的请求" flush>
+    <Panel index={index} title="提供商表现" info="按发往上游的每次请求统计，含被跳过和对冲中取消的请求" flush>
       {rows.length === 0 ? (
         <Empty title="暂无数据" />
       ) : (
@@ -408,7 +405,7 @@ function Providers({ data, index }: { data: Overview; index: string }) {
 function Callers({ data, index }: { data: Overview; index: string }) {
   const rows = data.stats.callers;
   return (
-    <Panel index={index} title="调用方" description="按访问密钥与调试台统计的工具调用；点击名称查看对应日志" flush>
+    <Panel index={index} title="调用方" flush>
       {rows.length === 0 ? (
         <Empty title="暂无数据" />
       ) : (
@@ -477,11 +474,12 @@ function Roles({ data }: { data: Overview }) {
       </div>
       {!data.roles.extract && (
         <Notice tone="warn">
-          尚未配置提取模型，fetch 仅能返回原始页面，带 prompt 的调用将回退为截断的原文。请前往{" "}
-          <Link href="/tools/fetch" className="text-ink underline underline-offset-2">
-            网页抓取
-          </Link>{" "}
-          设置。
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <span>未配置提取模型，fetch 只返回原文。</span>
+            <Link href="/tools/fetch" className="text-ink underline underline-offset-2">
+              去设置
+            </Link>
+          </div>
         </Notice>
       )}
     </div>

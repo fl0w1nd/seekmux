@@ -1,8 +1,9 @@
 import { useState } from "react";
 import type { ProviderOption, Route, RoutedTool } from "../lib/api";
 import { useConfig } from "../lib/config";
+import { codeText } from "../lib/codes";
 import { extraText, optionText } from "../lib/options";
-import { JSONInput } from "../ui/inputs";
+import { CodeSelect, JSONInput } from "../ui/inputs";
 import { cx, Field, Input, Select, Switch } from "../ui/primitives";
 
 /** How many of a route's parameters differ from the provider's defaults. */
@@ -54,7 +55,7 @@ export function OptionFields({
 }) {
   const { provider } = useConfig();
   const options = provider(id).options?.[tool] ?? [];
-  const extra = extraText(id);
+  const extra = extraText(id, tool);
 
   const set = (option: ProviderOption, v: unknown) => {
     const next = { ...value.options };
@@ -70,14 +71,22 @@ export function OptionFields({
           {options.map((option) => {
             const text = optionText(id, tool, option.key);
             return (
-              <Field key={option.key} label={text.label} hint={text.hint}>
-                <Control option={option} value={value.options?.[option.key] ?? option.default} unit={text.unit} label={text.label} inherits={tool === "search"} onChange={(v) => set(option, v)} />
+              <Field key={option.key} label={text.label} info={text.info}>
+                <Control
+                  option={option}
+                  value={value.options?.[option.key] ?? option.default}
+                  unit={text.unit}
+                  label={text.label}
+                  placeholder={text.placeholder}
+                  inherits={tool === "search"}
+                  onChange={(v) => set(option, v)}
+                />
               </Field>
             );
           })}
         </div>
       )}
-      <Field label={extra.label} hint="JSON 对象，原样并入发往提供商的请求；最后合并，会覆盖上方的同名设置。用于此处未列出的参数">
+      <Field label={extra.label} hint="合并进请求，覆盖同名字段">
         <JSONInput value={value.extra_body} placeholder={extra.placeholder} onChange={(extra_body) => onChange({ options: value.options, extra_body })} />
       </Field>
     </div>
@@ -89,6 +98,7 @@ function Control({
   value,
   unit,
   label,
+  placeholder,
   inherits,
   onChange,
 }: {
@@ -96,10 +106,12 @@ function Control({
   value: unknown;
   unit?: string;
   label: string;
+  placeholder?: string;
   /** Whether an empty country or language falls back to a global one. */
   inherits: boolean;
   onChange: (value: unknown) => void;
 }) {
+  const { config } = useConfig();
   switch (option.type) {
     case "bool":
       return <Switch checked={value === true} onCheckedChange={onChange} aria-label={label} />;
@@ -116,18 +128,20 @@ function Control({
     case "int":
       return <IntInput option={option} value={typeof value === "number" ? value : undefined} unit={unit} onChange={onChange} />;
     default:
-      return (
-        <Input
-          mono
-          value={typeof value === "string" ? value : ""}
-          maxLength={option.format ? 2 : undefined}
-          placeholder={option.format ? (inherits ? "继承" : "不指定") : undefined}
-          onChange={(e) => {
-            const next = e.target.value.trim();
-            onChange(option.format === "country" ? next.toUpperCase() : option.format === "language" ? next.toLowerCase() : next);
-          }}
-        />
-      );
+      if (option.format) {
+        const global = inherits ? (option.format === "country" ? config.search.country : config.search.language) : undefined;
+        return (
+          <CodeSelect
+            kind={option.format}
+            value={typeof value === "string" ? value : ""}
+            allowed={option.values}
+            empty={inheritedText(option, global)}
+            onChange={onChange}
+            aria-label={label}
+          />
+        );
+      }
+      return <Input mono value={typeof value === "string" ? value : ""} placeholder={placeholder} onChange={(e) => onChange(e.target.value.trim())} aria-label={label} />;
   }
 }
 
@@ -148,7 +162,6 @@ function IntInput({ option, value, unit, onChange }: { option: ProviderOption; v
         aria-invalid={invalid}
         className={unit ? "pr-12" : undefined}
         placeholder={typeof option.default === "number" ? String(option.default) : "不设置"}
-        title={`${min} – ${max}`}
         onChange={(e) => {
           setText(e.target.value);
           const next = Number(e.target.value);
@@ -157,7 +170,19 @@ function IntInput({ option, value, unit, onChange }: { option: ProviderOption; v
         }}
         onBlur={() => setText(null)}
       />
-      {unit && <span className="tag pointer-events-none absolute inset-y-0 right-2.5 flex items-center normal-case">{unit}</span>}
+      {unit && <span className="tag pointer-events-none absolute inset-y-0 right-2.5 flex h-8 items-center normal-case">{unit}</span>}
+      {invalid && (
+        <div className="mt-1 text-xs text-err">
+          {min} – {max} 的整数
+        </div>
+      )}
     </div>
   );
+}
+
+/** The choice of no country or language: what the route falls back to. */
+function inheritedText(option: ProviderOption, global: string | undefined): string {
+  if (!global) return "不指定";
+  if (option.values?.length && !option.values.includes(global)) return `不指定 · 不支持全局的 ${global}`;
+  return `继承 · ${codeText(option.format!, global)}`;
 }
