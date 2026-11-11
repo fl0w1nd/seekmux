@@ -258,3 +258,39 @@ func TestParallelAndAnySearchResults(t *testing.T) {
 		server.Close()
 	}
 }
+
+func TestUnsupportedCodesAreLeftOut(t *testing.T) {
+	in := Input{Query: "q", MaxResults: 5}
+
+	// Brave rejects a country outside its list; an inherited one is dropped.
+	query, _ := capture(t, "brave", func(cfg *config.Config, r *config.Route) {
+		cfg.Search.Country, cfg.Search.Language = "SG", "fa"
+	}, in)
+	if _, ok := query["country"]; ok {
+		t.Errorf("brave country = %q", query["country"])
+	}
+	if _, ok := query["search_lang"]; ok {
+		t.Errorf("brave search_lang = %q", query["search_lang"])
+	}
+
+	// A stored route code the provider never took gives way to the global one.
+	query, _ = capture(t, "brave", func(cfg *config.Config, r *config.Route) {
+		cfg.Search.Country = "DE"
+		r.Options = map[string]any{"country": "SG"}
+	}, in)
+	if query["country"] != "DE" {
+		t.Errorf("brave country = %q, want DE", query["country"])
+	}
+}
+
+func TestTavilyCountriesMatchTheDeclaration(t *testing.T) {
+	declared := strings.Fields(config.TavilyCountries)
+	if len(declared) != len(tavilyCountries) {
+		t.Fatalf("declared %d countries, mapped %d", len(declared), len(tavilyCountries))
+	}
+	for _, code := range declared {
+		if tavilyCountries[code] == "" {
+			t.Errorf("%s has no Tavily name", code)
+		}
+	}
+}

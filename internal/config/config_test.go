@@ -369,3 +369,16 @@ func TestRouteOptions(t *testing.T) {
 		t.Error("max_age_hours must be unset by default")
 	}
 }
+
+func TestOptionRejectsUnsupportedCode(t *testing.T) {
+	cfg := Default()
+	cfg.Normalize()
+	for i := range cfg.Search.Routes {
+		if cfg.Search.Routes[i].Provider == "brave" {
+			cfg.Search.Routes[i].Options = map[string]any{"country": "SG"}
+		}
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("a country Brave does not take passed validation")
+	}
+}

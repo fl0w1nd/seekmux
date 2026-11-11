@@ -301,7 +301,7 @@ var Catalog = []ProviderInfo{
 			{Key: "extra_snippets", Type: OptionBool, Default: false},
 			{Key: "safesearch", Type: OptionEnum, Default: "moderate", Values: []string{"off", "moderate", "strict"}},
 			{Key: "goggles", Type: OptionString, Default: ""},
-			optCountry, optLanguage,
+			braveCountry, braveLanguage,
 		}},
 	},
 	{
@@ -346,7 +346,7 @@ var Catalog = []ProviderInfo{
 				{Key: "search_depth", Type: OptionEnum, Default: "advanced", Values: []string{"basic", "advanced", "fast", "ultra-fast"}},
 				{Key: "chunks_per_source", Type: OptionInt, Default: 3, Min: 1, Max: 3},
 				{Key: "topic", Type: OptionEnum, Default: "general", Values: []string{"general", "news", "finance"}},
-				optCountry, optLanguage,
+				tavilyCountry, optLanguage,
 			},
 			ToolFetch: {
 				{Key: "extract_depth", Type: OptionEnum, Default: "basic", Values: []string{"basic", "advanced"}},

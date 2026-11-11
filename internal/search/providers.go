@@ -111,6 +111,24 @@ func routed[In, Out any](cfg *config.Config, tool string, route config.Route, c 
 	}
 }
 
+// inherited resolves the route's country or language, key, falling back to
+// global, and records it in the call's options. A global code the provider
+// does not take is left out rather than failing or being ignored upstream.
+func inherited(c call, provider, key, global string) string {
+	if _, ok := c.opt[key]; !ok {
+		return ""
+	}
+	info, _ := config.Info(provider)
+	value := cmp.Or(c.opt.Str(key), global)
+	for _, opt := range info.Options[config.ToolSearch] {
+		if opt.Key == key && !opt.Accepts(value) {
+			value = ""
+		}
+	}
+	c.opt[key] = value
+	return value
+}
+
 // Providers builds the search providers of cfg in priority order.
 func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, Output] {
 	var out []core.Provider[Input, Output]
@@ -120,18 +138,8 @@ func Providers(cfg *config.Config, client *http.Client) []core.Provider[Input, O
 			continue
 		}
 		c := newCall(cfg, client, config.ToolSearch, route)
-		if _, ok := c.opt[config.OptionCountry]; ok {
-			c.country = cmp.Or(c.opt.Str(config.OptionCountry), cfg.Search.Country)
-		}
-		if _, ok := c.opt[config.OptionLanguage]; ok {
-			c.language = cmp.Or(c.opt.Str(config.OptionLanguage), cfg.Search.Language)
-		}
-		if _, ok := c.opt[config.OptionCountry]; ok {
-			c.opt[config.OptionCountry] = c.country
-		}
-		if _, ok := c.opt[config.OptionLanguage]; ok {
-			c.opt[config.OptionLanguage] = c.language
-		}
+		c.country = inherited(c, route.Provider, config.OptionCountry, cfg.Search.Country)
+		c.language = inherited(c, route.Provider, config.OptionLanguage, cfg.Search.Language)
 		out = append(out, routed(cfg, config.ToolSearch, route, c, run))
 	}
 	return out

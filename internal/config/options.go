@@ -29,11 +29,13 @@ type Option struct {
 	Type string `json:"type"`
 	// Default applies when the route does not set the option. A nil default
 	// means the parameter is left out of the request.
-	Default any      `json:"default"`
-	Values  []string `json:"values,omitempty"`
-	Min     int      `json:"min,omitempty"`
-	Max     int      `json:"max,omitempty"`
-	Format  string   `json:"format,omitempty"`
+	Default any `json:"default"`
+	// Values are the choices of an enum, or the codes a provider accepts for
+	// a country or language; none means any code.
+	Values []string `json:"values,omitempty"`
+	Min    int      `json:"min,omitempty"`
+	Max    int      `json:"max,omitempty"`
+	Format string   `json:"format,omitempty"`
 }
 
 // A route's country and language override the global ones of the search tool.
@@ -41,6 +43,27 @@ var (
 	optCountry  = Option{Key: OptionCountry, Type: OptionString, Default: "", Format: FormatCountry}
 	optLanguage = Option{Key: OptionLanguage, Type: OptionString, Default: "", Format: FormatLanguage}
 )
+
+// Brave takes only these countries, and these languages under its own names
+// (search.braveLanguages); Tavily only the countries it has names for.
+var (
+	braveCountry = withValues(optCountry,
+		"AR AT AU BE BR CA CH CL CN DE DK ES FI FR GB GR HK ID IN IT JP KR MX MY NL NO NZ PH PL PT RU SA SE TR TW US ZA")
+	braveLanguage = withValues(optLanguage,
+		"ar bg bn ca cs da de el en es et eu fi fr gl gu he hi hr hu is it ja kn ko lt lv ml mr ms nb nl no pa pl pt ro ru sk sl sr sv ta te th tr uk vi zh")
+	tavilyCountry = withValues(optCountry, TavilyCountries)
+)
+
+// TavilyCountries are the countries Tavily has a name for.
+const TavilyCountries = "AD AE AF AL AM AO AR AT AU AZ BA BB BD BE BF BG BH BI BJ BN BO BR BS BT BW BY BZ CA CF CG CH CL CM CN CO CR CU CV CY CZ " +
+	"DE DJ DK DO DZ EC EE EG ER ES ET FI FJ FR GA GB GE GH GM GN GQ GR GT HN HR HT HU ID IE IL IN IQ IR IS IT JM JO JP " +
+	"KE KG KH KM KP KR KW KZ LB LI LK LR LS LT LU LV LY MA MC MD ME MG MK ML MM MN MR MT MU MV MW MX MY MZ NA NE NG NI NL NO NP NZ " +
+	"OM PA PE PG PH PK PL PT PY QA RO RS RU RW SA SD SE SG SI SK SN SO SS SV SY TD TG TH TJ TM TN TR TT TW TZ UA UG US UY UZ VE VN YE ZA ZM ZW"
+
+func withValues(o Option, codes string) Option {
+	o.Values = strings.Fields(codes)
+	return o
+}
 
 var (
 	countryPattern  = regexp.MustCompile(`^[A-Z]{2}$`)
@@ -94,6 +117,11 @@ func (o Option) same(v any) bool {
 	return v == o.Default
 }
 
+// Accepts reports whether the provider takes s, a country or language code.
+func (o Option) Accepts(s string) bool {
+	return o.Format == "" || s == "" || len(o.Values) == 0 || slices.Contains(o.Values, s)
+}
+
 func (o Option) check(v any) error {
 	switch o.Type {
 	case OptionBool:
@@ -117,7 +145,12 @@ func (o Option) check(v any) error {
 		if !ok {
 			return fmt.Errorf("must be text")
 		}
-		return checkFormat(o.Format, s)
+		if err := checkFormat(o.Format, s); err != nil {
+			return err
+		}
+		if !o.Accepts(s) {
+			return fmt.Errorf("%q is not supported by the provider", s)
+		}
 	}
 	return nil
 }
@@ -135,7 +168,15 @@ func normalizeOptions(tool string, r *Route) {
 		}
 		opt := info.Options[tool][i]
 		if s, ok := value.(string); ok && opt.Type == OptionString {
-			value = cleanFormat(opt.Format, s)
+			s = cleanFormat(opt.Format, s)
+			// A valid code the provider never took did nothing or failed
+			// the call; the route falls back to the global one. A
+			// malformed one is left for validation to report.
+			if checkFormat(opt.Format, s) == nil && !opt.Accepts(s) {
+				delete(r.Options, key)
+				continue
+			}
+			value = s
 			r.Options[key] = value
 		}
 		if opt.same(value) {
